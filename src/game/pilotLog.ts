@@ -46,14 +46,15 @@ const showUnlockToast = (label: string) => {
 const allowLogVocal = (game: Game, milestone: number): boolean =>
   game.state === "replaying" || shouldPlayPilotLog(milestone);
 
-// Schedule the vocal on the next downbeat. playPilotLog holds the mutex for
-//   the take's duration itself, as a deadline on the clock it scheduled the
-//   voice against — a wall-clock timer here used to outlive a replay export's
-//   whole sweep and silence every entry after the first.
+// Schedule the vocal on the next downbeat and hold the mutex for its duration.
 const playLogVocal = (game: Game, milestone: number) => {
   if (!allowLogVocal(game, milestone)) return;
   if (game.state !== "replaying") markPilotLogHeard(milestone);
-  void game.sound.playPilotLog(milestone, nextDownbeatDelay(game.beatTime), 1.0);
+  game.sound.pilotLogPlaying = true;
+  const delay = nextDownbeatDelay(game.beatTime);
+  game.sound.playPilotLog(milestone, delay, 1.0).then((dur) => {
+    window.setTimeout(() => { game.sound.pilotLogPlaying = false; }, (delay + dur + 0.5) * 1000);
+  });
 };
 
 // Fire the combo-x6 unlock: HUD toast immediately, vocal cue on the next
