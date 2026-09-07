@@ -109,6 +109,54 @@ Two rules follow, and both are easy to break by accident:
 offline-render path and asserts the render is stereo, non-silent, and
 non-silent in every second it fired a voice.
 
+`npm run check:capture-parity` is the companion that asks the harder question:
+not "did anything sound", but "did it sound like the game". It renders each
+voice twice — once with `Sound.ctx` set to a plain `OfflineAudioContext` and
+the voice fired from inside a `suspend(t)` callback, so `ctx.currentTime`
+genuinely reads `t` exactly as the live context does, and once through the
+real `beginExportCapture` — and requires the two to be sample-identical. Fire
+the test voices at `t > 0`: at `t = 0` the export clock and a real
+`currentTime` agree by accident, `wrapSourceTiming` is a no-op, and the legs
+match whether or not the re-anchoring is correct.
+
+### Capture at the level the player was listening at
+
+The master volume is not a level control that sits at the end of the chain —
+it is `liveSum`/`bakedSum`'s own gain, **upstream of the master compressor and
+limiter**. So it doesn't just set how loud the mix is, it sets how hard both
+are driven, and capturing at any level other than the player's renders a
+differently-squashed mix. Measured on a wave-1 volley of shots and hits, a
+movie captured at 2.0 for a player listening at 1.0 comes back 1.6 dB louder
+with its crest factor down from 4.06 to 3.39: flattened transients, on exactly
+the voices (`fire`, the shatters, `asteroidBoomBeat`) that fire most often and
+that a player notices first. Pinning capture to a constant — either constant —
+is therefore wrong; `beginExportCapture` inherits the live `volume`, and only
+a muted slider falls back to `DEFAULT_VOLUME`, since tracking that one would
+render a silent movie. The drive section of `check:capture-parity` holds this.
+
+### Nothing that isn't in the recording may cross the swap
+
+A movie has to be a function of the replay, not of whatever the live session
+was doing when Export was pressed. Two shapes of leak:
+
+- **Clock readings**, which are meaningless once the next context's clock
+  starts over at zero. `playBaked`'s burst tracker was the first one found
+  (every one-shot read as mid-burst and ducked for the whole movie); the
+  Pilot's Log mutex was the second.
+- **Position in a cycle** — the 8-step alien riff, the halo pad's comet mode,
+  a slow-mo music playback rate. Left alone, the same recording exports
+  differently depending on what preceded the click.
+
+`stopVoicesForContextSwap` resets both shapes, on entry and on exit.
+
+One trap specific to this: **a wall-clock `setTimeout` is not a timer the
+export can use.** The sweep steps a movie far faster than real time, so a
+release scheduled for "the length of this clip" is still pending when the
+sweep reaches the end of the recording. The Pilot's Log mutex used to be one,
+which silenced every entry after the first in any exported movie; it is now a
+deadline on `Sound`'s own clock, which reads the audio clock live and the
+export clock while capturing, and is therefore right on both paths.
+
 One consequence worth knowing: **`bgBeat`'s intensity buckets are derived from
 `CFG.bgBeatIntensity`**, not hardcoded. The ramp runs 0.6 → 1.0 over 30 waves,
 so only 5 of the 11 buckets are reachable and the other 24 files are never
