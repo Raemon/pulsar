@@ -16,6 +16,7 @@
     "check:export-audio": "node scripts/check-export-audio.mjs",
     "check:mix-stress": "node scripts/check-mix-stress.mjs",
     "check:bake-fidelity": "node scripts/check-bake-fidelity.mjs",
+    "check:capture-parity": "node scripts/check-capture-parity.mjs",
     "merge": "bash scripts/merge.sh",
     "typecheck": "tsc -b && tsc -p api",
     "replay:closed-loop": "node scripts/record-resim.mjs",

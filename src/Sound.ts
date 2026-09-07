@@ -602,8 +602,26 @@ export class Sound {
   // Cache is keyed by URL (not just index) because index 1 (combo-x6 unlock)
   // picks a random take from a pool each fire — see PILOT_LOG_1_TAKES.
   pilotLogBuffers: Map<string, AudioBuffer> = new Map();
-  pilotLogPlaying = false;
   private pilotLogLoading: Map<string, Promise<AudioBuffer | null>> = new Map();
+
+  // The mutex is a deadline on Sound's own clock — the audio clock while the
+  //   game plays, the export clock while a movie captures — rather than a
+  //   wall-clock timer. The replay exporter sweeps a movie far faster than
+  //   real time, so a setTimeout release scheduled for "the length of this
+  //   clip" is still pending when the sweep reaches the end of the recording:
+  //   the mutex stays held and every later entry in the movie is silenced.
+  //   Reading the same clock the voice was scheduled on gets both paths right.
+  private pilotLogUntil = 0;
+  // Reserved synchronously at trigger time so a second trigger in the same
+  //   frame can't slip through while the take is still loading; replaced by
+  //   the real end once the buffer resolves (or released if it fails).
+  private static readonly PILOT_LOG_RESERVE_SEC = 4;
+  // Breath of silence after the take before another entry may start.
+  private static readonly PILOT_LOG_TAIL_SEC = 0.5;
+
+  get pilotLogPlaying(): boolean {
+    return this.ctx !== null && this.ctx.currentTime < this.pilotLogUntil;
+  }
 
   // Listener position (ship). Pan + distance falloff are computed relative
   // to this. Half-width/half-height scale the screen so pan saturates at the
@@ -2360,17 +2378,32 @@ export class Sound {
     this.stopHaloFullMusic();
     this.stopLaserCharge();
     this.abandonReleasingVoices();
-    // Burst starts are clock readings; the next context's clock starts over.
+    // Nothing that isn't derived from the recording may cross a context swap.
+    //   A movie has to be a function of the replay, not of whatever the live
+    //   session happened to be doing when the export button was pressed, and
+    //   anything holding a clock reading is meaningless once the next
+    //   context's clock starts over at zero.
     this.bakedBursts.clear();
+    this.pilotLogUntil = 0;
+    // Where the 8-step alien riff and the sampled-guitar flip had got to.
+    this.bigAlienFireStep = 0;
+    this.mediumAlienFireStep = 0;
+    // A slow-mo ramp left this off 1, and music started in the movie would
+    //   inherit the pitched-down rate the live run happened to be under.
+    this.currentMusicPlaybackRate = 1;
+    this.haloAmbientCometMode = false;
     this.enabled = wasEnabled;
   }
 
   // Swap the engine onto the capture context. Rebuilds the full mix graph
   //   (compressor + limiter + channel legs at the player's per-channel
-  //   volumes) on the offline destination, with the overall volume pinned to
-  //   the level the mix is tuned at regardless of the live slider/mute — the
-  //   master gain sits ahead of the compressor and limiter, so any other level
-  //   renders a differently-squashed mix than the one the game plays.
+  //   volumes) on the offline destination, at the master level the player is
+  //   actually hearing. That gain sits ahead of the compressor and limiter, so
+  //   it sets how hard both are driven: capturing at any other level renders a
+  //   differently-squashed mix than the game played. Pinning it to a constant
+  //   is what made an exported movie's shots and hits read as flattened —
+  //   measured against a slider at 1.0, capturing at 2.0 costs a fifth of the
+  //   mix's crest factor, which is audible on exactly the transient voices.
   beginExportCapture(captureCtx: AudioContext) {
     if (this.exportRestore || !this.ctx) return;
     this.stopVoicesForContextSwap();
@@ -2396,7 +2429,10 @@ export class Sound {
       pauseFadeFactor: this.pauseFadeFactor,
     };
     this.ctx = captureCtx;
-    this.volume = Sound.DEFAULT_VOLUME;
+    // Muted is the one live level we can't honour — it would render a silent
+    //   movie — so that alone falls back to the level the mix is tuned at.
+    if (this.volume <= 0) this.volume = Sound.DEFAULT_VOLUME;
+    // A pause fade is live UI state, not part of the mix the movie captures.
     this.pauseFadeFactor = 1;
     this.buildMixGraph();
     this.enabled = true;
@@ -6130,15 +6166,21 @@ export class Sound {
     //   re-sim picks the exact take the original run played.
     const url = urls[Math.floor(cosmeticRng() * urls.length)];
     const targetStartTime = this.ctx.currentTime + Math.max(0, delaySec);
+    this.pilotLogUntil = Math.max(this.pilotLogUntil, targetStartTime + Sound.PILOT_LOG_RESERVE_SEC);
     const buf = await this.loadPilotLogBuffer(url, true);
-    if (!buf || !this.ctx || !this.chVocalsBaked) return 0;
+    if (!buf || !this.ctx || !this.chVocalsBaked) {
+      this.pilotLogUntil = 0;
+      return 0;
+    }
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     const g = this.ctx.createGain();
     g.gain.value = gain;
     src.connect(g);
     g.connect(this.chVocalsBaked);
-    src.start(Math.max(this.ctx.currentTime, targetStartTime));
+    const startAt = Math.max(this.ctx.currentTime, targetStartTime);
+    src.start(startAt);
+    this.pilotLogUntil = startAt + buf.duration + Sound.PILOT_LOG_TAIL_SEC;
     return buf.duration;
   }
 
