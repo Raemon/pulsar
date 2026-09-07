@@ -74,7 +74,7 @@ const shatterAllAsteroids = (game: Game) => {
     // The wavefront is a full-field event — an entering rock is hit like any
     // other; the contact just ends its entrance presentation first.
     completeEntrance(a);
-    if (a.isBossFamily()) bossWeathersShockwave(game, a, surviving);
+    if (a.isBossFamily() || a.isSepulchreFamily()) bossWeathersShockwave(game, a, surviving);
     else if (a.isBass()) shatterBassRock(game, a, surviving, claimed);
     else shatterPlainRock(game, a, surviving, claimed);
   }

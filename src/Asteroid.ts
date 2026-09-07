@@ -104,6 +104,21 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // `bossEye` core. Hemispheres further split into `bossPlate` shards (the
 // modular ring panels they wore); the eye further splits into
 // `bossIrisShard` slivers + a single inert `bossEmber` pupil.
+
+// "sepulchre" / "pallbearer" are the level-20 culmination — the Act II answer
+// to the level-10 planetoid. Where the boss is one body with one eye and one
+// line to dodge, the Sepulchre is a formation: a violet cathedral tomb of the
+// same stone the whole act has been shedding, carried by four Pallbearers on a
+// slow ring around it. Each bearer holds one beat of the measure, tolls the
+// knell on it, and fires down its own bearing, so the pressure arrives from
+// four directions on four beats. Each also phases (a longer, staggered cousin
+// of the citadel's cycle), so the bearer you may shoot is whichever is
+// currently solid. The tomb's own armour is the bier: every living bearer
+// stacks ENTITY_CONFIG.sepulchre.shellArmourPerBearer onto its shell, so it
+// shrugs off everything until the bier is broken and softens a step per bearer
+// that falls. With the last one gone the tethers snap, the shutter over its
+// reliquary grinds open, and it takes all four beats itself. Killing it
+// scatters the cathedral debris the player has been shooting since level 11.
 //
 // "glassPrison" is the post-boss horror: a cut black diamond, faceted and
 // near-lightless, with faint red eyes glowing from somewhere inside. Drifts
@@ -143,13 +158,13 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // still behind the same DR 8 armour, so the fragments are as tough to punch
 // through as the parent — a lingering field of stubborn scrap.
 // Rare across display-levels 5-9, then a common obstacle afterwards.
-export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard";
+export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard";
 
 // The two phased kinds share the warble opacity/solid state machine, the
 // blurred-ghost render path and the phase drone; they differ in cycle length
 // (bassClock drives both) and the citadel's armour + escape hole.
 export const isPhasedKind = (kind: AsteroidKind): boolean =>
-  kind === "warble" || kind === "citadel";
+  kind === "warble" || kind === "citadel" || kind === "pallbearer";
 
 // How much of the parent ring a warble kept, by size. A warble IS a piece of a
 // citadel, so it's shaped like one: a curved stretch of the fortress's outer
@@ -1150,6 +1165,30 @@ export class Asteroid {
   // boss-family asteroid so each hemisphere keeps its own state.
   bossPlasmaFired = false;
 
+  // ---- Sepulchre (level-20 boss) + its Pallbearers ----
+  // A bearer's fixed angular slot on the bier ring. The ring's centre is the
+  // tomb itself, so a bearer's position is recomputed from its core each tick
+  // (see tickSepulchre) rather than integrated from its own velocity.
+  bierSlot = 0;
+  // The tomb this bearer carries. Null once the tomb is gone — the bier drops
+  // and the bearer flies off along the tangent it was riding.
+  bierCore: Asteroid | null = null;
+  // Which beat of the measure this bearer tolls on (0-3). It doubles as the
+  // bearer's quarter of the phase cycle, so the ring is never all ghost at once.
+  bearerBeat = 0;
+  // Ring rotation (radians). Advanced on the tomb, read by every bearer.
+  bierPhase = 0;
+  // Toll bloom: set to 1 on the bearer's beat and decayed each tick. This is
+  // the knell made visible — the tolling piece is the one lighting up.
+  tollFlash = 0;
+  // 0 shut → 1 fully open. The shutter over the reliquary grinds open once the
+  // last bearer falls; while it is shut the Sepulchre is only a tomb, and once
+  // it is open the tomb takes the bearers' beats itself.
+  shutterOpen = 0;
+  // Living bearers the shell's armour is currently priced off. Recomputed each
+  // tick so the armour ladder and the visible tethers can never disagree.
+  bierBearersAlive = 0;
+
   // Wraith-only state. The writhe phase drives the live-painted body's
   // breathing distortion and tendril extrusion. Pre-roll per-tendril phase
   // offsets at construction so each wraith has its own gait.
@@ -1263,6 +1302,20 @@ export class Asteroid {
       // (The spawn rotation above still randomizes which way the hole faces.)
       this.rotSpeed = 0;
     }
+    if (kind === "sepulchre") {
+      // A tomb turning once in a long while, not a tumbling rock.
+      this.rotSpeed = rand(-0.05, 0.05);
+      this.bossPhase = "dormant";
+      this.bossRevealT = 0;
+    }
+    if (kind === "pallbearer") {
+      // Both position and facing are dictated by the ring (see tickSepulchre):
+      // a bearer always keeps its shoulder to the tomb it carries.
+      this.rotSpeed = 0;
+      // Dormant with the tomb: it rides the bier in silently through the whole
+      // approach and only lights, tolls and becomes a target when the tomb wakes.
+      this.bossPhase = "dormant";
+    }
     if (kind === "torusArc" || kind === "torusChunk") {
       // Radius is set by split() from ring geometry; rotation by tickTorusGroup.
       this.rotSpeed = 0;
@@ -1315,9 +1368,9 @@ export class Asteroid {
     // wasteful and looks like noise, so cap the boss at a handful of
     // distinct fractures and let `renderBossCracks` interpolate brightness
     // with the damage fraction instead.
-    const crackCount = isBoss
+    const crackCount = isBoss || kind === "sepulchre"
       ? 12
-      : isBossHemisphere ? 8 : isBossEye ? 6 : (isBossPlate || isBossIrisShard || isBossEmber) ? 4
+      : isBossHemisphere ? 8 : isBossEye || kind === "pallbearer" ? 6 : (isBossPlate || isBossIrisShard || isBossEmber) ? 4
       : this.maxHp;
     this.cracks = rollCracks(crackCount);
     // Boss-family, bass, gem etc. carry a fixed hue in ENTITY_STATS; the plain
@@ -1541,7 +1594,7 @@ export class Asteroid {
     // render() branches on kind below to dispatch to the live painters.
     // Wraiths also paint live — their entire identity is "writhing motion",
     // so a pre-baked silhouette would defeat the point.
-    if (this.isBossFamily() || this.kind === "wraith") return null;
+    if (this.isBossFamily() || this.kind === "wraith" || this.isSepulchre()) return null;
     if (this.isBass()) return this.buildBassteroidSprite();
     if (this.kind === "torus") return this.buildTorusSprite();
     if (this.kind === "torusArc" || this.kind === "torusChunk") return this.buildTorusArcSprite();
@@ -1571,7 +1624,7 @@ export class Asteroid {
     // down their own opaque body + rim, so skip the biolum halo / interior glow
     // / filament veins / nuclei cores that would otherwise make them "alive".
     // Metal hull is likewise inert plate: it paints its own opaque steel body.
-    const isArchitectural = this.kind === "bell" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind);
+    const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind);
     // The fortress kinds lay down their own laminated armour body instead — the
     // soft membrane/filament pass would read organic under the plate bands, and
     // its bright baked nuclei would bleed up through the stone. Both paint their
@@ -1653,6 +1706,7 @@ export class Asteroid {
     if (isBurstGem(this.kind)) this.paintBurstGemBody(ctx);
     if (isGlassPrison(this.kind)) this.paintGlassPrisonBody(ctx);
     if (this.kind === "bell") this.paintCathedralFragmentBody(ctx);
+    if (this.kind === "pallbearer") this.paintPallbearerBody(ctx);
     if (this.kind === "cathedralKeystone") this.paintKeystoneBody(ctx);
     if (this.kind === "glassShard") this.paintGlassShardBody(ctx);
     if (this.kind === "columnDrum") this.paintColumnDrumBody(ctx);
@@ -4045,7 +4099,7 @@ export class Asteroid {
     // bullets nor the ship can interact with the looming silhouette. The
     // transition to "live" enables both at once on the same frame as the
     // eye opens.
-    if (this.isBoss() && this.bossPhase === "dormant") return false;
+    if (this.isDormantSilhouette()) return false;
     // Phased-out warble/citadel: bullets and the ship pass clean through
     // during the dim window.
     if (this.isPhasedOut()) return false;
@@ -4069,7 +4123,7 @@ export class Asteroid {
     // Boss planetoid is a round body — circle hitbox at near-full radius.
     // Boss-family fragments use the same circular hitbox at slightly looser
     // radius so all the awkward shard shapes register cleanly.
-    if (this.isBoss()) return distance < this.radius * 0.95 + pointRadius;
+    if (this.isBoss() || this.isSepulchre()) return distance < this.radius * 0.95 + pointRadius;
     if (this.isBossFragment()) return distance < this.radius * 0.92 + pointRadius;
     // Torus kinds carry an explicit circular hitbox (the whole ring's outer
     // radius; each arc/chunk's chord-derived radius from makeTorusArc). They
@@ -4184,9 +4238,9 @@ export class Asteroid {
     // damage (gateApplyDamage) and the eye cannot fire. Rendering holds a
     // quiet black silhouette for most of the window, then shudders, dusts off
     // its crust, and opens the eye in the trailing revealActiveDuration.
-    if (this.isBoss() && this.bossPhase === "dormant") {
+    if (this.isDormantSilhouette()) {
       this.bossRevealT += dt;
-      if (this.bossRevealT >= ENTITY_CONFIG.boss.revealDuration) {
+      if (this.bossRevealT >= this.revealTiming().total) {
         this.bossPhase = "live";
         // One-shot edge flag picked up next frame by gameUpdate to play the
         // dissonant eye-open stinger and zero out the player's combo. Cleared
@@ -4661,6 +4715,32 @@ export class Asteroid {
 
   isBossFamily(): boolean {
     return this.isBoss() || this.isBossFragment();
+  }
+
+  isSepulchre(): boolean {
+    return this.kind === "sepulchre";
+  }
+
+  // The tomb and the four bearers carrying it — one encounter, so armour,
+  // rhythm and rendering all ask about the family rather than the kind.
+  isSepulchreFamily(): boolean {
+    return this.kind === "sepulchre" || this.kind === "pallbearer";
+  }
+
+  // Kinds that arrive dormant: a long approach where the body is still
+  // masquerading as the background object it just detached from.
+  hasRevealPhase(): boolean {
+    return this.isBoss() || this.isSepulchre();
+  }
+
+  // While dormant a boss is intangible, undamageable and not a target — it is
+  // scenery. Collision, targeting and the beat-flash pass all gate on this
+  // rather than re-testing kind + phase at each site.
+  isDormantSilhouette(): boolean {
+    if (this.bossPhase !== "dormant") return false;
+    // A Pallbearer keeps no clock of its own: it is carrying a sleeping tomb,
+    // and it wakes when the tomb does (see tickSepulchre).
+    return this.hasRevealPhase() || this.kind === "pallbearer";
   }
 
   // Terminal boss shards that ring like Bassteroids: they flash on a measure
@@ -5241,41 +5321,80 @@ export class Asteroid {
     // tier. The mandatory debris is glass + keystone (the iconic pair); column
     // and rubble fill in for bigger breaks.
     if (this.kind === "bell") {
-      const baseAngle = impactDir
-        ? Math.atan2(impactDir.y, impactDir.x)
-        : Math.atan2(this.vel.y, this.vel.x);
-      const parentSpeed = Math.hypot(this.vel.x, this.vel.y);
-      const ejectDist = this.radius * 0.45;
       // Glass + keystone always; add column + rubble as the fragment grows.
       const pieces: AsteroidKind[] =
         this.size === "large" ? ["glassShard", "cathedralKeystone", "columnDrum", "rubbleBlock"]
         : this.size === "medium" ? ["glassShard", "cathedralKeystone", "rubbleBlock"]
         : ["glassShard", "cathedralKeystone"];
-      const fragmentList: Asteroid[] = [];
-      // Fan the pieces forward of the impact in an even spread so none flies
-      // straight back at the shooter.
-      const spread = 1.7;
-      for (let i = 0; i < pieces.length; i++) {
-        const frac = pieces.length === 1 ? 0 : i / (pieces.length - 1) - 0.5;
-        const childAngle = baseAngle + frac * spread + rand(-0.12, 0.12);
-        const childPos = {
-          x: this.pos.x + Math.cos(childAngle) * ejectDist,
-          y: this.pos.y + Math.sin(childAngle) * ejectDist,
-        };
-        // Glass shards fly fastest + spin hardest (lightest, sharpest); stone
-        // drums and rubble are heavier and tumble more slowly.
-        const isGlass = pieces[i] === "glassShard";
-        const speedMag = parentSpeed * rand(1.0, 1.4) + (isGlass ? rand(150, 210) : rand(90, 150));
-        const child = new Asteroid(childPos, fromAngle(childAngle, speedMag), "small", this.hue, pieces[i]);
-        child.rotSpeed = (isGlass ? rand(1.6, 2.8) : rand(0.6, 1.4)) * (rng() < 0.5 ? -1 : 1);
-        fragmentList.push(child);
-      }
-      return fragmentList;
+      return this.fanCathedralDebris(pieces, impactDir, "small", 1.7);
+    }
+    // A Pallbearer is a block of the tomb's own masonry, so it comes apart into
+    // the same carved pieces a bell does — its lamp face going out as the
+    // glass slivers off it.
+    if (this.kind === "pallbearer") {
+      return this.fanCathedralDebris(
+        ["glassShard", "cathedralKeystone", "columnDrum", "rubbleBlock", "glassShard"],
+        impactDir,
+        "small",
+        2.3,
+      );
+    }
+    // The tomb itself: the building comes down. A ring of medium wreckage
+    // thrown wide, with a spray of smaller carved pieces behind it — every one
+    // of them a shape the player has been shooting since level 11.
+    if (this.isSepulchre()) {
+      return [
+        ...this.fanCathedralDebris(
+          ["cathedralKeystone", "columnDrum", "rubbleBlock", "glassShard"],
+          impactDir,
+          "medium",
+          2.6,
+        ),
+        ...this.fanCathedralDebris(
+          ["glassShard", "rubbleBlock", "glassShard", "columnDrum", "cathedralKeystone", "rubbleBlock"],
+          impactDir,
+          "small",
+          3.4,
+        ),
+      ];
     }
     // Cathedral debris is terminal — carved chunks don't subdivide further.
     if (CATHEDRAL_DEBRIS_KINDS.includes(this.kind)) return [];
     if (this.size === "small") return [];
     return this.splitRegular(opts);
+  }
+
+  // Break a piece of the cathedral into recognisable carved building parts —
+  // the keystone that locked an arch, a sliver of stained glass, a column drum,
+  // a plain rubble block — fanned forward of the impact in an even spread so
+  // none flies straight back at the shooter. Glass is the lightest and sharpest
+  // so it flies fastest and spins hardest; stone tumbles.
+  private fanCathedralDebris(
+    pieces: AsteroidKind[],
+    impactDir: Vec | undefined,
+    size: AsteroidSize,
+    spread: number,
+  ): Asteroid[] {
+    const baseAngle = impactDir
+      ? Math.atan2(impactDir.y, impactDir.x)
+      : Math.atan2(this.vel.y, this.vel.x);
+    const parentSpeed = Math.hypot(this.vel.x, this.vel.y);
+    const ejectDist = this.radius * 0.45;
+    const fragmentList: Asteroid[] = [];
+    for (let i = 0; i < pieces.length; i++) {
+      const frac = pieces.length === 1 ? 0 : i / (pieces.length - 1) - 0.5;
+      const childAngle = baseAngle + frac * spread + rand(-0.12, 0.12);
+      const childPos = {
+        x: this.pos.x + Math.cos(childAngle) * ejectDist,
+        y: this.pos.y + Math.sin(childAngle) * ejectDist,
+      };
+      const isGlass = pieces[i] === "glassShard";
+      const speedMag = parentSpeed * rand(1.0, 1.4) + (isGlass ? rand(150, 210) : rand(90, 150));
+      const child = new Asteroid(childPos, fromAngle(childAngle, speedMag), size, this.hue, pieces[i]);
+      child.rotSpeed = (isGlass ? rand(1.6, 2.8) : rand(0.6, 1.4)) * (rng() < 0.5 ? -1 : 1);
+      fragmentList.push(child);
+    }
+    return fragmentList;
   }
 
   // Pick a fragment recipe for a non-bass, non-boss kill, with fragment
@@ -5517,6 +5636,15 @@ export class Asteroid {
     if (this.kind === "bossPlate") { this.renderBossPlate(ctx, t); return; }
     if (this.kind === "bossIrisShard") { this.renderBossIrisShard(ctx, t); return; }
     if (this.kind === "bossEmber") { this.renderBossEmber(ctx, t); return; }
+    if (this.isSepulchre()) {
+      if (this.bossPhase === "dormant") this.renderSepulchreDormant(ctx, t);
+      else this.renderSepulchreLive(ctx, t);
+      return;
+    }
+    if (this.kind === "pallbearer" && this.bossPhase === "dormant") {
+      this.renderPallbearerDormant(ctx);
+      return;
+    }
     if (this.kind === "wraith") { this.renderWraith(ctx, t); return; }
     if (this.kind === "torus" || this.kind === "torusArc" || this.kind === "torusChunk") {
       this.renderTorus(ctx, t);
@@ -5538,7 +5666,7 @@ export class Asteroid {
     // Cathedral pieces are dead derelict stone — blit opaque like a solid plate
     // so the rock sits against the starfield instead of glowing through it.
     // Metal hull is the same: inert plate, drawn opaque, not glowing through.
-    const isArchitectural = this.kind === "bell" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind);
+    const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind);
     ctx.globalCompositeOperation = isArchitectural ? "source-over" : "lighter";
 
     // A warble dims its whole body toward the void as it phases out. Under the
@@ -5559,6 +5687,9 @@ export class Asteroid {
     // ghosts away, so the player reads "it's leaving this plane". Skipped while
     // phased out — there the blurry faint body carries the read on its own.
     if (isWarble && this.warbleSolid) this.renderWarblePhase(ctx, time);
+
+    // Pallbearer lamp + toll ring, over the baked block.
+    if (this.kind === "pallbearer") this.renderPallbearerLive(ctx, time);
 
     // Glass prison: live eye-glow pulse over the baked silhouette. One pair of
     // faint red pinpricks per captive, breathing in and out so the figures
@@ -6299,9 +6430,17 @@ export class Asteroid {
   // Returns: swellT (0..1 body size), revealT (0..1 architecture visibility),
   // shudder (0..1 shake intensity), dust (0..1 crust-shedding amount), and
   // lidOpen (0..1 eye-open progress).
+  // Both bosses run the same dormant clock off their own config block: the
+  // planetoid's crust-and-eye reveal and the tomb's shudder-and-shutter arrival
+  // are the same shape of event, so they share the phase math below.
+  revealTiming(): { total: number; active: number } {
+    const cfg = this.isSepulchre() ? ENTITY_CONFIG.sepulchre : ENTITY_CONFIG.boss;
+    const total = Math.max(0.001, cfg.revealDuration);
+    return { total, active: Math.min(total, cfg.revealActiveDuration) };
+  }
+
   bossDormantPhase(): { swellT: number; revealT: number; shudder: number; dust: number; lidOpen: number } {
-    const total = Math.max(0.001, ENTITY_CONFIG.boss.revealDuration);
-    const active = Math.min(total, ENTITY_CONFIG.boss.revealActiveDuration);
+    const { total, active } = this.revealTiming();
     const elapsed = this.bossRevealT;
     const activeStart = total - active;
     // Seconds into the active window (negative while still quiet).
@@ -7869,6 +8008,438 @@ export class Asteroid {
       }
       ctx.restore();
     }
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------------
+  // The Sepulchre and its Pallbearers (level-20 boss). Everything here is
+  // carved from the same violet cathedral stone the `bell` archetypes use, so
+  // the tomb reads as the building all that Act II rubble fell off — the
+  // masonry, recess, dead-glass and rose-window painters below are the very
+  // ones a bell fragment wears.
+  // ---------------------------------------------------------------------
+
+  // A Pallbearer, baked: a funeral lantern cut from a block of the tomb's own
+  // masonry. The round lamp face is deliberately radially symmetric — a bearer
+  // is re-aimed every tick as the bier turns, and a face that reads the same at
+  // every angle keeps the silhouette legible while it wheels. The yoke bar
+  // across it runs along the ring's tangent, so the four of them read as
+  // shoulders under one bier rather than four loose rocks.
+  private paintPallbearerBody(ctx: CanvasRenderingContext2D) {
+    const H = this.hue;
+    const R = this.radius;
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.save();
+    this.traceOutline(ctx);
+    ctx.clip();
+
+    this.paintAsteroidStone(ctx, H, R);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    this.paintMasonryBand(ctx, H, R * 0.8, -R * 0.9, R * 0.9);
+    ctx.restore();
+
+    // The yoke: a dressed bar of stone laid across the block along the bier's
+    // tangent, with a lit upper lip and a shadowed under-edge so it stands
+    // proud of the courses behind it.
+    const yokeHalf = R * 0.16;
+    ctx.fillStyle = `hsla(${H}, 12%, 30%, 0.95)`;
+    ctx.fillRect(-yokeHalf, -R, yokeHalf * 2, R * 2);
+    ctx.strokeStyle = `hsla(${H + 8}, 16%, 68%, 0.55)`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-yokeHalf, -R);
+    ctx.lineTo(-yokeHalf, R);
+    ctx.stroke();
+    ctx.strokeStyle = `hsla(${H}, 22%, 6%, 0.7)`;
+    ctx.beginPath();
+    ctx.moveTo(yokeHalf, -R);
+    ctx.lineTo(yokeHalf, R);
+    ctx.stroke();
+
+    // The lamp face. Dead tracery over dead glass — the light in it is a live
+    // overlay that only arrives on the bearer's beat (see renderPallbearerLive).
+    this.paintRoseWindow(ctx, H, 0, 0, R * 0.42, 8);
+
+    // Specular catch on the lit shoulder.
+    const spec = ctx.createRadialGradient(-R * 0.45, -R * 0.5, 0, -R * 0.45, -R * 0.5, R * 0.5);
+    spec.addColorStop(0, `hsla(${H + 12}, 20%, 88%, 0.3)`);
+    spec.addColorStop(1, `hsla(${H}, 16%, 60%, 0)`);
+    ctx.fillStyle = spec;
+    ctx.beginPath();
+    ctx.arc(-R * 0.45, -R * 0.5, R * 0.5, 0, TAU);
+    ctx.fill();
+
+    this.paintStoneRelight(ctx, H, R);
+    ctx.restore();
+
+    this.paintStoneRim(ctx, H);
+    ctx.restore();
+  }
+
+  // A Pallbearer still riding the bier in. It reads exactly as the dormant tomb
+  // does — a black cut-out with the faintest rim — because that is the game's
+  // word for "scenery, not a target": both are intangible until the tomb wakes,
+  // and a bearer painted as a lit rock would just eat the player's shots and
+  // their combo.
+  renderPallbearerDormant(ctx: CanvasRenderingContext2D) {
+    const H = this.hue;
+    ctx.save();
+    ctx.translate(this.pos.x, this.pos.y);
+    ctx.fillStyle = `hsl(${H}, 40%, 3%)`;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = `hsla(${H + 10}, 50%, 40%, 0.3)`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Live overlay for a Pallbearer, drawn in the body's own rotated frame over
+  // the baked block. Two things animate: a cold ember that never quite goes out
+  // (so a dark bearer still reads as lit from within) and the toll — the lamp
+  // flaring and shedding a ring on the beat this bearer owns.
+  renderPallbearerLive(ctx: CanvasRenderingContext2D, time: number) {
+    const H = this.hue;
+    const R = this.radius;
+    // Everything here fades with the body: a bearer that has phased out is a
+    // smear, and a bright lamp floating where the smear is would read as a
+    // separate object rather than the same one going thin.
+    if (this.bossPhase === "dormant") return;
+    const presence = this.warbleOpacity;
+    const toll = this.tollFlash * presence;
+    const ember = (0.16 + 0.06 * Math.sin(time * 1.1 + this.membranePhase)) * presence;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    const lampR = R * 0.42;
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, lampR * (1.6 + 0.9 * toll));
+    glow.addColorStop(0, `hsla(${H + 20}, 100%, 92%, ${(ember + 0.75 * toll) * 0.9})`);
+    glow.addColorStop(0.35, `hsla(${H + 6}, 100%, 68%, ${(ember + 0.6 * toll) * 0.5})`);
+    glow.addColorStop(1, `hsla(${H}, 100%, 55%, 0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, lampR * (1.6 + 0.9 * toll), 0, TAU);
+    ctx.fill();
+
+    // The knell made visible: the toll throws a ring off the lamp that widens
+    // and thins as it goes, so the beat is readable from across the field even
+    // when the bearer itself is small on screen.
+    if (toll > 0.02) {
+      const ringR = R * (0.6 + 1.5 * (1 - toll));
+      ctx.strokeStyle = `hsla(${H + 14}, 100%, 82%, ${0.55 * toll})`;
+      ctx.lineWidth = 1.2 + 3.2 * toll;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringR, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // The dormant Sepulchre: the same long approach the planetoid makes, but the
+  // thing that swells out of the background is a slab of architecture, not a
+  // world. It stays a flat black cut-out until the active window, when it
+  // shudders, sheds its shroud of dust and stands revealed as a building.
+  renderSepulchreDormant(ctx: CanvasRenderingContext2D, t: number) {
+    const H = this.hue;
+    const phase = this.bossDormantPhase();
+    const r = this.radius * (0.42 + 0.58 * phase.swellT);
+
+    ctx.save();
+    let shakeX = 0, shakeY = 0;
+    if (phase.shudder > 0.001) {
+      const amp = phase.shudder * 6;
+      shakeX = Math.sin(t * 0.05) * amp * 0.5 + (cosmeticRng() - 0.5) * amp;
+      shakeY = Math.cos(t * 0.061) * amp * 0.5 + (cosmeticRng() - 0.5) * amp;
+    }
+    ctx.translate(this.pos.x + shakeX, this.pos.y + shakeY);
+
+    if (phase.revealT > 0.001) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const coronaA = 0.04 + 0.14 * phase.revealT;
+      const coronaR = r * (1.22 + 0.16 * phase.revealT);
+      const corona = ctx.createRadialGradient(0, 0, r * 0.7, 0, 0, coronaR);
+      corona.addColorStop(0, `hsla(${H}, 80%, 45%, ${coronaA * 0.5})`);
+      corona.addColorStop(0.55, `hsla(${H - 12}, 80%, 40%, ${coronaA * 0.25})`);
+      corona.addColorStop(1, `hsla(${H}, 80%, 45%, 0)`);
+      ctx.fillStyle = corona;
+      ctx.beginPath();
+      ctx.arc(0, 0, coronaR, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.fillStyle = `hsl(${H}, ${80 - phase.revealT * 30}%, ${1 + phase.revealT * 9}%)`;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    if (phase.dust > 0.001) this.paintBossDustOff(ctx, r, phase.dust, phase.revealT, t);
+
+    if (phase.revealT > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = phase.revealT;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, TAU);
+      ctx.clip();
+      this.paintSepulchreMasonry(ctx, r);
+      this.paintStoneRelight(ctx, H, r);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = `hsla(${H + 10}, 70%, ${30 + 45 * phase.revealT}%, ${0.35 + 0.4 * phase.revealT})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // The live Sepulchre. The body is a wall, not a planet: courses of dressed
+  // masonry, buttress ribs standing off it, and a great rose window for a face,
+  // shuttered by two stone leaves. While the bier holds, the shutter is closed
+  // and the tomb is inert scenery you cannot hurt; as the bearers fall the
+  // leaves grind apart and the reliquary behind them starts to show.
+  renderSepulchreLive(ctx: CanvasRenderingContext2D, t: number) {
+    const H = this.hue;
+    const r = this.radius;
+    const damageT = 1 - this.hp / Math.max(1, this.maxHp);
+    const open = this.shutterOpen;
+    const time = t * 0.001;
+
+    ctx.save();
+    ctx.translate(this.pos.x, this.pos.y);
+
+    // Slow corona breath, widening as the tomb opens and as it takes damage.
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const breath = 0.5 + 0.5 * Math.sin(t * 0.0014);
+    const breathAlpha = 0.06 + 0.05 * breath + 0.2 * open + 0.16 * damageT;
+    const breathR = r * (1.18 + 0.04 * breath + 0.1 * open);
+    const corona = ctx.createRadialGradient(0, 0, r * 0.75, 0, 0, breathR);
+    corona.addColorStop(0, `hsla(${H}, 90%, 50%, ${breathAlpha * 0.4})`);
+    corona.addColorStop(0.6, `hsla(${H + 10}, 90%, 55%, ${breathAlpha})`);
+    corona.addColorStop(1, `hsla(${H}, 90%, 50%, 0)`);
+    ctx.fillStyle = corona;
+    ctx.beginPath();
+    ctx.arc(0, 0, breathR, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.rotate(this.rotation);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, TAU);
+    ctx.clip();
+    this.paintSepulchreMasonry(ctx, r);
+    this.paintSepulchreFace(ctx, r, open);
+    this.paintStoneRelight(ctx, H, r);
+    this.paintReliquaryLight(ctx, r, open, time);
+    ctx.restore();
+
+    this.renderBossCracks(ctx, damageT);
+
+    // Rim: the dark contact edge that seats the tomb against the starfield,
+    // then a thin catch of light on top of it that glints on the same
+    // incommensurate sines the bassteroid rims use.
+    const shimmer = 0.5 + 0.5 * (0.6 * Math.sin(t * 0.0019) + 0.4 * Math.sin(t * 0.0041 + this.pos.x * 0.03));
+    ctx.save();
+    ctx.strokeStyle = `hsla(${H}, 30%, 5%, 0.9)`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, TAU);
+    ctx.stroke();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = `hsla(${H + 14}, 90%, ${58 + 14 * open}%, ${0.5 + 0.3 * shimmer})`;
+    ctx.lineWidth = 1.6 + 0.7 * shimmer;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.985, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+
+    if (this.flashAmount > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `hsla(${H + 25}, 100%, 90%, ${this.flashAmount * 0.3})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.05, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // The tomb's wall. Order matters: the stone body and everything carved into
+  // it go down first, then a single relight pass drops one terminator across
+  // the whole face — without it, the masonry's own flat fills wash the lighting
+  // out and the tomb reads as a printed pattern rather than a lit building.
+  // Called inside a clip to the body disc by both the dormant reveal and the
+  // live render, so the architecture resolves out of the black silhouette
+  // rather than being swapped in.
+  private paintSepulchreMasonry(ctx: CanvasRenderingContext2D, r: number) {
+    const H = this.hue;
+    ctx.globalCompositeOperation = "source-over";
+    const body = ctx.createRadialGradient(-r * 0.4, -r * 0.45, r * 0.1, 0, 0, r * 1.2);
+    body.addColorStop(0, `hsl(${H + 6}, 22%, 26%)`);
+    body.addColorStop(0.5, `hsl(${H}, 26%, 13%)`);
+    body.addColorStop(1, `hsl(${H - 14}, 36%, 4%)`);
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.05, 0, TAU);
+    ctx.fill();
+
+    // One belt of dressed courses across the middle, the way a bell fragment
+    // wears its band. Banding rather than tiling the whole disc is what leaves
+    // the crown and the foot as plain shadowed mass, so the eye reads a round
+    // body with a course line round it instead of a flat brick circle.
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    this.paintMasonryBand(ctx, H, r * 0.55, -r * 0.55, r * 0.55);
+    ctx.restore();
+
+    // Buttress ribs — dressed piers standing off the wall on radial lines. Each
+    // gets a lit up-left edge and a shadowed down-right one, which is what makes
+    // the face read as built depth rather than a painted pattern.
+    const ribs = 12;
+    for (let i = 0; i < ribs; i++) {
+      ctx.save();
+      ctx.rotate((i / ribs) * TAU);
+      const halfW = r * 0.045;
+      const inner = r * 0.5;
+      ctx.fillStyle = `hsla(${H}, 20%, 17%, 0.9)`;
+      ctx.fillRect(inner, -halfW, r - inner, halfW * 2);
+      ctx.strokeStyle = `hsla(${H + 8}, 20%, 62%, 0.4)`;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(inner, -halfW);
+      ctx.lineTo(r, -halfW);
+      ctx.stroke();
+      ctx.strokeStyle = `hsla(${H}, 28%, 4%, 0.7)`;
+      ctx.beginPath();
+      ctx.moveTo(inner, halfW);
+      ctx.lineTo(r, halfW);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Drop one light direction over everything painted so far. Multiply keeps the
+  // masonry and tracery underneath legible while pushing the lower-right of the
+  // body into shadow, so a face built out of many flat fills still ends up lit
+  // by the same upper-left sun as the rest of the game.
+  private paintStoneRelight(ctx: CanvasRenderingContext2D, hue: number, r: number) {
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    const shade = ctx.createRadialGradient(-r * 0.45, -r * 0.5, r * 0.15, 0, 0, r * 1.25);
+    shade.addColorStop(0, "hsl(0, 0%, 100%)");
+    shade.addColorStop(0.55, `hsl(${hue}, 20%, 52%)`);
+    shade.addColorStop(1, `hsl(${hue - 10}, 30%, 14%)`);
+    ctx.fillStyle = shade;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.1, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // The face, in stone: a great rose window and the two shutter leaves that
+  // hold it shut. `open` (0..1) parts the leaves, so the player reads exactly
+  // how much of the bier is left from across the field. The light behind it is
+  // a separate additive pass (see paintReliquaryLight) laid down after the
+  // relight, so the one thing in the frame that is actually glowing doesn't get
+  // shaded like stone.
+  private paintSepulchreFace(ctx: CanvasRenderingContext2D, r: number, open: number) {
+    const H = this.hue;
+    const drumR = r * 0.5;
+    const roseR = r * 0.34;
+
+    // The drum: a raised round housing standing proud of the wall, where the
+    // ribs all run to. It gives the rose something to be set into, so the face
+    // reads as a building's west front rather than a pattern on a ball.
+    const drum = ctx.createRadialGradient(-drumR * 0.4, -drumR * 0.45, drumR * 0.1, 0, 0, drumR);
+    drum.addColorStop(0, `hsl(${H + 6}, 22%, 30%)`);
+    drum.addColorStop(0.7, `hsl(${H}, 24%, 17%)`);
+    drum.addColorStop(1, `hsl(${H - 10}, 30%, 8%)`);
+    ctx.fillStyle = drum;
+    ctx.beginPath();
+    ctx.arc(0, 0, drumR, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = `hsla(${H}, 28%, 5%, 0.85)`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, drumR, 0, TAU);
+    ctx.stroke();
+    ctx.strokeStyle = `hsla(${H + 10}, 22%, 70%, 0.4)`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, drumR * 0.94, Math.PI * 0.75, Math.PI * 1.85);
+    ctx.stroke();
+
+    this.paintRoseWindow(ctx, H, 0, 0, roseR, 12);
+
+    // Two shutter leaves, cut to the rose and no wider — the lid over the
+    // reliquary, not a slab over the whole front. They are darker than the wall
+    // they sit in, so a shut tomb reads as a hole where the light should be and
+    // `open` is unmistakable from across the field.
+    const travel = open * roseR * 1.15;
+    const leafW = roseR * 1.04;
+    const leafH = roseR * 1.04;
+    for (const side of [-1, 1] as const) {
+      ctx.save();
+      ctx.translate(side * travel, 0);
+      const x = side < 0 ? -leafW : 0;
+      const grad = ctx.createLinearGradient(x, -leafH, x + leafW, leafH);
+      grad.addColorStop(0, `hsl(${H + 4}, 24%, ${side < 0 ? 15 : 10}%)`);
+      grad.addColorStop(1, `hsl(${H - 8}, 30%, ${side < 0 ? 8 : 4}%)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(x, -leafH, leafW, leafH * 2);
+      // Bevel: a lit lip along the meeting edge and a shadowed one along the
+      // outer, so the pair reads as two slabs being drawn apart.
+      ctx.strokeStyle = `hsla(${H + 10}, 24%, 76%, 0.55)`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(side < 0 ? -1 : 1, -leafH);
+      ctx.lineTo(side < 0 ? -1 : 1, leafH);
+      ctx.stroke();
+      ctx.strokeStyle = `hsla(${H}, 30%, 3%, 0.85)`;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(x + (side < 0 ? 0 : leafW), -leafH);
+      ctx.lineTo(x + (side < 0 ? 0 : leafW), leafH);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // The reliquary itself, welling up through the tracery as the leaves part.
+  // Additive and unshaded: this is the only light source on the body, and how
+  // bright it is IS the fight's state.
+  private paintReliquaryLight(ctx: CanvasRenderingContext2D, r: number, open: number, time: number) {
+    if (open <= 0.001) return;
+    const H = this.hue;
+    const lightR = r * (0.5 + 0.3 * open);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const pulse = 0.7 + 0.3 * Math.sin(time * 2.1);
+    const light = ctx.createRadialGradient(0, 0, 0, 0, 0, lightR);
+    light.addColorStop(0, `hsla(${H + 25}, 100%, 95%, ${0.85 * open * pulse})`);
+    light.addColorStop(0.4, `hsla(${H + 8}, 100%, 70%, ${0.45 * open * pulse})`);
+    light.addColorStop(1, `hsla(${H}, 100%, 55%, 0)`);
+    ctx.fillStyle = light;
+    ctx.beginPath();
+    ctx.arc(0, 0, lightR, 0, TAU);
+    ctx.fill();
     ctx.restore();
   }
 }

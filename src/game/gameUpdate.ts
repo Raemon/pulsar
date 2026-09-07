@@ -19,6 +19,8 @@ import {
 import { BASS_KIND_SOUND, BASS_SPLIT_PITCH_RATIO, tickBassBeats, tickAuxBeats } from "./bassClock";
 import { tickWaveEvents } from "./waveEvents";
 import { detonateShockwave } from "./shockwave";
+import { actOfWave } from "./acts";
+import { tickSepulchre } from "./sepulchre";
 import { spawnWave, isBossWave, updateBgBeatIntensity, spawnTutorialSmall, spawnTutorialBig, rhythmSpeedMul, displayWave } from "./waveDirector";
 import { showWaveSummary, hideWaveSummary, buildSummarySchedule, SummarySchedule } from "./waveSummary";
 import { beginWaveTransition, tickWaveTransition } from "./waveTransition";
@@ -470,7 +472,7 @@ const transitionToGameOver = (game: Game) => {
   }
 };
 
-import { BOSS_MUSIC_VARIATION, HALO_MUSIC_POOL, PLAY_COMBO_MUSIC, pickHaloMusicVariation, pickHaloMusicVariationExcluding } from "./haloMusicConfig";
+import { HALO_MUSIC_POOL, PLAY_COMBO_MUSIC, bossMusicVariation, pickHaloMusicVariation, pickHaloMusicVariationExcluding } from "./haloMusicConfig";
 import { isFullHaloWave, pickFullHaloSong, pickFullHaloSongExcluding } from "./haloFullMusicConfig";
 import { BASS_MEASURE_LENGTH } from "../Asteroid";
 
@@ -538,10 +540,11 @@ const syncHaloAmbient = (game: Game) => {
     // On boss waves, force the dedicated climactic variation. The boss
     // theme replaces the random halo pick AND blocks the 24x climax swap so
     // the boss-fight track plays for the entire engagement.
-    const bossWave = isBossWave(game.wave);
+    const bossTheme = bossMusicVariation(game.wave);
+    const bossWave = bossTheme !== null;
     if (hasYellowHalo) {
       if (!game.sound.haloMusic) {
-        const variation = bossWave ? BOSS_MUSIC_VARIATION : pickHaloMusicVariation(game.wave);
+        const variation = bossTheme ?? pickHaloMusicVariation(game.wave);
         // Schedule the music's downbeat on the next bass-measure boundary
         // so the loop's chord changes align with the bass field's measure
         // clock. Worst-case wait is BASS_MEASURE_LENGTH (2 s); typical is
@@ -558,11 +561,11 @@ const syncHaloAmbient = (game: Game) => {
         // track is still playing and the !haloMusic branch above never ran, so
         // force a swap to the boss theme. climaxActive doubles as the swap-in-
         // flight guard so a frame's worth of re-entry can't stack crossfades.
-        if (bossWave && game.sound.haloMusic.variation !== BOSS_MUSIC_VARIATION && !game.sound.haloMusic.climaxActive) {
+        if (bossTheme && game.sound.haloMusic.variation !== bossTheme && !game.sound.haloMusic.climaxActive) {
           const nextDownbeat = Math.ceil(game.beatTime / BASS_MEASURE_LENGTH) * BASS_MEASURE_LENGTH;
           const measureAlignDelay = nextDownbeat - game.beatTime;
           game.beatPhaseCorrection = 0;
-          void game.sound.crossfadeHaloMusic(BOSS_MUSIC_VARIATION, measureAlignDelay, game.beatTime);
+          void game.sound.crossfadeHaloMusic(bossTheme, measureAlignDelay, game.beatTime);
         }
         if (hasClimax && !game.sound.haloMusic.climaxActive && !bossWave) {
           const next = pickHaloMusicVariationExcluding(game.sound.haloMusic.variation, game.wave);
@@ -1112,6 +1115,7 @@ const tickWorldEntities = (game: Game, _dt: number, musicDt: number) => {
   // shared phantom rings here so every fragment is snapped onto its slot before
   // collision runs.
   tickTorusGroups(game.asteroids, musicDt, game.w, game.h);
+  tickSepulchre(game, musicDt);
   // defensive prune; no asteroid kind currently clears alive on its own.
   compactInPlace(game.asteroids, (a) => a.alive);
   for (const al of game.aliens) al.update(musicDt, game.w, game.h);
@@ -1449,7 +1453,7 @@ export const advanceWave = (game: Game, targetWave?: number, extraSpawnDelaySec 
   game.sound.play("waveClear");
   game.sound.play("pulsarHum");
   game.pulsar.waveClear();
-  if (wasBossWave) game.pulsar.setBossPlanetState("defeated");
+  if (wasBossWave) game.pulsar.setBossPlanetState("defeated", actOfWave(completedWave));
   game.waveTransitioning = true;
   // The wave is over — every open skip portal irises shut, so one can never
   //   be entered while the transition below is in flight.

@@ -30,7 +30,7 @@ export type AimHint = {
 // The trajectory preview skips near-stationary targets, so a parked rock has no reticule for
 //   the pulse to bloom around — leave the hint unspent and let a later miss find a live one.
 const isLockable = (a: Asteroid): boolean =>
-  !(a.isBoss() && a.bossPhase === "dormant") && !a.isPhasedOut() && Math.hypot(a.vel.x, a.vel.y) >= 1;
+  !a.isDormantSilhouette() && !a.isPhasedOut() && Math.hypot(a.vel.x, a.vel.y) >= 1;
 
 const distanceTo = (game: Game, from: Vec, a: Asteroid): number => {
   const [dx, dy] = toroidalDelta(a.pos.x - from.x, a.pos.y - from.y, game.w, game.h);

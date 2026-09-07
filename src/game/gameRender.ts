@@ -15,6 +15,7 @@ import { renderShipTrajectoryPreview } from "../ship/shipTrajectoryPreview";
 import { renderLasers, renderLaserChargeDots, renderLaserAmbientFlash } from "./laserShot";
 import { renderLaserReticule } from "../ship/reticule/laserReticule";
 import { renderBossBeams } from "./bossBeam";
+import { renderBierTethers } from "./sepulchre";
 import { renderSlowMoTimerBar } from "./slowMoTimerBar";
 import { renderBonusLifeFlash } from "./bonusLife";
 import { updateSpectrumVisualizer, paintSpectrumVisualizer } from "./spectrumVisualizer";
@@ -134,6 +135,9 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
     beatPulse: currentBeatPulse(game),
     super: superRhythm(game),
   };
+  // The bier's tethers go down before the bodies do, so the tomb and its
+  // bearers sit on top of the lines running between them.
+  renderBierTethers(ctx, game, game.time);
   for (const a of game.asteroids) if (!a.entering) a.render(ctx, game.time, comboHalo);
   for (const c of game.canisters) c.render(ctx, game.time);
   for (const g of game.gems) if (!g.entering) g.render(ctx, game.time);
@@ -151,7 +155,7 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
     // faint ghost mid-plane-shift; a bright pulse on either breaks that read.
     // Same set the reticule + rotated pass already exclude.
     for (const a of game.asteroids) {
-      if (a.entering || (a.isBoss() && a.bossPhase === "dormant") || a.isPhasedOut()) continue;
+      if (a.entering || a.isDormantSilhouette() || a.isPhasedOut()) continue;
       if (a.kind === "citadel") {
         // The flash disc is brightest dead-centre — clip the escape hole out
         // so it stays bare space instead of pulsing with the shell.
@@ -255,7 +259,7 @@ export const targetsForReticule = (game: Game) => [
   // Skip intangible rocks — a dormant boss and a phased-out warble both pass
   // bullets through, so the reticule shouldn't promise a hit on them.
   // (Entering spawns ARE included: they're live toroidal targets.)
-  ...game.asteroids.filter((a) => !(a.isBoss() && a.bossPhase === "dormant") && !a.isPhasedOut()),
+  ...game.asteroids.filter((a) => !a.isDormantSilhouette() && !a.isPhasedOut()),
   // Warping-out aliens are intangible and leaving — don't lock them. Comets are
   // tangible their whole life (they burst apart in place, no warp), so all count.
   ...game.comets,

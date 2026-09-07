@@ -8,12 +8,20 @@ import { TAU } from "../vec";
 
 const WARBLE = ENTITY_CONFIG.warble;
 const CITADEL = ENTITY_CONFIG.citadel;
+const SEPULCHRE = ENTITY_CONFIG.sepulchre;
 
 // Citadel phase-cycle geometry in seconds (BEAT_GRID = one beat). waveDirector
 // uses these to align a fresh citadel's offset so it spawns just-solid.
 export const citadelSolidLen = () => CITADEL.solidBeats * BEAT_GRID;
 export const citadelCycleLen = () => (CITADEL.solidBeats + CITADEL.outBeats) * BEAT_GRID;
 export const citadelFadeLen = () => CITADEL.fadeBeats * BEAT_GRID;
+
+// The Pallbearers' phase cycle, same shape as the citadel's on the Sepulchre's
+// own timings. spawnSepulchreEncounter reads the cycle length to stagger the
+// four bearers a quarter of it apart.
+export const bearerSolidLen = () => SEPULCHRE.phaseSolidBeats * BEAT_GRID;
+export const bearerCycleLen = () => (SEPULCHRE.phaseSolidBeats + SEPULCHRE.phaseOutBeats) * BEAT_GRID;
+export const bearerFadeLen = () => SEPULCHRE.phaseFadeBeats * BEAT_GRID;
 
 // kick (C2), pluck (G2), boom (F2), snap (C3) — I-IV-V-percussion worst case stays musical.
 export const BASS_KIND_SOUND: Record<"bassA" | "bassB" | "bassC" | "bassD", "bassKick" | "bassPluck" | "bassBoom" | "bassSnap"> = {
@@ -129,6 +137,19 @@ const tickWarbles = (game: Game) => {
       const d = t < solidLen ? Math.min(t, solidLen - t) : -Math.min(t - solidLen, cycleLen - t);
       const present = Math.max(0, Math.min(1, 0.5 + d / citadelFadeLen()));
       a.warbleOpacity = CITADEL.lowOpacity + (1 - CITADEL.lowOpacity) * present;
+      a.warbleSolid = d > 0;
+    } else if (a.kind === "pallbearer") {
+      // Same square-ish cycle as the citadel, on the Sepulchre's own timings.
+      // Its phase offset is set from the bearer's index at spawn, so the four
+      // of them drop out a quarter-cycle apart and the ring is never all ghost:
+      // there is always a bearer you may shoot and a quadrant that cannot shoot
+      // back.
+      const cycleLen = bearerCycleLen();
+      const solidLen = bearerSolidLen();
+      const t = (((game.beatTime + a.warblePhaseOffset) % cycleLen) + cycleLen) % cycleLen;
+      const d = t < solidLen ? Math.min(t, solidLen - t) : -Math.min(t - solidLen, cycleLen - t);
+      const present = Math.max(0, Math.min(1, 0.5 + d / bearerFadeLen()));
+      a.warbleOpacity = SEPULCHRE.phaseLowOpacity + (1 - SEPULCHRE.phaseLowOpacity) * present;
       a.warbleSolid = d > 0;
     }
   }
