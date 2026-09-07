@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 36;
+export const REPLAY_FORMAT_VERSION = 37;
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
@@ -143,6 +143,10 @@ export const REPLAY_FORMAT_VERSION = 36;
 //   at its entrance image. Combo totals move wherever a range-boosted shot lands deep,
 //   and the drift-lock proximity (sim state) can now see a dot through the seam, so
 //   v35 recordings re-sim into different runs.
+// v37 adds the level-20 Sepulchre encounter (internal wave 21): the tomb and
+//   its four Pallbearers replace what was an ordinary Act II wave, and the boss
+//   table now absorbs a wave-skip landing at 21, so a v36 recording that
+//   reached the end of Act II re-sims into a different wave.
 // Beat-clock snapshot taken on the recording's first captured frame. These are
 //   all deterministic dt-sums / dt-derived indices accumulated during the held
 //   intro; restoring them on replay reproduces the recording's frame-0 beat

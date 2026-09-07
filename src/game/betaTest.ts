@@ -4,6 +4,7 @@ import { Ship } from "../Ship";
 import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
 import { AsteroidKind, AsteroidSize, spawnBossAt, BASS_KINDS } from "../Asteroid";
+import { spawnSepulchreEncounter } from "./sepulchre";
 import { AlienSize } from "../Alien";
 import { PowerupKind, POWERUP_KINDS, spawnCanister } from "../Canister";
 import { syncHud, syncPowerupHud } from "./hud";
@@ -98,6 +99,8 @@ const ASTEROID_TILES: Record<AsteroidKind, AsteroidTile | null> = {
   glassShard: null,
   columnDrum: null,
   rubbleBlock: null,
+  sepulchre: null,
+  pallbearer: null,
 };
 
 // Labels for every powerup the type allows; the palette only renders the ones
@@ -151,9 +154,23 @@ const ELEMENTS: BetaElement[] = [
     label: "Boss",
     group: "Enemy",
     apply: (g) => {
-      const pos = g.pulsar.bossPlanetPos();
-      g.pulsar.setBossPlanetState("active");
+      const pos = g.pulsar.bossBodyPos(1);
+      g.pulsar.setBossPlanetState("active", 1);
       g.asteroids.push(spawnBossAt(pos, g.w, g.h));
+    },
+  },
+  {
+    id: "sepulchre",
+    label: "Sepulchre",
+    group: "Enemy",
+    apply: (g) => {
+      const pos = g.pulsar.bossBodyPos(2);
+      g.pulsar.setBossPlanetState("active", 2);
+      const encounter = spawnSepulchreEncounter(g, pos);
+      // The panel exists to put a combination on the field now; a minute of
+      // dormant approach before the tomb is even damageable defeats that.
+      for (const piece of encounter) piece.bossPhase = "live";
+      g.asteroids.push(...encounter);
     },
   },
   { id: "comet", label: "Comet", group: "Hazard", apply: (g) => spawnComet(g) },

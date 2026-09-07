@@ -438,8 +438,8 @@ export const ENTITY_CONFIG = {
   // Combat stats (hp/score/radius/hue/damageReduction) for the whole boss and
   // its fragments live in ENTITY_STATS; this block is the fight's timing tuning.
   boss: {
-    waves: [11] as readonly number[],
-    foreshadowWaves: [10] as readonly number[],
+    // Which waves the fight lands on lives in acts.ts (BOSS_ENCOUNTERS) — this
+    // block is only the fight's own tuning.
     // Iris radius for the whole-body eyelid layout (not the bossEye fragment).
     eyeRadius: 48,
     // Bolt projectile speed; cadence + telegraph snap to the boss 8-beat rhythm.
@@ -448,6 +448,57 @@ export const ENTITY_CONFIG = {
     // trailing revealActiveDuration carries the shudder / dust-off / eye-open.
     revealDuration: 60.0,
     revealActiveDuration: 8.0,
+  },
+
+  // The Act II boss (display level 20): a tomb-world of the same violet
+  // cathedral stone the whole act has been shedding, carried by four
+  // Pallbearers on a slow ring around it.
+  //
+  // The fight is a formation rather than a duel. Each Pallbearer holds one
+  // beat of the measure, tolls the knell on it, and fires down its own bearing
+  // — so the pressure comes from four directions on four beats instead of one
+  // dodge line. Each also phases on its own quarter of the citadel's cycle, so
+  // the one you may shoot is whichever is currently solid, and the quadrant
+  // that just went quiet is the safe one to sit in.
+  //
+  // The Sepulchre itself is behind them: its armour is `shellArmourPerBearer`
+  // per living Pallbearer, so it shrugs off everything until the bier is
+  // broken and softens one step for every bearer that falls. With the last one
+  // gone the tethers snap, the shutter over its reliquary grinds open, and it
+  // takes all four beats itself.
+  sepulchre: {
+    bearerCount: 4,
+    // Radius of the ring the Pallbearers ride, and how fast it turns (rad/s).
+    // Wide enough that the ship can fly the gap between the tomb and a bearer —
+    // the inside of the bier is a real place to be, and being caught in there
+    // when the quadrant you are in comes back into phase is the fight's
+    // sharpest moment. Slow enough that a player can pick a bearer and stay
+    // with it.
+    bierRadius: 420,
+    bierSpin: 0.12,
+    // Dormant approach before the shell wakes, mirroring the level-10 boss:
+    // only the trailing active window carries the shudder and the shutter.
+    revealDuration: 60.0,
+    revealActiveDuration: 8.0,
+    // Armour the shell wears per living Pallbearer, on top of its bare
+    // `damageReduction`. The ladder it makes (22 / 17 / 12 / 7 / 2) is the
+    // fight's difficulty curve written as a number: with the bier whole only a
+    // heroic drift shot bites, and every bearer that falls brings the tomb down
+    // one rung until an ordinary on-beat shot finishes it.
+    shellArmourPerBearer: 5,
+    // Beats the shutter takes to grind open once the last bearer dies.
+    shutterBeats: 4,
+    // Aimed toll-shot speed. Slower than the boss's bolt — four of them are in
+    // the air at once and the player needs room to read all four.
+    bearerBulletSpeed: 150,
+    // Phase cycle, in beats, per bearer: solid, then out, with a crossfade
+    // centred on each flip. Bearers sit a quarter-cycle apart so exactly one
+    // is dropping out as another comes back — the ring is never all ghost.
+    phaseSolidBeats: 12,
+    phaseOutBeats: 4,
+    phaseFadeBeats: 2,
+    phaseLowOpacity: 0.4,
+    phaseSolidThreshold: 0.75,
   },
 
   bgBeatIntensity: {
@@ -665,6 +716,27 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     hp: 2,
     score: 150,
     hue: 196,
+  },
+
+  // Act II boss. Violet cathedral stone — the same hue as the bell and the
+  // rubble it has been shedding all act, so the tomb reads as where all of
+  // that fell off. The shell's listed armour is what's left once the bier is
+  // broken; the per-bearer armour on top of it lives in ENTITY_CONFIG.
+  sepulchre: {
+    hp: 64,
+    score: 6000,
+    radius: 150,
+    hue: 285,
+    damageReduction: 2,
+    outlineSamples: 26,
+  },
+  pallbearer: {
+    hp: 14,
+    score: 1500,
+    radius: 58,
+    hue: 285,
+    damageReduction: 2,
+    outlineSamples: 20,
   },
 
   // Cathedral debris a "bell" shatters into; hue here is only a standalone

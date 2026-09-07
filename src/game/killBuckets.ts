@@ -21,5 +21,6 @@ export type KillBucket =
   | "alien_small"
   | "comet"
   | "boss"
+  | "sepulchre"
   | "glassPrison"
   | "wraith";

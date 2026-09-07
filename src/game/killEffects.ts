@@ -62,6 +62,7 @@ const bumpKill = (game: Game, bucket: KillBucket) => {
 
 const asteroidBucket = (a: Asteroid): KillBucket => {
   if (a.kind === "boss" || a.isBossFragment()) return "boss";
+  if (a.isSepulchreFamily()) return "sepulchre";
   if (a.isBass()) return "bassteroid";
   if (a.kind === "chime" || a.kind === "bell" || a.kind === "warble" || a.kind === "citadel") return a.kind;
   if (a.kind === "asteroidWithGem") return "asteroidWithGem";

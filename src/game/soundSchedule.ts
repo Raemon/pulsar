@@ -22,6 +22,7 @@
 // and it is not worth a second of title-screen wait to avoid.
 
 import { ENTITY_CONFIG as CFG } from "./entityConfig";
+import { BOSS_FORESHADOW_WAVES, BOSS_WAVES } from "./acts";
 import { CALIBRATION_BEAT_INTENSITY } from "./beatCalibration";
 import type { SoundName } from "../Sound";
 
@@ -81,8 +82,8 @@ const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 const BASS_WAVE = 3;
 const bassPitches = [1, 0.8409];
 
-// The boss's voices are first heard on its foreshadow wave, not the fight.
-const bossFirstWave = Math.min(...CFG.boss.waves, ...CFG.boss.foreshadowWaves);
+// A boss's voices are first heard on its foreshadow wave, not the fight.
+const bossFirstWave = Math.min(...BOSS_WAVES, ...BOSS_FORESHADOW_WAVES);
 
 export const SOUND_LOAD_SCHEDULE: readonly SoundLoadEntry[] = [
   // ── Gate: silent on miss, audible in the first seconds ──────────────────

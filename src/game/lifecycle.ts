@@ -13,7 +13,7 @@ import { renderKilledRow } from "./killedParade";
 import { snapshotShipKill } from "./killSnapshot";
 import { emitShipDebris } from "./particleBursts";
 import { clearPlayerFilter, hideScoreEntry, isScoreEntryBlockingEnter, showLeaderboard, showScoreEntry } from "./scoreEntry";
-import { BOSS_MUSIC_VARIATION, HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL } from "./haloMusicConfig";
+import { BOSS_MUSIC_VARIATIONS, HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL } from "./haloMusicConfig";
 import { FULL_HALO_SONGS, USE_FULL_HALO_MUSIC, type FullHaloSong } from "./haloFullMusicConfig";
 import { hideWaveSummary } from "./waveSummary";
 import { hideWaveAnnounce } from "./gameUpdate";
@@ -371,7 +371,7 @@ export const unfreezeIntroWorld = (game: Game) => {
   // haunting pool isn't needed until wave 12 and the boss variation not
   // until wave 11, so we have minutes of slack to warm them one stem at
   // a time without contending with active beat scheduling.
-  game.sound.preloadHaloMusicSequential([...HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATION]);
+  game.sound.preloadHaloMusicSequential([...HAUNTING_MUSIC_POOL, ...BOSS_MUSIC_VARIATIONS]);
   // Post-calibration chain only: spawn wave 1 + tutorial if we haven't yet.
   //   startGameWithIntro already spawned the wave; in that case `hasSpawnedFirstLevel`
   //   is true and beginFirstWaveByTutorialFlag is skipped.
