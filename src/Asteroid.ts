@@ -160,9 +160,8 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // Rare across display-levels 5-9, then a common obstacle afterwards.
 export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard";
 
-// The two phased kinds share the warble opacity/solid state machine, the
-// blurred-ghost render path and the phase drone; they differ in cycle length
-// (bassClock drives both) and the citadel's armour + escape hole.
+// Phased kinds share the ghost render path and phase drone. bassClock drives
+// the warble's cosine and the citadel/bearer's longer square cycles.
 export const isPhasedKind = (kind: AsteroidKind): boolean =>
   kind === "warble" || kind === "citadel" || kind === "pallbearer";
 
