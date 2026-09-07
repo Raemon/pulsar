@@ -1,7 +1,10 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 37;
+export const REPLAY_FORMAT_VERSION = 38;
+
+// v38 changes Sepulchre combat timing and progression. Runs that reach the
+//   encounter must not be re-simulated with v37's rules.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

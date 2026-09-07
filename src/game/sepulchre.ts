@@ -75,17 +75,16 @@ export const spawnSepulchreEncounter = (game: Game, pos: { x: number; y: number 
 // First measure slot at or after `beatTime` whose offset within the measure is
 // `offset`, snapped to the beat grid so float drift can never walk a toll off
 // the beat (same trick alignBassBeat plays for a bassteroid).
-const nextSlotAfter = (beatTime: number, offset: number): number => {
-  const k = Math.ceil((beatTime - offset - 1e-6) / BASS_MEASURE_LENGTH);
-  return Math.round((k * BASS_MEASURE_LENGTH + offset) / BEAT_GRID) * BEAT_GRID;
+const nextSlotAfter = (beatTime: number, offset: number, interval = BASS_MEASURE_LENGTH): number => {
+  const k = Math.ceil((beatTime - offset - 1e-6) / interval);
+  return Math.round((k * interval + offset) / BEAT_GRID) * BEAT_GRID;
 };
 
-// A clock that fell a whole measure behind — the beat time jumped, as it does
-// on a replay seek — re-arms to the next slot instead of paying out every toll
-// it missed in one frame. Legit tolling never lags more than a frame.
-const reArmIfStalled = (game: Game, piece: Asteroid) => {
-  if (game.beatTime - piece.nextBeatAt <= BASS_MEASURE_LENGTH) return;
-  piece.nextBeatAt = Math.ceil((game.beatTime + BEAT_GRID) / BEAT_GRID) * BEAT_GRID;
+// Recover from clock jumps without a backlog or losing this voice's beat slot.
+// The tomb may legitimately wait a full measure for its first downbeat.
+const reArmIfStalled = (game: Game, piece: Asteroid, interval: number, offset: number) => {
+  if (Math.abs(game.beatTime - piece.nextBeatAt) <= BASS_MEASURE_LENGTH) return;
+  piece.nextBeatAt = nextSlotAfter(game.beatTime, offset, interval);
 };
 
 const shellArmour = (bearersAlive: number): number =>
@@ -114,7 +113,8 @@ export const tickSepulchre = (game: Game, dt: number) => {
     // The tomb went first (a drift shot got through the bier): the bier drops.
     // Each bearer keeps the tangential motion it was riding and flies off on it
     // rather than freezing in place around a hole in the sky.
-    if (bearer.bierCore && !bearer.bierCore.alive) releaseBearer(bearer);
+    // Kills remove asteroids from the field without clearing their alive flag.
+    if (bearer.bierCore && !game.asteroids.includes(bearer.bierCore)) releaseBearer(bearer);
     if (bearer.bossPhase === "dormant") continue;
     bearer.tollFlash = Math.max(0, bearer.tollFlash - dt * 2.2);
     tollBearer(game, bearer);
@@ -159,7 +159,7 @@ const releaseBearer = (bearer: Asteroid) => {
 // quadrant that has just phased out is both a rest in the knell and a hole in
 // the crossfire.
 const tollBearer = (game: Game, bearer: Asteroid) => {
-  reArmIfStalled(game, bearer);
+  reArmIfStalled(game, bearer, BASS_MEASURE_LENGTH, bearer.bearerBeat * BEAT_GRID);
   while (game.beatTime >= bearer.nextBeatAt) {
     bearer.tollFlash = 1;
     bearer.haloEcho = 1;
@@ -177,7 +177,7 @@ const tollBearer = (game: Game, bearer: Asteroid) => {
 // outward through it — the opposite read from the boss's single locked line.
 const tollTomb = (game: Game, tomb: Asteroid) => {
   if (tomb.shutterOpen < 1) return;
-  reArmIfStalled(game, tomb);
+  reArmIfStalled(game, tomb, BEAT_GRID, 0);
   while (game.beatTime >= tomb.nextBeatAt) {
     tomb.tollFlash = 1;
     const isDownbeat = Math.abs(tomb.nextBeatAt % BASS_MEASURE_LENGTH) < 1e-6;
