@@ -5,7 +5,6 @@ import { ENTITY_CONFIG, ENTITY_STATS } from "./entityConfig";
 import { BEAT_GRID } from "./rhythmConstants";
 import { bearerCycleLen } from "./bassClock";
 import { TAU, nearestImageOf, v, wrapMut } from "../vec";
-import { syncComboHud } from "./hud";
 
 // The level-20 fight: the Sepulchre and the four Pallbearers carrying it.
 //
@@ -97,6 +96,7 @@ export const tickSepulchre = (game: Game, dt: number) => {
   if (!tomb && bearers.length === 0) return;
 
   if (tomb) {
+    tomb.tollFlash = Math.max(0, tomb.tollFlash - dt * 2.2);
     tomb.bierPhase += CFG.bierSpin * dt;
     const carried = bearers.filter((b) => b.bierCore === tomb);
     for (const bearer of carried) rideBier(bearer, tomb, game);
@@ -225,18 +225,12 @@ const bolt = (from: Asteroid, angle: number, speed: number, life: number): Alien
   return shot;
 };
 
-// With the bier broken the shutter grinds open over shutterBeats. The instant
-// it starts moving is the fight's turn: the same wrong-note moment the boss's
-// eye makes, so it takes the player's combo with it.
+// Breaking the bier earns the exposed core. Keep the player's rhythm and its
+// music layers through this success; the stinger announces the new attack.
 const tickShutter = (game: Game, tomb: Asteroid, dt: number) => {
   if (tomb.bierBearersAlive > 0 || tomb.shutterOpen >= 1) return;
   if (tomb.shutterOpen === 0) {
     game.sound.play("bossEyeOpenStinger", 1, tomb.pos);
-    if (game.beatCombo > 0) {
-      game.beatCombo = 0;
-      game.ship.comboLossFlash = 1;
-      syncComboHud(game);
-    }
   }
   tomb.shutterOpen = Math.min(1, tomb.shutterOpen + dt / (CFG.shutterBeats * BEAT_GRID));
   // The tomb picks the measure up only once the leaves are fully apart, so its
@@ -249,7 +243,7 @@ const tickShutter = (game: Game, tomb: Asteroid, dt: number) => {
 // each bearer still carrying it. This is the armour made visible — four lines
 // means nothing you fire at the tomb will land, and the player watches them go
 // out one at a time.
-export const renderBierTethers = (ctx: CanvasRenderingContext2D, game: Game, t: number) => {
+export const renderSepulchreCues = (ctx: CanvasRenderingContext2D, game: Game, t: number) => {
   const tomb = game.asteroids.find((a) => a.isSepulchre() && a.bossPhase === "live");
   if (!tomb) return;
   const shimmer = 0.6 + 0.4 * Math.sin(t * 0.004);
@@ -274,5 +268,34 @@ export const renderBierTethers = (ctx: CanvasRenderingContext2D, game: Game, t: 
     ctx.lineTo(end.x, end.y);
     ctx.stroke();
   }
+  renderReliquaryCharge(ctx, tomb, game.beatTime);
   ctx.restore();
+};
+
+// Preview the next volley during its final beat, including the shutter opening.
+// Project the rotating bier forward so these spokes show the actual firing
+// angles; the gaps between them are the player's escape routes.
+const renderReliquaryCharge = (ctx: CanvasRenderingContext2D, tomb: Asteroid, beatTime: number) => {
+  if (tomb.shutterOpen <= 0) return;
+  const readyAt = tomb.shutterOpen < 1
+    ? beatTime + (1 - tomb.shutterOpen) * CFG.shutterBeats * BEAT_GRID
+    : Math.max(beatTime, tomb.nextBeatAt);
+  const until = nextSlotAfter(readyAt, 0) - beatTime;
+  const charge = Math.max(0, Math.min(1, 1 - until / BEAT_GRID));
+  if (charge <= 0) return;
+  const base = tomb.bierPhase + CFG.bierSpin * until;
+  ctx.beginPath();
+  for (let i = 0; i < RELIQUARY_RING_BOLTS; i++) {
+    const angle = base + (i / RELIQUARY_RING_BOLTS) * TAU;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    ctx.moveTo(tomb.pos.x + cos * tomb.radius * 1.02, tomb.pos.y + sin * tomb.radius * 1.02);
+    ctx.lineTo(tomb.pos.x + cos * (tomb.radius + 65), tomb.pos.y + sin * (tomb.radius + 65));
+  }
+  ctx.strokeStyle = `hsla(${tomb.hue + 10}, 100%, 65%, ${0.24 * charge})`;
+  ctx.lineWidth = 7;
+  ctx.stroke();
+  ctx.strokeStyle = `hsla(${tomb.hue + 25}, 100%, 92%, ${0.85 * charge})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 };

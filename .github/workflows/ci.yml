@@ -27,3 +27,5 @@ jobs:
         run: npm run replay:closed-loop
       - name: Verify golden replay
         run: npm run replay:golden:verify
+      - name: Sepulchre gameplay rules
+        run: node --import tsx --test scripts/check-sepulchre-gameplay.mjs

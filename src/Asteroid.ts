@@ -8216,7 +8216,6 @@ export class Asteroid {
     const r = this.radius;
     const damageT = 1 - this.hp / Math.max(1, this.maxHp);
     const open = this.shutterOpen;
-    const time = t * 0.001;
 
     ctx.save();
     ctx.translate(this.pos.x, this.pos.y);
@@ -8245,7 +8244,7 @@ export class Asteroid {
     this.paintSepulchreMasonry(ctx, r);
     this.paintSepulchreFace(ctx, r, open);
     this.paintStoneRelight(ctx, H, r);
-    this.paintReliquaryLight(ctx, r, open, time);
+    this.paintReliquaryLight(ctx, r, open);
     ctx.restore();
 
     this.renderBossCracks(ctx, damageT);
@@ -8425,13 +8424,13 @@ export class Asteroid {
   // The reliquary itself, welling up through the tracery as the leaves part.
   // Additive and unshaded: this is the only light source on the body, and how
   // bright it is IS the fight's state.
-  private paintReliquaryLight(ctx: CanvasRenderingContext2D, r: number, open: number, time: number) {
+  private paintReliquaryLight(ctx: CanvasRenderingContext2D, r: number, open: number) {
     if (open <= 0.001) return;
     const H = this.hue;
     const lightR = r * (0.5 + 0.3 * open);
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    const pulse = 0.7 + 0.3 * Math.sin(time * 2.1);
+    const pulse = 0.4 + 0.6 * this.tollFlash;
     const light = ctx.createRadialGradient(0, 0, 0, 0, 0, lightR);
     light.addColorStop(0, `hsla(${H + 25}, 100%, 95%, ${0.85 * open * pulse})`);
     light.addColorStop(0.4, `hsla(${H + 8}, 100%, 70%, ${0.45 * open * pulse})`);

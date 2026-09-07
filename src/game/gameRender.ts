@@ -15,7 +15,7 @@ import { renderShipTrajectoryPreview } from "../ship/shipTrajectoryPreview";
 import { renderLasers, renderLaserChargeDots, renderLaserAmbientFlash } from "./laserShot";
 import { renderLaserReticule } from "../ship/reticule/laserReticule";
 import { renderBossBeams } from "./bossBeam";
-import { renderBierTethers } from "./sepulchre";
+import { renderSepulchreCues } from "./sepulchre";
 import { renderSlowMoTimerBar } from "./slowMoTimerBar";
 import { renderBonusLifeFlash } from "./bonusLife";
 import { updateSpectrumVisualizer, paintSpectrumVisualizer } from "./spectrumVisualizer";
@@ -137,7 +137,7 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   };
   // The bier's tethers go down before the bodies do, so the tomb and its
   // bearers sit on top of the lines running between them.
-  renderBierTethers(ctx, game, game.time);
+  renderSepulchreCues(ctx, game, game.time);
   for (const a of game.asteroids) if (!a.entering) a.render(ctx, game.time, comboHalo);
   for (const c of game.canisters) c.render(ctx, game.time);
   for (const g of game.gems) if (!g.entering) g.render(ctx, game.time);

@@ -83,7 +83,7 @@ const insufficientDamageHint = (game: Game, a: Asteroid, wasDriftShot: boolean):
   // The hemisphere's armour is directional — teach the flank, not the drift.
   if (a.kind === "bossHemisphere") return "HIT THE MOLTEN FACE";
   // The tomb's armour is the bier: no shot is the answer, the bearers are.
-  if (a.isSepulchre() && a.bierBearersAlive > 0) return "BREAK THE BIER";
+  if (a.isSepulchre() && a.bierBearersAlive > 0) return "DESTROY THE SATELLITES";
   if (wasDriftShot) return "AIM A LONGER DRIFT SHOT";
   const softTargetOnScreen =
     game.aliens.length > 0 ||
