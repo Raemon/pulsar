@@ -4238,14 +4238,14 @@ export class Asteroid {
     // damage (gateApplyDamage) and the eye cannot fire. Rendering holds a
     // quiet black silhouette for most of the window, then shudders, dusts off
     // its crust, and opens the eye in the trailing revealActiveDuration.
-    if (this.isDormantSilhouette()) {
+    if (this.hasRevealPhase() && this.bossPhase === "dormant") {
       this.bossRevealT += dt;
       if (this.bossRevealT >= this.revealTiming().total) {
         this.bossPhase = "live";
         // One-shot edge flag picked up next frame by gameUpdate to play the
         // dissonant eye-open stinger and zero out the player's combo. Cleared
         // after the consumer reads it.
-        this.bossJustOpenedEye = true;
+        this.bossJustOpenedEye = this.isBoss();
         // Reset rhythm state so the first cycle's beat 1 lands wherever
         // game.beatTime currently is, not back-dated to a stale cooldown.
         this.bossRhythmT = 0;
