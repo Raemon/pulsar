@@ -124,32 +124,19 @@ const tickWarbles = (game: Game) => {
       const present = 0.5 + 0.5 * Math.cos(phase * TAU);
       a.warbleOpacity = WARBLE.lowOpacity + (1 - WARBLE.lowOpacity) * present;
       a.warbleSolid = a.warbleOpacity > WARBLE.solidThreshold;
-    } else if (a.kind === "citadel") {
-      // The citadel rides a far longer square-ish cycle than the warble:
-      // solid for solidBeats, out for outBeats, with a fadeBeats crossfade
-      // centred on each flip. `d` is the signed distance (seconds) into the
-      // solid window — positive while solid, negative while out — so presence
-      // ramps 0→1 across the fade and the solid flip lands exactly on the
-      // 16-beat boundary.
-      const cycleLen = citadelCycleLen();
-      const solidLen = citadelSolidLen();
+    } else if (a.kind === "citadel" || a.kind === "pallbearer") {
+      // Both use a square cycle with a crossfade centred on each flip.
+      // Collision follows the signed distance into the solid window, so
+      // changing the visual fade never moves the beat of the tangible flip.
+      const citadel = a.kind === "citadel";
+      const cycleLen = citadel ? citadelCycleLen() : bearerCycleLen();
+      const solidLen = citadel ? citadelSolidLen() : bearerSolidLen();
+      const fadeLen = citadel ? citadelFadeLen() : bearerFadeLen();
+      const lowOpacity = citadel ? CITADEL.lowOpacity : SEPULCHRE.phaseLowOpacity;
       const t = (((game.beatTime + a.warblePhaseOffset) % cycleLen) + cycleLen) % cycleLen;
       const d = t < solidLen ? Math.min(t, solidLen - t) : -Math.min(t - solidLen, cycleLen - t);
-      const present = Math.max(0, Math.min(1, 0.5 + d / citadelFadeLen()));
-      a.warbleOpacity = CITADEL.lowOpacity + (1 - CITADEL.lowOpacity) * present;
-      a.warbleSolid = d > 0;
-    } else if (a.kind === "pallbearer") {
-      // Same square-ish cycle as the citadel, on the Sepulchre's own timings.
-      // Its phase offset is set from the bearer's index at spawn, so the four
-      // of them drop out a quarter-cycle apart and the ring is never all ghost:
-      // there is always a bearer you may shoot and a quadrant that cannot shoot
-      // back.
-      const cycleLen = bearerCycleLen();
-      const solidLen = bearerSolidLen();
-      const t = (((game.beatTime + a.warblePhaseOffset) % cycleLen) + cycleLen) % cycleLen;
-      const d = t < solidLen ? Math.min(t, solidLen - t) : -Math.min(t - solidLen, cycleLen - t);
-      const present = Math.max(0, Math.min(1, 0.5 + d / bearerFadeLen()));
-      a.warbleOpacity = SEPULCHRE.phaseLowOpacity + (1 - SEPULCHRE.phaseLowOpacity) * present;
+      const present = Math.max(0, Math.min(1, 0.5 + d / fadeLen));
+      a.warbleOpacity = lowOpacity + (1 - lowOpacity) * present;
       a.warbleSolid = d > 0;
     }
   }

@@ -499,7 +499,6 @@ export const ENTITY_CONFIG = {
     phaseOutBeats: 4,
     phaseFadeBeats: 2,
     phaseLowOpacity: 0.4,
-    phaseSolidThreshold: 0.75,
   },
 
   bgBeatIntensity: {
