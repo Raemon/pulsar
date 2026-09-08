@@ -158,16 +158,25 @@ const drawShip = (ctx: CanvasRenderingContext2D, s: Ship, beatPulse: number) => 
   ctx.globalCompositeOperation = "lighter";
   const scale = 1 + 0.08 * beatPulse;
   ctx.scale(scale, scale);
-  // hull
-  const brightness = 0.7 + 0.3 * beatPulse;
-  ctx.strokeStyle = `hsla(${SHIP_HUE}, 100%, 75%, ${0.95 * brightness})`;
-  ctx.lineWidth = 1.5;
+  // hull — matches the in-game beat flash: whitening outline, flooding fill,
+  // and an additive bloom, so the demo ship punches on the beat the same way.
+  const bloomR = r * 3.4;
+  const bloom = ctx.createRadialGradient(0, 0, 0, 0, 0, bloomR);
+  bloom.addColorStop(0, `hsla(${SHIP_HUE}, 60%, 95%, ${(0.5 * beatPulse).toFixed(3)})`);
+  bloom.addColorStop(0.45, `hsla(${SHIP_HUE}, 90%, 70%, ${(0.18 * beatPulse).toFixed(3)})`);
+  bloom.addColorStop(1, `hsla(${SHIP_HUE}, 100%, 60%, 0)`);
+  ctx.strokeStyle = `hsla(${SHIP_HUE}, ${100 - 55 * beatPulse}%, ${75 + 22 * beatPulse}%, ${Math.min(1, 0.7 + 0.65 * beatPulse)})`;
+  ctx.lineWidth = 1.5 + 2.2 * beatPulse;
   ctx.beginPath();
   ctx.moveTo(verts[0].x, verts[0].y);
   for (const u of verts.slice(1)) ctx.lineTo(u.x, u.y);
   ctx.closePath();
   ctx.stroke();
-  ctx.fillStyle = `hsla(${SHIP_HUE}, 100%, 60%, 0.12)`;
+  ctx.fillStyle = `hsla(${SHIP_HUE}, ${100 - 55 * beatPulse}%, ${60 + 30 * beatPulse}%, ${0.12 + 0.5 * beatPulse})`;
+  ctx.fill();
+  ctx.fillStyle = bloom;
+  ctx.beginPath();
+  ctx.arc(0, 0, bloomR, 0, TAU);
   ctx.fill();
   // thrust flame
   if (s.thrustOn) {

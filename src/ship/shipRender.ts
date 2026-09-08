@@ -26,22 +26,44 @@ const paintShipHull = (
   ctx: CanvasRenderingContext2D, verts: Vec[], invuln: number, beatPulse: number, bonusFlash: number,
   cooldownDim: number,
 ) => {
-  const beatBrightness = 0.7 + 0.3 * beatPulse;
+  // The beat has to punch, so it drives every hull channel at once: the outline
+  // whitens and fattens, the fill floods, and a bloom washes out from the hull.
+  // A spent laser keeps the hull dim, so the beat can't paper over the cooldown.
+  const beat = beatPulse * (1 - 0.6 * cooldownDim);
   // Pull the cyan hue's saturation down toward 0 (white) and force full opacity
   // as the flash rides, so the ship reads as a searing white silhouette.
-  const sat = (100 - bonusFlash * 100) * (1 - 0.9 * cooldownDim);
-  const strokeA = Math.min(1, 0.95 * beatBrightness * invuln + bonusFlash);
+  const sat = (100 - bonusFlash * 100) * (1 - 0.9 * cooldownDim) * (1 - 0.55 * beat);
+  const strokeA = Math.min(1, (0.7 + 0.3 * beat) * invuln + 0.35 * beat + bonusFlash);
   // Grey reads as "spent" only if it also loses some brightness against the
   // charged hull — but stays light enough to keep the silhouette legible.
-  ctx.strokeStyle = `hsla(195, ${sat}%, ${75 - cooldownDim * 15 + bonusFlash * 25}%, ${strokeA})`;
-  ctx.lineWidth = 1.5 + bonusFlash * 1.5;
+  const strokeL = Math.min(100, 75 - cooldownDim * 15 + bonusFlash * 25 + beat * 22);
+  ctx.strokeStyle = `hsla(195, ${sat}%, ${strokeL}%, ${strokeA})`;
+  ctx.lineWidth = 1.5 + bonusFlash * 1.5 + beat * 2.2;
   ctx.beginPath();
   ctx.moveTo(verts[0].x, verts[0].y);
   for (const vert of verts.slice(1)) ctx.lineTo(vert.x, vert.y);
   ctx.closePath();
   ctx.stroke();
-  const fillA = 0.12 * invuln + bonusFlash * 0.85;
-  ctx.fillStyle = `hsla(195, ${sat}%, ${60 - cooldownDim * 12 + bonusFlash * 40}%, ${fillA})`;
+  const fillA = Math.min(1, 0.12 * invuln + beat * 0.5 + bonusFlash * 0.85);
+  const fillL = Math.min(100, 60 - cooldownDim * 12 + bonusFlash * 40 + beat * 30);
+  ctx.fillStyle = `hsla(195, ${sat}%, ${fillL}%, ${fillA})`;
+  ctx.fill();
+  paintBeatBloom(ctx, verts, beat * invuln);
+};
+
+// Additive wash of light spilling off the hull on the downbeat. Drawn under the
+// "lighter" composite the ship body already runs in, so it stacks into a glare
+// rather than a flat overlay — cheaper and softer than shadowBlur.
+const paintBeatBloom = (ctx: CanvasRenderingContext2D, verts: Vec[], beat: number) => {
+  if (beat <= 0.01) return;
+  const reach = Math.max(...verts.map((v) => Math.hypot(v.x, v.y))) * 2.4;
+  const bloom = ctx.createRadialGradient(0, 0, 0, 0, 0, reach);
+  bloom.addColorStop(0, `hsla(195, 60%, 95%, ${(0.5 * beat).toFixed(3)})`);
+  bloom.addColorStop(0.45, `hsla(195, 90%, 70%, ${(0.18 * beat).toFixed(3)})`);
+  bloom.addColorStop(1, "hsla(195, 100%, 60%, 0)");
+  ctx.fillStyle = bloom;
+  ctx.beginPath();
+  ctx.arc(0, 0, reach, 0, TAU);
   ctx.fill();
 };
 
