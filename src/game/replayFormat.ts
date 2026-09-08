@@ -1,7 +1,11 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 37;
+export const REPLAY_FORMAT_VERSION = 39;
+
+// v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
+//   and preserves combo when the bier breaks. Each changes the encounter's
+//   simulation, so runs reaching it need the matching rules.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

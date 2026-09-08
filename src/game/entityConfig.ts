@@ -476,9 +476,10 @@ export const ENTITY_CONFIG = {
     // with it.
     bierRadius: 420,
     bierSpin: 0.12,
-    // Dormant approach before the shell wakes, mirroring the level-10 boss:
-    // only the trailing active window carries the shudder and the shutter.
-    revealDuration: 60.0,
+    // Eight measures of arrival, with the last four revealing the masonry.
+    // The act has already foreshadowed this fight; don't leave an empty field
+    // for a minute if the player clears the four accompanying bells quickly.
+    revealDuration: 16.0,
     revealActiveDuration: 8.0,
     // Armour the shell wears per living Pallbearer, on top of its bare
     // `damageReduction`. The ladder it makes (22 / 17 / 12 / 7 / 2) is the
