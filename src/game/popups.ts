@@ -204,7 +204,9 @@ export const popupRapidRhythm = (pos: Vec): Popup =>
 export const popupTwinShot = (pos: Vec): Popup =>
   popupBonusLabel(pos, "TWIN SHOT", "#c9a6ff", "rgba(180, 140, 255, 0.85)");
 
-// a combo hit that landed two beats or more after firing — the 2-beat reticule or deeper.
+// a combo hit that landed two beats or more after firing — the 2-beat reticule or deeper. The
+//   label carries the flat points it paid ("FAR SHOT +50"), as the streak tag does, so the payout
+//   is attributed on the field and not only flashed on the HUD.
 //   Mint, so it reads apart from the pink/violet/blue bonus family. From FAR_SHOT_BIG_BEATS the
 //   label grows a "N BEATS OUT" line, snaps in larger and holds longer: the longer lead is the
 //   bigger achievement and its popup should look it.
@@ -213,9 +215,10 @@ const FAR_SHOT_POPUP_SHADOW = "rgba(120, 255, 170, 0.85)";
 const FAR_SHOT_SUB_FILL = "#e6fff0";
 const FAR_SHOT_SUB_SHADOW = "rgba(200, 255, 225, 0.85)";
 const FAR_SHOT_BIG_POPUP_LIFE = 1.6;
-export const popupFarShot = (pos: Vec, beatsAway: number): Popup => {
+export const popupFarShot = (pos: Vec, beatsAway: number, points: number): Popup => {
+  const label = `FAR SHOT +${formatScore(points)}`;
   if (beatsAway < FAR_SHOT_BIG_BEATS) {
-    return popupBonusLabel(pos, "FAR SHOT", FAR_SHOT_POPUP_FILL, FAR_SHOT_POPUP_SHADOW);
+    return popupBonusLabel(pos, label, FAR_SHOT_POPUP_FILL, FAR_SHOT_POPUP_SHADOW);
   }
   const labelFont = "700 22px 'Space Grotesk', system-ui, sans-serif";
   const subFont = "600 13px 'Space Grotesk', system-ui, sans-serif";
@@ -224,7 +227,7 @@ export const popupFarShot = (pos: Vec, beatsAway: number): Popup => {
     vel: { x: rand(-10, 10), y: -65 },
     life: FAR_SHOT_BIG_POPUP_LIFE,
     maxLife: FAR_SHOT_BIG_POPUP_LIFE,
-    text: "FAR SHOT",
+    text: label,
     font: labelFont,
     fill: FAR_SHOT_POPUP_FILL,
     shadowColor: FAR_SHOT_POPUP_SHADOW,
@@ -236,7 +239,7 @@ export const popupFarShot = (pos: Vec, beatsAway: number): Popup => {
       ctx.font = labelFont;
       ctx.fillStyle = FAR_SHOT_POPUP_FILL;
       ctx.shadowColor = FAR_SHOT_POPUP_SHADOW;
-      ctx.fillText("FAR SHOT", 0, -9);
+      ctx.fillText(label, 0, -9);
       ctx.font = subFont;
       ctx.fillStyle = FAR_SHOT_SUB_FILL;
       ctx.shadowColor = FAR_SHOT_SUB_SHADOW;
