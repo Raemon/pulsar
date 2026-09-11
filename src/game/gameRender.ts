@@ -122,7 +122,14 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   renderTrails(game, ctx);
   // Departure portals sit behind the comet/alien bodies so a warping-out body
   // dives into the visible mouth and shrinks down the throat in front of it.
-  renderWormholes(ctx, game.wormholes, game.time * 0.001);
+  // They lens the starfield, so they get the same scroll + clock it was
+  // painted with this frame.
+  renderWormholes(ctx, game.wormholes, game.time * 0.001, {
+    starfield: game.starfield,
+    timeMs: game.time,
+    scrollX: game.camScrollX,
+    scrollY: game.camScrollY,
+  });
   for (const c of game.comets) if (!c.entering) c.render(ctx);
   for (const s of game.shards) s.render(ctx);
   // bassteroids wear the ship's 4+/12+ combo halo — share the ship's eased
