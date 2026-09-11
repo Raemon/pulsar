@@ -14,6 +14,15 @@ export const STARFIELD_PARALLAX = {
   starDepth: 0.22,
 } as const;
 
+// Wrap a screen-space delta onto the torus: the nearest wrapped image of a star
+// to a query point is never more than half a cell away.
+const foldDelta = (d: number, period: number): number => {
+  d %= period;
+  if (d > period / 2) d -= period;
+  else if (d < -period / 2) d += period;
+  return d;
+};
+
 type Star = {
   x: number;
   y: number;
@@ -382,6 +391,49 @@ export class Starfield {
         if (px < -pad || px > w + pad || py < -pad || py > h + pad) continue;
         paint(px, py);
       }
+    }
+  }
+
+  // Visit every star (dust + twinkling) whose scrolled screen position lands
+  // inside the ellipse centred (cx, cy) with semi-axes (rx, ry) — the patch a
+  // wormhole lenses. Positions are the exact wrapped screen coords
+  // renderScrolling paints (each layer under its own parallax), so the lens
+  // bends the very stars the player sees behind it, and they keep streaming
+  // past as the camera scrolls instead of freezing under a snapshot. Twinkle
+  // alpha/size match the live paint for the same `t`. `halo` flags the bigger
+  // twinklers that also paint a soft halo.
+  forEachStarNear(
+    t: number, scrollX: number, scrollY: number,
+    cx: number, cy: number, rx: number, ry: number,
+    visit: (x: number, y: number, size: number, hue: number, alpha: number, halo: boolean) => void,
+  ) {
+    const { w, h } = this;
+    const P = STARFIELD_PARALLAX;
+    const dustX = scrollX * P.dust;
+    const dustY = scrollY * P.dust;
+    for (const d of this.dust) {
+      const dx = foldDelta(d.x + dustX - cx, w);
+      if (dx > rx || dx < -rx) continue;
+      const dy = foldDelta(d.y + dustY - cy, h);
+      if (dy > ry || dy < -ry) continue;
+      const nx = dx / rx;
+      const ny = dy / ry;
+      if (nx * nx + ny * ny > 1) continue;
+      visit(cx + dx, cy + dy, d.size, d.hue, d.alpha, false);
+    }
+    for (const star of this.stars) {
+      const p = P.starBase + P.starDepth * star.depth;
+      const dx = foldDelta(star.x + scrollX * p - cx, w);
+      if (dx > rx || dx < -rx) continue;
+      const dy = foldDelta(star.y + scrollY * p - cy, h);
+      if (dy > ry || dy < -ry) continue;
+      const nx = dx / rx;
+      const ny = dy / ry;
+      if (nx * nx + ny * ny > 1) continue;
+      const twinkle = 0.5 + 0.5 * Math.sin(t * 0.001 * star.twinkleSpeed + star.twinklePhase);
+      const alpha = 0.13 + 0.32 * twinkle * star.depth;
+      const size = star.size * (0.7 + 0.3 * twinkle);
+      visit(cx + dx, cy + dy, size, star.hue, alpha, star.size > 1.3);
     }
   }
 
