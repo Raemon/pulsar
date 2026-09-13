@@ -9,7 +9,7 @@ import { musicGain, loadMusicConfig, type MusicLayer } from "./musicConfig";
 import { FULL_HALO_TIER_THRESHOLDS, FULL_HALO_SONGS, type FullHaloSong } from "./game/haloFullMusicConfig";
 import { fullHaloLayerOffset, loadHaloFullConfig } from "./haloFullConfig";
 import { cosmeticRng } from "./game/rng";
-import { HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATION } from "./game/haloMusicConfig";
+import { HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATIONS } from "./game/haloMusicConfig";
 import { SOUND_LOAD_SCHEDULE, STREAK_SHIMMER_POOL_SIZE, FIRST_DOT_HUM_POOL_SIZE } from "./game/soundSchedule";
 
 type ToneModule = typeof import("tone");
@@ -2447,7 +2447,7 @@ export class Sound {
     await this.bakedCacheReady();
     await this.loadAllAssets();
     const haloVariations = new Set<HaloMusicVariation>([
-      ...HALO_MUSIC_POOL, ...HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATION,
+      ...HALO_MUSIC_POOL, ...HAUNTING_MUSIC_POOL, ...BOSS_MUSIC_VARIATIONS,
     ]);
     const loads: Promise<unknown>[] = [];
     for (const variation of haloVariations) {

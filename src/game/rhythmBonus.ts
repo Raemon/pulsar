@@ -2,7 +2,7 @@ import type { Game } from "../Game";
 import type { Bullet } from "../Bullet";
 import { Vec } from "../vec";
 import { comboGrid } from "./rhythmGate";
-import { BEAT_GRID, FAR_SHOT_BIG_BEATS, FAR_SHOT_MAX_RHYTHM, FAR_SHOT_MIN_BEATS } from "./rhythmConstants";
+import { BEAT_GRID, FAR_SHOT_BIG_BEATS, FAR_SHOT_MIN_BEATS, FAR_SHOT_POINTS } from "./rhythmConstants";
 import { syncComboHud, syncHud, flashScoreGain } from "./hud";
 import { checkBonusLife } from "./bonusLife";
 import { popupCombo, popupFarShot, popupRapidRhythm, popupStreakBonus, popupTwinShot } from "./popups";
@@ -13,8 +13,8 @@ import { spawnDriftBurst } from "./driftBurst";
 //   Rapid Rhythm — combo hits on two back-to-back beats pays +1 rhythm.
 //   Twin Shot   — a second combo hit on the SAME beat (prong pair) pays +2.
 //   Far Shot    — a combo hit that lands N >= 2 beats after its shot was fired (the
-//                 2-beat reticule or deeper) pays +N; from 3 beats it also detonates.
-// Bonus increments are queued with staggered fire times rather than applied
+//                 2-beat reticule or deeper) pays flat points; from 3 beats it also detonates.
+// Rhythm increments are queued with staggered fire times rather than applied
 // inline, so the triggering hit's own xN popup renders before the bonus xN+1
 // (and Twin Shot's xN+2 / xN+3 pop one after the other).
 const BONUS_FLASH_STAGGER = 0.18;
@@ -138,18 +138,19 @@ export const beatsAwayAtHit = (game: Game, b: Bullet): number => {
 };
 
 // Far Shot: the kill landed on the 2-beat reticule or deeper — the player led the target by
-//   beatsAway beats and the shot flew that long. Every shot already crosses one beat, so the
-//   payout is one rhythm per EXTRA beat of lead, one staggered flash each: the level-1 far shot
-//   (2 beats, reachable on either Farshot or 12+ rhythm) pays +1, and the level-2 one (3 beats,
-//   which needs both) pays +2. From FAR_SHOT_BIG_BEATS the label grows its "N BEATS OUT" line
-//   and the hit detonates with the drift burst + boom in the Far Shot hue, so the harder lead
-//   reads as the bigger event it is. `firstOrder` continues the stagger after any bonus queued
-//   before it.
+//   beatsAway beats and the shot flew that long. Pays FAR_SHOT_POINTS on the spot as flat score
+//   (no rhythm, no combo multiply — the same shape as the streak payouts), whatever the lead:
+//   the level-1 far shot (2 beats, reachable on either Farshot or 12+ rhythm) and the level-2
+//   one (3 beats, which needs both) pay the same. From FAR_SHOT_BIG_BEATS the label grows its
+//   "N BEATS OUT" line and the hit detonates with the drift burst + boom in the Far Shot hue,
+//   so the harder lead still reads as the bigger event it is.
 const FAR_SHOT_BURST_HSL = "150, 100%, 70%";
-const awardFarShot = (game: Game, hitPos: Vec, beatsAway: number, firstOrder: number) => {
-  game.popups.push(popupFarShot(hitPos, beatsAway));
-  const rhythm = Math.min(beatsAway - 1, FAR_SHOT_MAX_RHYTHM);
-  for (let i = 0; i < rhythm; i++) queueRhythmBonus(game, hitPos, firstOrder + i);
+const awardFarShot = (game: Game, hitPos: Vec, beatsAway: number) => {
+  game.score += FAR_SHOT_POINTS;
+  flashScoreGain(game, FAR_SHOT_POINTS);
+  checkBonusLife(game);
+  syncHud(game);
+  game.popups.push(popupFarShot(hitPos, beatsAway, FAR_SHOT_POINTS));
   if (beatsAway < FAR_SHOT_BIG_BEATS) return;
   const tier = Math.min(6, beatsAway + 1);
   spawnDriftBurst(game, hitPos.x, hitPos.y, tier, FAR_SHOT_BURST_HSL);
@@ -163,9 +164,6 @@ export const trackRhythmComboHit = (game: Game, hitPos: Vec, beatsAway = 0) => {
   const beatCenter = Math.round(game.perceivedBeatTime / grid) * grid;
   const prev = game.lastRhythmHitBeatCenter;
   const sameBeat = prev >= 0 && Math.abs(beatCenter - prev) < grid / 2;
-  // one stagger sequence for everything this hit queues, so a Far Shot's flashes chain on
-  //   after a Rapid Rhythm / Twin Shot flash instead of landing on top of it.
-  let order = 1;
   if (sameBeat) {
     game.rhythmHitsThisBeat += 1;
     // exactly the second hit on this beat — a third+ doesn't re-trigger.
@@ -175,14 +173,14 @@ export const trackRhythmComboHit = (game: Game, hitPos: Vec, beatsAway = 0) => {
         y: (game.lastRhythmHitPos.y + hitPos.y) / 2,
       };
       game.popups.push(popupTwinShot(mid));
-      queueRhythmBonus(game, hitPos, order++);
-      queueRhythmBonus(game, hitPos, order++);
+      queueRhythmBonus(game, hitPos, 1);
+      queueRhythmBonus(game, hitPos, 2);
     }
   } else {
     const consecutiveBeat = prev >= 0 && Math.abs(beatCenter - prev - grid) < grid / 2;
     if (consecutiveBeat) {
       game.popups.push(popupRapidRhythm(hitPos));
-      queueRhythmBonus(game, hitPos, order++);
+      queueRhythmBonus(game, hitPos, 1);
     }
     game.lastRhythmHitBeatCenter = beatCenter;
     game.rhythmHitsThisBeat = 1;
@@ -190,7 +188,7 @@ export const trackRhythmComboHit = (game: Game, hitPos: Vec, beatsAway = 0) => {
     //   nor break it (they resolve on this same beatCenter).
     trackStreak(game, grid, beatCenter, hitPos);
   }
-  if (beatsAway >= FAR_SHOT_MIN_BEATS) awardFarShot(game, hitPos, beatsAway, order);
+  if (beatsAway >= FAR_SHOT_MIN_BEATS) awardFarShot(game, hitPos, beatsAway);
   game.lastRhythmHitPos = { x: hitPos.x, y: hitPos.y };
 };
 

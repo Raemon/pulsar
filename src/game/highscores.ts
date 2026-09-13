@@ -25,6 +25,7 @@ const BUCKET_LABELS: Record<KillBucket, string> = {
   alien_small: "alien-S",
   comet: "comet",
   boss: "boss",
+  sepulchre: "sepulchre",
   glassPrison: "prison",
   wraith: "wraith",
 };

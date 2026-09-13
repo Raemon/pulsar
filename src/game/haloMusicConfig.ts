@@ -47,6 +47,8 @@
 //
 // Every pool entry is fetched + decoded at startGame so the first 4x
 // doesn't pay fetch latency regardless of which one comes up.
+import { BOSS_ENCOUNTERS, bossEncounterForWave, type BossKind } from "./acts";
+
 import type { HaloMusicVariation } from "../Sound";
 // Music-track variation picks are audio/cosmetic and fire from syncHaloAmbient,
 //   which branches on live audio state the muted replay re-sim doesn't share —
@@ -81,10 +83,10 @@ export function isHauntingWave(wave: number): boolean {
   return wave >= HAUNTING_WAVE_MIN && wave <= HAUNTING_WAVE_MAX;
 }
 
-// Dedicated boss-fight variation. Force-picked by syncHaloAmbient whenever
-// the current wave is a boss wave (see ENTITY_CONFIG.boss.waves), so the
-// climactic C-minor theme replaces the random halo pick during the fight.
-// Kept out of HALO_MUSIC_POOL so it doesn't appear at random on non-boss waves.
+// Dedicated boss-fight variations. Force-picked by syncHaloAmbient whenever the
+// current wave is a boss wave (see BOSS_ENCOUNTERS), so the fight's own theme
+// replaces the random halo pick for the whole engagement. Kept out of
+// HALO_MUSIC_POOL so neither appears at random on an ordinary wave.
 //
 // "vigil-sb" is built as the *climax of the levels 1–9 halo music* — the same
 // felt-piano + sine-pad + glassy-chime palette, turned climactic-and-scary
@@ -92,9 +94,27 @@ export function isHauntingWave(wave: number): boolean {
 // heartbeat) rather than swapping to a new instrument family.
 //
 // "knell-sb" is the funeral death-knell track (tolling bell + ghost choir +
-// string ostinato), earmarked for the level-20 boss — auditionable on the
-// /music page; swap it in here to hear it on the boss wave.
-export const BOSS_MUSIC_VARIATION: HaloMusicVariation = "vigil-sb";
+// string ostinato) — the Sepulchre's own music. Its tolling tubular bell is
+// literally what the four Pallbearers are playing along to.
+//
+// Keyed by boss kind so each act's fight brings its own theme: the planetoid
+// gets the climax of the music the player has been flying to all of Act I, and
+// the tomb gets the knell Act II has been haunted by.
+const BOSS_MUSIC_BY_KIND: Record<BossKind, HaloMusicVariation> = {
+  boss: "vigil-sb",
+  sepulchre: "knell-sb",
+};
+
+// Every boss theme, for the preload paths that need the whole set.
+export const BOSS_MUSIC_VARIATIONS: readonly HaloMusicVariation[] = BOSS_ENCOUNTERS.map(
+  (encounter) => BOSS_MUSIC_BY_KIND[encounter.kind],
+);
+
+// The theme forced on a boss wave, or null on any ordinary wave.
+export function bossMusicVariation(wave: number): HaloMusicVariation | null {
+  const encounter = bossEncounterForWave(wave);
+  return encounter ? BOSS_MUSIC_BY_KIND[encounter.kind] : null;
+}
 
 // Effective per-wave pool used by the pickers below. Internal waves 12–20
 // see only the haunting trio; every other wave sees the regular pool.
