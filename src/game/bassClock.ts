@@ -8,12 +8,20 @@ import { TAU } from "../vec";
 
 const WARBLE = ENTITY_CONFIG.warble;
 const CITADEL = ENTITY_CONFIG.citadel;
+const SEPULCHRE = ENTITY_CONFIG.sepulchre;
 
 // Citadel phase-cycle geometry in seconds (BEAT_GRID = one beat). waveDirector
 // uses these to align a fresh citadel's offset so it spawns just-solid.
 export const citadelSolidLen = () => CITADEL.solidBeats * BEAT_GRID;
 export const citadelCycleLen = () => (CITADEL.solidBeats + CITADEL.outBeats) * BEAT_GRID;
 export const citadelFadeLen = () => CITADEL.fadeBeats * BEAT_GRID;
+
+// The Pallbearers' phase cycle, same shape as the citadel's on the Sepulchre's
+// own timings. spawnSepulchreEncounter reads the cycle length to stagger the
+// four bearers a quarter of it apart.
+export const bearerSolidLen = () => SEPULCHRE.phaseSolidBeats * BEAT_GRID;
+export const bearerCycleLen = () => (SEPULCHRE.phaseSolidBeats + SEPULCHRE.phaseOutBeats) * BEAT_GRID;
+export const bearerFadeLen = () => SEPULCHRE.phaseFadeBeats * BEAT_GRID;
 
 // kick (C2), pluck (G2), boom (F2), snap (C3) — I-IV-V-percussion worst case stays musical.
 export const BASS_KIND_SOUND: Record<"bassA" | "bassB" | "bassC" | "bassD", "bassKick" | "bassPluck" | "bassBoom" | "bassSnap"> = {
@@ -116,19 +124,19 @@ const tickWarbles = (game: Game) => {
       const present = 0.5 + 0.5 * Math.cos(phase * TAU);
       a.warbleOpacity = WARBLE.lowOpacity + (1 - WARBLE.lowOpacity) * present;
       a.warbleSolid = a.warbleOpacity > WARBLE.solidThreshold;
-    } else if (a.kind === "citadel") {
-      // The citadel rides a far longer square-ish cycle than the warble:
-      // solid for solidBeats, out for outBeats, with a fadeBeats crossfade
-      // centred on each flip. `d` is the signed distance (seconds) into the
-      // solid window — positive while solid, negative while out — so presence
-      // ramps 0→1 across the fade and the solid flip lands exactly on the
-      // 16-beat boundary.
-      const cycleLen = citadelCycleLen();
-      const solidLen = citadelSolidLen();
+    } else if (a.kind === "citadel" || a.kind === "pallbearer") {
+      // Both use a square cycle with a crossfade centred on each flip.
+      // Collision follows the signed distance into the solid window, so
+      // changing the visual fade never moves the beat of the tangible flip.
+      const citadel = a.kind === "citadel";
+      const cycleLen = citadel ? citadelCycleLen() : bearerCycleLen();
+      const solidLen = citadel ? citadelSolidLen() : bearerSolidLen();
+      const fadeLen = citadel ? citadelFadeLen() : bearerFadeLen();
+      const lowOpacity = citadel ? CITADEL.lowOpacity : SEPULCHRE.phaseLowOpacity;
       const t = (((game.beatTime + a.warblePhaseOffset) % cycleLen) + cycleLen) % cycleLen;
       const d = t < solidLen ? Math.min(t, solidLen - t) : -Math.min(t - solidLen, cycleLen - t);
-      const present = Math.max(0, Math.min(1, 0.5 + d / citadelFadeLen()));
-      a.warbleOpacity = CITADEL.lowOpacity + (1 - CITADEL.lowOpacity) * present;
+      const present = Math.max(0, Math.min(1, 0.5 + d / fadeLen));
+      a.warbleOpacity = lowOpacity + (1 - lowOpacity) * present;
       a.warbleSolid = d > 0;
     }
   }

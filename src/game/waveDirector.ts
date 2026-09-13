@@ -14,6 +14,8 @@ import { emitCrackParticles } from "./particleBursts";
 import { alignVelocityToRhythm, BeatClaimSet, newBeatClaimSet } from "./rhythmTrajectory";
 import { citadelCycleLen, citadelFadeLen } from "./bassClock";
 import { ENTITY_CONFIG as CFG } from "./entityConfig";
+import { BOSS_FORESHADOW_WAVES, BOSS_WAVES, bossEncounterForWave } from "./acts";
+import { spawnSepulchreEncounter } from "./sepulchre";
 
 // snap each fresh edge-spawn so its crossing of the player's natural
 // kill range lands on a beat. Boss is exempt — it has its own slow drift.
@@ -136,8 +138,8 @@ const alienRhythmChanceBonus = (game: Game): number =>
   Math.max(0, game.beatCombo - CFG.alien.rhythmComboThreshold) * CFG.rhythm.chancePerCombo;
 
 // predicates let the wave director read declaratively, not as inline boolean expressions.
-export const isBossWave = (wave: number): boolean => CFG.boss.waves.includes(wave);
-export const isBossForeshadowWave = (wave: number): boolean => CFG.boss.foreshadowWaves.includes(wave);
+export const isBossWave = (wave: number): boolean => BOSS_WAVES.includes(wave);
+export const isBossForeshadowWave = (wave: number): boolean => BOSS_FORESHADOW_WAVES.includes(wave);
 
 // internal wave numbering stays 1-based (so all the wave >= N gates keep working);
 // the player-facing label is shifted down by one so the warm-up rock is "Wave 0".
@@ -469,11 +471,31 @@ export const spawnWave = (game: Game) => {
   rollSolidCrystalSmallSpawn(game, claimed);
 };
 
-// capture planet pos BEFORE hiding it so the boss materialises where the player last saw the planet.
+// Cathedral fragments that precede the tomb into the level.
+const SEPULCHRE_WAKE_FRAGMENTS = 4;
+
+// capture the sky position BEFORE hiding it so a boss materialises where the
+// player last saw the thing it has been all act — the red planetoid for Act I,
+// the tomb and its ring of moons for Act II.
 const handleBossWave = (game: Game): boolean => {
-  if (!isBossWave(game.wave)) return false;
-  const pos = game.pulsar.bossPlanetPos();
-  game.pulsar.setBossPlanetState("active");
+  const encounter = bossEncounterForWave(game.wave);
+  if (!encounter) return false;
+  const pos = game.pulsar.bossBodyPos(encounter.act);
+  game.pulsar.setBossPlanetState("active", encounter.act);
+  if (encounter.kind === "sepulchre") {
+    // The Sepulchre brings its own four voices (the bearers' knell), so the
+    // bass field stays out of this one — a full bass ensemble under four
+    // tolling bearers would bury the beat the fight is played on. What drifts
+    // in instead is the tomb's own wake: a scatter of cathedral fragments,
+    // which carry the act's bell voice and give the player something to keep
+    // rhythm against through the long dormant approach.
+    game.asteroids.push(...spawnSepulchreEncounter(game, pos));
+    const wake = newBeatClaimSet();
+    for (let i = 0; i < SEPULCHRE_WAKE_FRAGMENTS; i++) {
+      game.asteroids.push(spawnSpecial(game, "bell", wake));
+    }
+    return true;
+  }
   game.asteroids.push(spawnBossAt(pos, game.w, game.h));
   // one of each Bassteroid joins the boss; shared claim set keeps them on
   // distinct beat slots.

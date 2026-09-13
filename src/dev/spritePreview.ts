@@ -68,6 +68,8 @@ const SIZES_FOR: Partial<Record<AsteroidKind, AsteroidSize[]>> = {
   glassShard: ["small"],
   columnDrum: ["small"],
   rubbleBlock: ["small"],
+  sepulchre: ["large"],
+  pallbearer: ["medium"],
 };
 
 // Grouped so the page reads as a contact sheet of the game's material families
@@ -82,6 +84,7 @@ const ASTEROID_GROUPS: { group: string; kinds: AsteroidKind[] }[] = [
   { group: "Torus", kinds: ["torus"] },
   { group: "Metal", kinds: ["metalChunk", "metalShard"] },
   { group: "Boss", kinds: ["boss", "bossHemisphere", "bossEye", "bossPlate", "bossIrisShard", "bossEmber"] },
+  { group: "Sepulchre", kinds: ["sepulchre", "pallbearer"] },
 ];
 
 const POWERUPS: PowerupKind[] = ["prong", "shield", "slow", "radar", "longshot", "sideEngines", "lasershot", "bomb"];
@@ -92,7 +95,10 @@ const makeAsteroid = (group: string, kind: AsteroidKind, size: AsteroidSize): Su
   a.rotation = 0;
   // A fresh boss is born dormant — it would preview as the growing silhouette
   // of the reveal rather than the built body, so skip it to the live phase.
-  if (a.isBoss()) a.bossPhase = "live";
+  if (a.hasRevealPhase()) a.bossPhase = "live";
+  // A shuttered tomb previews as a blank wall; show it mid-open so the rose
+  // window and the reliquary behind it are both legible on the sheet.
+  if (a.isSepulchre()) a.shutterOpen = 0.6;
   return {
     group,
     label: `${kind} · ${size}`,

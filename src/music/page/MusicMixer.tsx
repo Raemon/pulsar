@@ -76,8 +76,8 @@ const VARIATION_META: Record<Variation, VariationInfo> = {
     gains: { ambient: 0.30, melodic: 0.30, layer3: 0.32 },
   },
   "knell-sb": {
-    label: "knell-sb — funeral death-knell (earmarked for the level-20 boss)",
-    blurb: "Funeral death-knell boss track, earmarked for the level-20 boss (not wired to a boss wave yet — auditionable here). Ambient = C-minor pad + C1 lub-dub double-pulse heartbeat + faint G5 shimmer swelling mid-loop; melodic = relentless staccato string-ensemble eighth-note ostinato around C3/Eb3/G3 with tremolo-string swells into each phrase; layer 3 = ghost choir singing a Dies-irae-shaded descending motif (C5-Bb4-Ab4-G4) + tubular bell tolling each phrase downbeat. A-A'-B-A2 shape: the B phrase stops the ostinato and lifts to Cmaj7 before the minor resolve.",
+    label: "knell-sb — funeral death-knell (level-20 boss)",
+    blurb: "Funeral death-knell boss track — the Sepulchre's theme, forced on the level-20 boss wave. Ambient = C-minor pad + C1 lub-dub double-pulse heartbeat + faint G5 shimmer swelling mid-loop; melodic = relentless staccato string-ensemble eighth-note ostinato around C3/Eb3/G3 with tremolo-string swells into each phrase; layer 3 = ghost choir singing a Dies-irae-shaded descending motif (C5-Bb4-Ab4-G4) + tubular bell tolling each phrase downbeat. A-A'-B-A2 shape: the B phrase stops the ostinato and lifts to Cmaj7 before the minor resolve.",
     gains: { ambient: 0.30, melodic: 0.32, layer3: 0.32 },
   },
   "cathedral-hymn-el": {
