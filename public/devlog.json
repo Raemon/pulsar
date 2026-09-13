@@ -1,5 +1,50 @@
 [
   {
+    "id": "2026-09-13-defab28",
+    "date": "2026-09-13",
+    "title": "Sepulchre boss, wormhole visuals, Far Shot points",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "A new level-20 boss, the Sepulchre, arrives carried by four Pallbearers who orbit it, each tolling a beat and firing from a different direction.",
+          "Pallbearers foreshadow the fight throughout Act II, making slow passes through the sky before the boss wave.",
+          "Wormholes are redrawn as gravitational lenses bending starlight into arcs, rings, and spiral wisps instead of the old red-wound look."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "Far Shot now pays a flat +50 points shown on the field, instead of granting extra rhythm."
+        ]
+      },
+      {
+        "heading": "Fixed",
+        "items": [
+          "Sepulchre Pallbearer wake timing and release behavior corrected.",
+          "Sepulchre fight pacing improved and its final volley is more clearly telegraphed."
+        ]
+      }
+    ],
+    "commits": [
+      "defab28",
+      "8b44fe4",
+      "f19c083",
+      "94193e8",
+      "b66fef5",
+      "624ff13",
+      "c2ffaa9",
+      "058a9b2",
+      "c56c3ce",
+      "98b5de5",
+      "771d20c",
+      "65111f6",
+      "2432e41",
+      "d3d0ec8",
+      "6dfa023"
+    ]
+  },
+  {
     "id": "2026-09-06-83406f0",
     "date": "2026-09-06",
     "title": "Fix replay export: audio mix, video framerate",
