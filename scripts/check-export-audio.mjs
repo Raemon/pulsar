@@ -66,7 +66,7 @@ const result = await page.evaluate(async () => {
   // Same construction as videoExport.ts: an OfflineAudioContext behind a
   // CaptureAudioContext driven by an ExportClock.
   const sampleRate = 48000;
-  const durationSec = 14;
+  const durationSec = 20;
   const offline = new OfflineAudioContext(2, sampleRate * durationSec, sampleRate);
   const clock = new cap.ExportClock();
   sound.beginExportCapture(new cap.CaptureAudioContext(offline, clock));
@@ -134,6 +134,26 @@ const result = await page.evaluate(async () => {
   frames(STREAK_ON, STREAK_OFF, () => sound.updateStreakSound(0.8, 0));
   at(STREAK_OFF, () => sound.stopStreakSound(), "streakRelease");
   frames(STREAK_OFF, 13.0);
+
+  // The music's beat position has to stay exact across a rate change, because
+  // a replay trims the rate to hold the music on its (recorded) beat clock.
+  // Read as "start + elapsed" — which is what it used to be — the position
+  // silently ignores every trim, so the thing steering the trim goes blind and
+  // the music slides against the bass by the recorded corrections' whole sum.
+  const MUSIC_AT = 14.0, MUSIC_BEAT = 100.0;
+  clock.advanceTo(MUSIC_AT);
+  await sound.startHaloMusic(haloCfg.HALO_MUSIC_POOL[0], true, 0, MUSIC_BEAT, true);
+  clock.advanceTo(MUSIC_AT + 1);
+  const posAtRate1 = sound.audioBeatTimeFromMusic();
+  sound.setHaloMusicPlaybackRate(0.99);
+  clock.advanceTo(MUSIC_AT + 3);
+  const posAfterTrim = sound.audioBeatTimeFromMusic();
+  const musicFailures = [
+    ["a second in at rate 1", posAtRate1, MUSIC_BEAT + 1],
+    ["two more seconds at rate 0.99", posAfterTrim, MUSIC_BEAT + 1 + 2 * 0.99],
+  ].filter(([, got, want]) => got === null || Math.abs(got - want) > 0.002)
+   .map(([label, got, want]) => `music beat position ${label}: got ${got === null ? "null" : got.toFixed(4)}, want ${want.toFixed(4)}`);
+
   clock.advanceTo(durationSec);
 
   sound.endExportCapture();
@@ -183,11 +203,11 @@ const result = await page.evaluate(async () => {
     maxStepAtTeardown: r4(maxStepIn(STREAK_OFF + 0.5, STREAK_OFF + 0.8)),
     rmsAfterTeardown: r4(rms(STREAK_OFF + 1.0, STREAK_OFF + 1.8)),
   };
-  return { prewarmMs, states, fired, peak: r4(peak), perSecondRms: perSecond, channels: rendered.numberOfChannels, paramFailures, picksStable, hum, streak };
+  return { prewarmMs, states, fired, peak: r4(peak), perSecondRms: perSecond, channels: rendered.numberOfChannels, paramFailures, musicFailures, picksStable, hum, streak };
 });
 
 console.log(JSON.stringify(result, null, 1));
-const failures = [...result.paramFailures.map((f) => `capture param ${f}`)];
+const failures = [...result.paramFailures.map((f) => `capture param ${f}`), ...result.musicFailures];
 if (!result.picksStable) failures.push("halo music pick moves with the cosmetic RNG stream");
 const silentSeconds = result.perSecondRms.slice(0, 5).filter((v) => v < 1e-4).length;
 if (!(result.peak > 0.01)) failures.push("render is silent");

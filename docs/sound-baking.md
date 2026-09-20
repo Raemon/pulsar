@@ -152,6 +152,41 @@ cosmetic stream, and the export sweep drains the microtask queue every frame
 so a start that reads the clock after its buffer await sees the frame that
 triggered it.
 
+### A replay moves the music onto the clock, not the clock onto the music
+
+Live play keeps the bass and the halo music together with a watchdog
+(`tickBeatResnap`) that once a measure drags `beatTime` onto the music's
+actual playback position, and records the net adjustment into the replay.
+
+A replay may not do that: `beatTime` there is a recorded sum that the sim, its
+checkpoints and the combo gate all depend on, so it re-applies the recorded
+adjustments verbatim. But those adjustments were cancelling a drift the
+*original* run's clock had, and a replay's freshly-started music does not have
+it — so applying them slides the bass off the music by their whole total. On a
+measured wave-2 run that is 319 ms, growing monotonically, and it is what made
+an exported movie drift further out of time the longer it ran.
+
+So a replay holds the two together from the other side: `tickReplayMusicPhase`
+trims the music's *playback rate* onto the sim clock, the mirror of what live
+play does to `beatTime`. Two things make it inaudible rather than a wobble:
+
+- **The cap is 1%** (17 cents). The recorded corrections arrive in bursts — the
+  live watchdog bleeds each measure's error over ~0.15 s — and chasing a burst
+  at its own speed would bend a sustained pad by most of a semitone. Spreading
+  it instead leaves a transient of a few tens of ms that decays before the next
+  burst, and 1% is still about twice the average correction a run needs, so the
+  error is pulled back rather than accumulating.
+- **The rate is measured against the audio clock**, over spans of at least
+  0.1 s, not from `musicDt / dt`. One render tick can step several recorded
+  frames while the audio clock stands still, and browser playback is paced by a
+  wall-clock accumulator, so only the audio clock says how fast the sim is
+  actually running.
+
+This also means `audioBeatTimeFromMusic` has to stay exact once a rate has
+moved. It reads a beat anchor that `setHaloMusicPlaybackRate` advances on every
+change; computing it as "start + elapsed" ignores every trim, and the check
+script asserts it across a rate change for that reason.
+
 One consequence worth knowing: **`bgBeat`'s intensity buckets are derived from
 `CFG.bgBeatIntensity`**, not hardcoded. The ramp runs 0.6 → 1.0 over 30 waves,
 so only 5 of the 11 buckets are reachable and the other 24 files are never
