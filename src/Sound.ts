@@ -11,6 +11,7 @@ import { fullHaloLayerOffset, loadHaloFullConfig } from "./haloFullConfig";
 import { cosmeticRng } from "./game/rng";
 import { HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATIONS } from "./game/haloMusicConfig";
 import { SOUND_LOAD_SCHEDULE, STREAK_SHIMMER_POOL_SIZE, FIRST_DOT_HUM_POOL_SIZE } from "./game/soundSchedule";
+import type { CaptureAudioContext } from "./game/audioCapture";
 
 type ToneModule = typeof import("tone");
 let toneModulePromise: Promise<ToneModule> | null = null;
@@ -72,6 +73,12 @@ type WarbleDroneNode = {
 // AudioBufferSourceNode — see buildFirstDotHumGraph. filter/pulseGain/mainGain stay live: the
 // filter's frequency and pulseGain are automated per-beat by scheduleHumBeatPulse (the beat grid
 // isn't known at bake time), and mainGain is ramped per-frame to the caller's intensity/attack.
+// Handle for a deferred voice callback (release teardown, scheduler pump).
+//   Live it wraps a window timer; during export capture it is an entry on the
+//   export clock's queue (see voiceTimeout / voiceInterval), so teardowns land
+//   at the right point of the rendered timeline instead of at CPU speed.
+type VoiceTimer = { cancel(): void };
+
 type FirstDotHumNode = {
   src: AudioBufferSourceNode;
   filter: BiquadFilterNode;
@@ -79,7 +86,7 @@ type FirstDotHumNode = {
   mainGain: GainNode;
   lastScheduledBeatAudioTime: number;
   releasing: boolean;
-  releaseCleanupTimer: ReturnType<typeof setTimeout> | null;
+  releaseCleanupTimer: VoiceTimer | null;
 };
 
 // Per-bassteroid ambient drone. Opened when a large bassteroid breaks open
@@ -110,9 +117,9 @@ type StreakShimmerNode = {
   intensity: number; // latest streak intensity (0..1); the scheduler reads this
   nextNoteTime: number; // audio-clock time of the next 16th/32nd pluck to fire
   walkIndex: number; // current position in the arpeggio pool (rising cycle)
-  timer: ReturnType<typeof setInterval> | null; // JS-side lookahead pump
+  timer: VoiceTimer | null; // JS-side lookahead pump
   releasing: boolean;
-  releaseCleanupTimer: ReturnType<typeof setTimeout> | null;
+  releaseCleanupTimer: VoiceTimer | null;
 };
 
 // Which sound a rhythm streak plays. Every streak now uses "updraft"; the
@@ -135,7 +142,7 @@ type StreakLoopNode = {
   riseGain: GainNode; // climbing-arpeggio layer — the escalation reward
   srcs: AudioBufferSourceNode[];
   releasing: boolean;
-  releaseCleanupTimer: ReturnType<typeof setTimeout> | null;
+  releaseCleanupTimer: VoiceTimer | null;
 };
 
 // Per-comet shimmer pad. Underlies the comet melody for the entire lifetime
@@ -171,7 +178,7 @@ type HaloAmbientNode = {
   // stored so stopHaloAmbient can clear it.
   melodyOsc: OscillatorNode;
   melodyGain: GainNode;
-  melodyInterval: ReturnType<typeof setInterval> | null;
+  melodyInterval: VoiceTimer | null;
 };
 
 // Pre-rendered music variations for the 4x/6x combo halo. Each variation has
@@ -2305,6 +2312,28 @@ export class Sound {
     return this.exportRestore !== null;
   }
 
+  // The capture context while exporting (the same object this.ctx holds then),
+  //   kept typed for its deferred-timer API.
+  private captureCtx: CaptureAudioContext | null = null;
+
+  // setTimeout / setInterval for voice code. Live: a window timer. During
+  //   export capture: an entry on the export clock, fired as the exporter
+  //   advances it — the sweep runs at CPU speed, so a wall-clock delay would
+  //   land the callback (a source stop, a scheduler pump) at an unrelated
+  //   point of the rendered timeline: mid-fade when the machine is slow,
+  //   seconds late when it is fast.
+  private voiceTimeout(cb: () => void, ms: number): VoiceTimer {
+    if (this.captureCtx) return this.captureCtx.deferTimeout(cb, ms);
+    const id = setTimeout(cb, ms);
+    return { cancel: () => clearTimeout(id) };
+  }
+
+  private voiceInterval(cb: () => void, ms: number): VoiceTimer {
+    if (this.captureCtx) return this.captureCtx.deferInterval(cb, ms);
+    const id = setInterval(cb, ms);
+    return { cancel: () => clearInterval(id) };
+  }
+
   // Voice fields whose teardown is deferred to a wall-clock setTimeout (hum
   //   releases, streak fades) can still be mid-release when the context swaps;
   //   any later update would "resume" a node that belongs to the other
@@ -2322,7 +2351,7 @@ export class Sound {
     ];
     for (const node of hums) {
       if (!node) continue;
-      if (node.releaseCleanupTimer !== null) clearTimeout(node.releaseCleanupTimer);
+      if (node.releaseCleanupTimer !== null) node.releaseCleanupTimer.cancel();
       try { node.src.stop(stopAt); } catch {}
     }
     this.firstDotHum = null;
@@ -2336,14 +2365,14 @@ export class Sound {
     this.firstDotHaloHum = null;
     if (this.streakShimmer) {
       const node = this.streakShimmer;
-      if (node.timer !== null) clearInterval(node.timer);
-      if (node.releaseCleanupTimer !== null) clearTimeout(node.releaseCleanupTimer);
+      if (node.timer !== null) node.timer.cancel();
+      if (node.releaseCleanupTimer !== null) node.releaseCleanupTimer.cancel();
       try { node.out.gain.setTargetAtTime(0.0001, t, 0.1); } catch {}
       this.streakShimmer = null;
     }
     if (this.streakLoop) {
       const node = this.streakLoop;
-      if (node.releaseCleanupTimer !== null) clearTimeout(node.releaseCleanupTimer);
+      if (node.releaseCleanupTimer !== null) node.releaseCleanupTimer.cancel();
       for (const src of node.srcs) { try { src.stop(stopAt); } catch {} }
       this.streakLoop = null;
     }
@@ -2371,7 +2400,7 @@ export class Sound {
   //   the level the mix is tuned at regardless of the live slider/mute — the
   //   master gain sits ahead of the compressor and limiter, so any other level
   //   renders a differently-squashed mix than the one the game plays.
-  beginExportCapture(captureCtx: AudioContext) {
+  beginExportCapture(capture: CaptureAudioContext) {
     if (this.exportRestore || !this.ctx) return;
     this.stopVoicesForContextSwap();
     this.exportRestore = {
@@ -2395,7 +2424,8 @@ export class Sound {
       volume: this.volume,
       pauseFadeFactor: this.pauseFadeFactor,
     };
-    this.ctx = captureCtx;
+    this.ctx = capture as unknown as AudioContext;
+    this.captureCtx = capture;
     this.volume = Sound.DEFAULT_VOLUME;
     this.pauseFadeFactor = 1;
     this.buildMixGraph();
@@ -2409,6 +2439,7 @@ export class Sound {
     if (!saved) return;
     this.stopVoicesForContextSwap();
     this.exportRestore = null;
+    this.captureCtx = null;
     this.ctx = saved.ctx;
     this.master = saved.master;
     this.bakedOut = saved.bakedOut;
@@ -2983,7 +3014,7 @@ export class Sound {
   private resumeHumIfReleasing(node: FirstDotHumNode, t: number) {
     if (!node.releasing) return;
     if (node.releaseCleanupTimer !== null) {
-      clearTimeout(node.releaseCleanupTimer);
+      node.releaseCleanupTimer.cancel();
       node.releaseCleanupTimer = null;
     }
     node.mainGain.gain.cancelScheduledValues(t);
@@ -3069,7 +3100,7 @@ export class Sound {
     node.mainGain.gain.linearRampToValueAtTime(dropLevel, dropEnd);
     node.mainGain.gain.exponentialRampToValueAtTime(0.0001, tailEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (!isCurrent()) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.02 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3158,7 +3189,7 @@ export class Sound {
     node.mainGain.gain.setValueAtTime(node.mainGain.gain.value, t);
     node.mainGain.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.firstDotLockHum !== node) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.01 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3212,7 +3243,7 @@ export class Sound {
     node.mainGain.gain.setValueAtTime(node.mainGain.gain.value, t);
     node.mainGain.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.firstDotHarmonyHum !== node) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.01 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3259,7 +3290,7 @@ export class Sound {
     node.mainGain.gain.setValueAtTime(node.mainGain.gain.value, t);
     node.mainGain.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.firstDotSubHum !== node) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.01 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3305,7 +3336,7 @@ export class Sound {
     node.mainGain.gain.setValueAtTime(node.mainGain.gain.value, t);
     node.mainGain.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.firstDotShimmerHum !== node) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.01 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3351,7 +3382,7 @@ export class Sound {
     node.mainGain.gain.setValueAtTime(node.mainGain.gain.value, t);
     node.mainGain.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.firstDotNinthHum !== node) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.01 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3396,7 +3427,7 @@ export class Sound {
     node.mainGain.gain.setValueAtTime(node.mainGain.gain.value, t);
     node.mainGain.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.firstDotSixthHum !== node) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.01 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3442,7 +3473,7 @@ export class Sound {
     node.mainGain.gain.setValueAtTime(node.mainGain.gain.value, t);
     node.mainGain.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.firstDotHaloHum !== node) return;
       const stopAt = this.ctx ? this.ctx.currentTime + 0.01 : 0;
       try { node.src.stop(stopAt); } catch {}
@@ -3576,7 +3607,7 @@ export class Sound {
       releasing: false,
       releaseCleanupTimer: null,
     };
-    node.timer = setInterval(() => this.pumpStreakShimmer(node), Sound.STREAK_SHIMMER_PUMP_MS);
+    node.timer = this.voiceInterval(() => this.pumpStreakShimmer(node), Sound.STREAK_SHIMMER_PUMP_MS);
     return node;
   }
 
@@ -3673,10 +3704,10 @@ export class Sound {
   private resumeStreakShimmerIfReleasing(node: StreakShimmerNode, t: number) {
     if (!node.releasing) return;
     if (node.releaseCleanupTimer !== null) {
-      clearTimeout(node.releaseCleanupTimer);
+      node.releaseCleanupTimer.cancel();
       node.releaseCleanupTimer = null;
     }
-    if (node.timer === null) node.timer = setInterval(() => this.pumpStreakShimmer(node), Sound.STREAK_SHIMMER_PUMP_MS);
+    if (node.timer === null) node.timer = this.voiceInterval(() => this.pumpStreakShimmer(node), Sound.STREAK_SHIMMER_PUMP_MS);
     node.nextNoteTime = t + 0.05;
     node.out.gain.cancelScheduledValues(t);
     node.out.gain.setValueAtTime(node.out.gain.value, t);
@@ -3690,13 +3721,13 @@ export class Sound {
     const node = this.streakShimmer;
     if (node.releasing) return;
     const t = this.ctx.currentTime;
-    if (node.timer !== null) { clearInterval(node.timer); node.timer = null; }
+    if (node.timer !== null) { node.timer.cancel(); node.timer = null; }
     const releaseEnd = t + Sound.STREAK_SHIMMER_RELEASE_SEC;
     node.out.gain.cancelScheduledValues(t);
     node.out.gain.setValueAtTime(node.out.gain.value, t);
     node.out.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.streakShimmer !== node) return;
       try { node.out.disconnect(); } catch {}
       this.streakShimmer = null;
@@ -3790,7 +3821,7 @@ export class Sound {
   private resumeStreakLoopIfReleasing(node: StreakLoopNode, t: number) {
     if (!node.releasing) return;
     if (node.releaseCleanupTimer !== null) {
-      clearTimeout(node.releaseCleanupTimer);
+      node.releaseCleanupTimer.cancel();
       node.releaseCleanupTimer = null;
     }
     node.out.gain.cancelScheduledValues(t);
@@ -3810,7 +3841,7 @@ export class Sound {
     node.out.gain.setValueAtTime(node.out.gain.value, t);
     node.out.gain.linearRampToValueAtTime(0.0001, releaseEnd);
     node.releasing = true;
-    node.releaseCleanupTimer = setTimeout(() => {
+    node.releaseCleanupTimer = this.voiceTimeout(() => {
       if (this.streakLoop !== node) return;
       for (const src of node.srcs) { try { src.stop(); } catch {} }
       try { node.out.disconnect(); } catch {}
@@ -5167,7 +5198,7 @@ export class Sound {
     // Fire the first step immediately so the pad arrives with a sung-into
     // entrance rather than a second of silent build.
     triggerStep();
-    const melodyInterval = setInterval(triggerStep, PAD_STEP_S * 1000);
+    const melodyInterval = this.voiceInterval(triggerStep, PAD_STEP_S * 1000);
 
     mainGain.connect(this.master);
 
@@ -6072,7 +6103,7 @@ export class Sound {
     const stopAt = t + 1.3;
     for (const o of node.oscs) o.stop(stopAt);
     for (const l of node.lfos) l.stop(stopAt);
-    if (node.melodyInterval !== null) clearInterval(node.melodyInterval);
+    if (node.melodyInterval !== null) node.melodyInterval.cancel();
     this.haloAmbient = null;
     this.haloAmbientTier = 0;
   }

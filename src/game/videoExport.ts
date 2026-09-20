@@ -178,9 +178,11 @@ const restoreViewerPosition = (game: Game, resumePos: number, resumeSpeed: numbe
 
 // Rebuild at frame 0 and step every recorded frame, rendering each one (some
 //   voices — reticule hums, streak stems — are driven from render code, so the
-//   render call is part of audio capture too). clock.now is set to the frame's
-//   start time BEFORE stepping, so all audio scheduled during the frame lands
-//   at the timeline position the frame's video ticks are stamped from.
+//   render call is part of audio capture too). The clock is advanced to the
+//   frame's start time BEFORE stepping the sim, so all audio scheduled during
+//   the frame lands at the timeline position the frame's video ticks are
+//   stamped from, and voice teardowns deferred on the export clock fire at
+//   their own point of the timeline rather than at CPU speed.
 //   `onFrame` (video path) encodes the just-rendered canvas once per output
 //   tick that falls inside the frame; awaiting it also drains microtasks so
 //   cached-buffer awaits inside async voice starts (halo music, vocals)
@@ -204,7 +206,7 @@ const runSimCapturePass = async (
     while (!state.cancelled) {
       const dt = player.peekFrameDt();
       if (dt === null) break;
-      clock.now = acc;
+      clock.advanceTo(acc);
       if (!stepReplayFrame(game)) break;
       renderGame(game);
       if (onFrame) {
@@ -356,7 +358,7 @@ const runVideoExport = async (game: Game): Promise<void> => {
     const offline = new OfflineAudioContext(
       2, Math.max(1, Math.ceil((duration + RENDER_TAIL_SEC) * sampleRate)), sampleRate,
     );
-    game.sound.beginExportCapture(new CaptureAudioContext(offline, clock) as unknown as AudioContext);
+    game.sound.beginExportCapture(new CaptureAudioContext(offline, clock));
 
     let sinceKeySec = Infinity;
     const encodeFrame = async (presentationSec: number, dtSec: number) => {
@@ -443,7 +445,7 @@ export const exportReplayAudioWav = async (game: Game): Promise<void> => {
     const offline = new OfflineAudioContext(
       2, Math.max(1, Math.ceil((duration + RENDER_TAIL_SEC) * sampleRate)), sampleRate,
     );
-    game.sound.beginExportCapture(new CaptureAudioContext(offline, clock) as unknown as AudioContext);
+    game.sound.beginExportCapture(new CaptureAudioContext(offline, clock));
     try {
       await runSimCapturePass(game, clock, state, null);
     } finally {
