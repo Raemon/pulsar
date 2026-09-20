@@ -699,10 +699,6 @@ const tickBeatIntensityRamp = (game: Game, dt: number) => {
   if (f >= 1) game.beatIntensityRamp = null;
 };
 
-// tracked across frames so we only push a new playbackRate when it changes
-// meaningfully — avoids hammering AudioParam every frame at the same rate.
-let lastCommandedPlaybackRate = 1;
-
 const BEAT_RESNAP_INTERVAL = BASS_MEASURE_LENGTH;
 const BEAT_RESNAP_THRESHOLD = 0.030;
 // above this we assume a real stall (tab suspend, GC pause, debugger) rather
@@ -749,6 +745,79 @@ const tickBeatResnap = (game: Game) => {
   if (DEBUG_BEAT_TIMING) {
     console.log(`[beat-resnap] error=${(error * 1000).toFixed(1)}ms  bleeding`);
   }
+};
+
+// Replay mirror of tickBeatResnap, and the other half of keeping the bass and
+// the music together. Live play does it by dragging beatTime onto the music; a
+// replay must not touch beatTime (it is a recorded sum that the sim, its
+// checkpoints and the combo gate all depend on), so it does it from the other
+// side — trimming the music's playback rate onto the sim clock.
+//
+// Without this a replay and its exported movie both slide. The recorded
+// resnaps are re-applied to beatTime faithfully, but they were corrections for
+// a drift the ORIGINAL run's audio clock had, and the replay's freshly-started
+// music does not have it: on a measured wave-2 run that is 319 ms of recorded
+// correction, so the bass ends up two thirds of a beat off the music by 87 s,
+// growing the whole way.
+//
+// The trim is the rate the sim clock actually ran at against the audio clock
+// over the last measure (feed-forward), plus a proportional term that bleeds
+// off the phase error already standing. It settles a few tenths of a percent
+// from 1 — a handful of cents of pitch on a pad, against half a beat of slip.
+//   The rate the music needs is the rate the sim clock runs at against the
+//   audio clock — measured directly over short spans, so it is right both for
+//   the exporter (whose clock is the recorded dt sum) and for playback in a
+//   browser (paced by a wall-clock accumulator). Smoothing rides out the
+//   spikes of a resnap being injected (a bleed can be a quarter of one frame)
+//   while tracking the underlying drift, which reaches ~0.9% on the measured
+//   run while the music plays. A phase term on top pulls any standing offset
+//   back to zero; it idles near nothing once the rate itself is right.
+//   The cap is what keeps this inaudible. The recorded corrections arrive in
+//   bursts (the live watchdog bleeds each measure's error over ~0.15 s), and
+//   chasing a burst at its own speed would bend the pad's pitch by most of a
+//   semitone. Spread instead: 1% is 17 cents at worst, under what reads as
+//   wobble on a sustained stem, and still ~2x the average correction the
+//   measured run needed, so the error is pulled back between bursts rather
+//   than accumulating. What is left is a transient of a few tens of ms after
+//   each burst, against 319 ms of monotonic slide before.
+const SIM_CLOCK_RATE_TAU = 1.0;
+const REPLAY_MUSIC_PHASE_TAU = 2.0;
+const REPLAY_MUSIC_TRIM_MAX = 0.01;
+// Shortest span worth measuring a clock ratio over. One render tick can step
+//   several recorded frames while the audio clock stands still, so the ratio
+//   is taken over a span rather than per frame.
+const CLOCK_SAMPLE_MIN_SPAN = 0.1;
+
+const tickReplayMusicPhase = (game: Game) => {
+  if (!game.replayPlayer) {
+    game.musicRateTrim = 1;
+    return;
+  }
+  const audioNow = game.sound.runningAudioTime();
+  if (audioNow === null) {
+    game.musicPhaseAudioMark = null;
+    return;
+  }
+  // Slow-mo is commanded as the rate outright and the trim rides on top, so
+  //   its factor must not leak into the measured clock rate; hold both through
+  //   the ramp and re-mark on the far side.
+  if (game.slowMoTimer > 0 || game.musicPhaseAudioMark === null) {
+    game.musicPhaseAudioMark = audioNow;
+    game.musicPhaseBeatMark = game.beatTime;
+    return;
+  }
+  const audioSpan = audioNow - game.musicPhaseAudioMark;
+  if (audioSpan >= CLOCK_SAMPLE_MIN_SPAN) {
+    const simSpan = game.beatTime - game.musicPhaseBeatMark;
+    game.musicPhaseAudioMark = audioNow;
+    game.musicPhaseBeatMark = game.beatTime;
+    const alpha = Math.min(1, audioSpan / SIM_CLOCK_RATE_TAU);
+    game.simClockRate += (simSpan / audioSpan - game.simClockRate) * alpha;
+  }
+  const musicBeat = game.sound.audioBeatTimeFromMusic();
+  const phaseError = musicBeat === null ? 0 : game.beatTime - musicBeat;
+  const trim = game.simClockRate + phaseError / REPLAY_MUSIC_PHASE_TAU;
+  game.musicRateTrim = Math.max(1 - REPLAY_MUSIC_TRIM_MAX, Math.min(1 + REPLAY_MUSIC_TRIM_MAX, trim));
 };
 
 // Bleeds beatPhaseCorrection into musicDt so tickBassBeats advances beatTime
@@ -806,15 +875,6 @@ const updatePlaying = (game: Game, dt: number) => {
   tickLaserShot(game, dt);
   tickSuperLaserFire(game);
   const rawMusicDt = tickSlowMoTimer(game, dt);
-  // music slows with gameplay so beat+music stay locked through slow-mo.
-  if (dt > 0) {
-    const slowMoFactor = rawMusicDt / dt;
-    if (Math.abs(slowMoFactor - lastCommandedPlaybackRate) > 0.001) {
-      game.sound.setHaloMusicPlaybackRate(slowMoFactor, 0);
-      game.sound.setHaloFullMusicPlaybackRate(slowMoFactor, 0);
-      lastCommandedPlaybackRate = slowMoFactor;
-    }
-  }
   // Resnap perturbs beatTime away from a pure dt-sum, two ways: a hard-snap jumps
   //   beatTime directly here, and a bleed feeds beatPhaseCorrection into musicDt
   //   (below) over many frames. Both are driven by the live audio clock, which a
@@ -832,6 +892,18 @@ const updatePlaying = (game: Game, dt: number) => {
   //   the bleed delta folded into musicDt. Replay already injected its recorded
   //   value into musicDt above, so it records nothing.
   game.recorder?.recordBeatResnap(snapDelta + (musicDt - rawMusicDt));
+  // Music slows with gameplay so beat+music stay locked through slow-mo, and
+  //   during a replay the phase trim rides on top so the music also tracks the
+  //   recorded beat clock. Compared against Sound's own commanded rate rather
+  //   than a module-level mirror, which would carry across runs.
+  tickReplayMusicPhase(game);
+  if (dt > 0) {
+    const commandedRate = (rawMusicDt / dt) * game.musicRateTrim;
+    if (Math.abs(commandedRate - game.sound.commandedMusicPlaybackRate) > 0.0005) {
+      game.sound.setHaloMusicPlaybackRate(commandedRate, 0);
+      game.sound.setHaloFullMusicPlaybackRate(commandedRate, 0);
+    }
+  }
   // playbackRate maps beatTime → audio-clock seconds for the lookahead pulse
   // scheduler; under slow-mo musicDt < dt so beats are scheduled further out.
   const beatPlaybackRate = dt > 0 ? rawMusicDt / dt : 1;

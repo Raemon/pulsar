@@ -179,6 +179,19 @@ export class Game implements HudElements {
   // subsequent frames, so corrections happen as a smooth tempo nudge rather
   // than a hard jump that skips or replays bgBeat slots.
   beatPhaseCorrection = 0;
+  // Replay/export only: a playback-rate trim that holds the music on the sim
+  //   clock, because a replay may not move the clock onto the music the way
+  //   live play does (see tickReplayMusicPhase). 1 = untrimmed.
+  musicRateTrim = 1;
+  // Smoothed rate the sim clock runs at against the audio clock. 1 in live
+  //   play (they are the same clock); a few tenths of a percent off during a
+  //   replay, which is what the trim above cancels.
+  simClockRate = 1;
+  // The (audio clock, beatTime) pair that rate is measured from. Null while no
+  //   audio clock is running, so the next tick re-marks instead of measuring
+  //   across the gap.
+  musicPhaseAudioMark: number | null = null;
+  musicPhaseBeatMark = 0;
   // player-measured latency offset (seconds), loaded in the constructor. Raw audio
   //   fires on `beatTime`; everything the player reacts to (scoring window + visual
   //   beat cues) reads `perceivedBeatTime` so it lands on the beat they actually hear.

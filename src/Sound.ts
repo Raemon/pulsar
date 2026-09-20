@@ -232,7 +232,15 @@ type HaloMusicNode = {
   startedAtAudioTime: number;
   // game.beatTime that corresponds to startedAtAudioTime.
   startedAtBeatTime: number;
-  // Last commanded playbackRate (1.0 normally, < 1 during slow-mo).
+  // Beat-position anchor, advanced on every rate change (see
+  //   setHaloMusicPlaybackRate). startedAt* pins the original start; these pin
+  //   the last point the position was known exactly, so the music's beat
+  //   position stays right after any number of rate changes — reading it as
+  //   "start + elapsed" was wrong the moment a rate ever moved.
+  beatAnchorAudioTime: number;
+  beatAnchorBeatTime: number;
+  // Last commanded playbackRate (1.0 normally, < 1 during slow-mo, and a few
+  //   tenths of a percent off 1 while a replay trims the music onto its clock).
   currentPlaybackRate: number;
 };
 
@@ -595,6 +603,9 @@ export class Sound {
   // playing node so music that STARTS mid-slomo also opens at the slowed rate
   // (the start paths seed new sources from this). set*PlaybackRate keeps it live.
   private currentMusicPlaybackRate = 1.0;
+  // The rate last commanded for the halo music, so the per-frame caller can
+  //   skip a redundant command without keeping its own (run-scoped) mirror.
+  get commandedMusicPlaybackRate(): number { return this.currentMusicPlaybackRate; }
   // Per-stem buffer cache, keyed by URL. AudioBuffers are decoded once and
   // reused across all start/stop cycles for a given variation.
   haloMusicBuffers: Map<string, AudioBuffer> = new Map();
@@ -2113,16 +2124,16 @@ export class Sound {
   }
 
   // Authoritative beat-time derived from the music's actual playback position
-  // on the audio hardware clock. Returns null when no halo music is active,
-  // when the buffer hasn't actually started (measure-align delay), or when
-  // playbackRate isn't 1 (slow-mo ramps have their own audible easing — we
-  // don't try to second-guess them here).
+  // on the audio clock. Null when no halo music is active or its buffer
+  // hasn't started yet (measure-align delay). Read from the beat anchor and
+  // the current rate rather than raw elapsed time, so it stays exact across
+  // slow-mo and across a replay's phase trim.
   audioBeatTimeFromMusic(): number | null {
     if (!this.haloMusic || !this.ctx) return null;
-    if (this.haloMusic.currentPlaybackRate !== 1) return null;
-    const elapsed = this.ctx.currentTime - this.haloMusic.startedAtAudioTime;
+    const node = this.haloMusic;
+    const elapsed = this.ctx.currentTime - node.beatAnchorAudioTime;
     if (elapsed < 0) return null;
-    return this.haloMusic.startedAtBeatTime + elapsed;
+    return node.beatAnchorBeatTime + elapsed * node.currentPlaybackRate;
   }
 
   // Convert a beat-time delta (seconds of beatTime ahead of "now") into an
@@ -2144,6 +2155,14 @@ export class Sound {
     this.currentMusicPlaybackRate = rate;
     if (!this.haloMusic || !this.ctx) return;
     const now = this.ctx.currentTime;
+    // Bank the beat position the old rate covered before switching, so
+    //   audioBeatTimeFromMusic stays exact. (Across a ramp this treats the
+    //   change as instantaneous — the error is bounded by rampSec × Δrate,
+    //   and every caller that cares passes rampSec 0.)
+    if (now > this.haloMusic.beatAnchorAudioTime) {
+      this.haloMusic.beatAnchorBeatTime += (now - this.haloMusic.beatAnchorAudioTime) * this.haloMusic.currentPlaybackRate;
+      this.haloMusic.beatAnchorAudioTime = now;
+    }
     const srcs: AudioBufferSourceNode[] = [
       this.haloMusic.ambientSrc,
       this.haloMusic.melodicSrc,
@@ -5528,6 +5547,11 @@ export class Sound {
 
     // immediate: these play the moment they resolve, so they must not wait
     // for an idle slot behind the background queue.
+    // Anchor the beat mapping to the clock as it was when the caller handed
+    //   us its beatTime: the await below lets real time pass, and measuring
+    //   from after it would place the music behind the beat clock by the
+    //   load's duration — an error the live watchdog then drags beatTime by.
+    const tAtCall = this.ctx.currentTime;
     this.haloMusicStartPending = true;
     let ambientBuf: AudioBuffer | null, melodicBuf: AudioBuffer | null, layer3Buf: AudioBuffer | null;
     try {
@@ -5547,7 +5571,7 @@ export class Sound {
     const startAt = t + Math.max(0, measureAlignDelay);
     // Maps the music's first sample-frame to the beatTime the caller is
     // about to advance into during the same align window.
-    const startedAtBeatTime = currentBeatTime + (startAt - t);
+    const startedAtBeatTime = currentBeatTime + (startAt - tAtCall);
     const ambientSrc = this.ctx.createBufferSource();
     const melodicSrc = this.ctx.createBufferSource();
     ambientSrc.buffer = ambientBuf;
@@ -5624,6 +5648,8 @@ export class Sound {
       climaxActive: false,
       startedAtAudioTime: startAt,
       startedAtBeatTime,
+      beatAnchorAudioTime: startAt,
+      beatAnchorBeatTime: startedAtBeatTime,
       currentPlaybackRate: rate0,
     };
   }
@@ -5655,6 +5681,11 @@ export class Sound {
     // rapid combo bounce) doesn't kick off a second crossfade while the
     // buffers for this one are still loading.
     outgoing.climaxActive = true;
+    // Anchor the beat mapping to the clock as it was when the caller handed
+    //   us its beatTime: the await below lets real time pass, and measuring
+    //   from after it would place the music behind the beat clock by the
+    //   load's duration — an error the live watchdog then drags beatTime by.
+    const tAtCall = this.ctx.currentTime;
 
     // immediate: these play the moment they resolve, so they must not wait
     // for an idle slot behind the background queue.
@@ -5672,7 +5703,7 @@ export class Sound {
     const CROSSFADE_SEC = 2.0;
     const t = this.ctx.currentTime;
     const startAt = t + Math.max(0, measureAlignDelay);
-    const startedAtBeatTime = currentBeatTime + (startAt - t);
+    const startedAtBeatTime = currentBeatTime + (startAt - tAtCall);
     const ambientSrc = this.ctx.createBufferSource();
     const melodicSrc = this.ctx.createBufferSource();
     ambientSrc.buffer = ambientBuf;
@@ -5741,6 +5772,8 @@ export class Sound {
       climaxActive: true,
       startedAtAudioTime: startAt,
       startedAtBeatTime,
+      beatAnchorAudioTime: startAt,
+      beatAnchorBeatTime: startedAtBeatTime,
       currentPlaybackRate: rate0,
     };
   }
@@ -5846,6 +5879,11 @@ export class Sound {
     // A full song and a loop track never play together.
     if (this.haloMusic) this.stopHaloMusic();
 
+    // Anchor the beat mapping to the clock as it was when the caller handed
+    //   us its beatTime: the await below lets real time pass, and measuring
+    //   from after it would place the music behind the beat clock by the
+    //   load's duration — an error the live watchdog then drags beatTime by.
+    const tAtCall = this.ctx.currentTime;
     this.haloFullMusicStartPending = true;
     let bufs: (AudioBuffer | null)[];
     try {
@@ -5861,7 +5899,7 @@ export class Sound {
 
     const t = this.ctx.currentTime;
     const startAt = t + Math.max(0, measureAlignDelay);
-    const startedAtBeatTime = currentBeatTime + (startAt - t);
+    const startedAtBeatTime = currentBeatTime + (startAt - tAtCall);
     const activeTier = this.fullTierForCombo(combo);
 
     // Per-LAYER beat-sync offsets (seconds), drag-tuned on the /music page and
