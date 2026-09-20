@@ -8,7 +8,7 @@ import { getChannelVolume, type AudioChannel } from "./game/audioPrefs";
 import { musicGain, loadMusicConfig, type MusicLayer } from "./musicConfig";
 import { FULL_HALO_TIER_THRESHOLDS, FULL_HALO_SONGS, type FullHaloSong } from "./game/haloFullMusicConfig";
 import { fullHaloLayerOffset, loadHaloFullConfig } from "./haloFullConfig";
-import { cosmeticRng } from "./game/rng";
+import { audioRng } from "./game/rng";
 import { HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATIONS } from "./game/haloMusicConfig";
 import { SOUND_LOAD_SCHEDULE, STREAK_SHIMMER_POOL_SIZE, FIRST_DOT_HUM_POOL_SIZE } from "./game/soundSchedule";
 import type { CaptureAudioContext } from "./game/audioCapture";
@@ -609,7 +609,16 @@ export class Sound {
   // Cache is keyed by URL (not just index) because index 1 (combo-x6 unlock)
   // picks a random take from a pool each fire — see PILOT_LOG_1_TAKES.
   pilotLogBuffers: Map<string, AudioBuffer> = new Map();
-  pilotLogPlaying = false;
+  //   Held on the audio clock rather than by a wall-clock timer so an export
+  //   sweep, which runs at CPU speed, releases it at the same point of the
+  //   run as live playback does: busy until start + take length + a breath.
+  private pilotLogBusyUntil = 0;
+  get pilotLogPlaying(): boolean {
+    return this.ctx !== null && this.ctx.currentTime < this.pilotLogBusyUntil;
+  }
+  // Generous hold while a take's buffer loads; replaced by the exact release
+  //   once its length is known.
+  private static readonly PILOT_LOG_HOLD_WHILE_LOADING_SEC = 60;
   private pilotLogLoading: Map<string, Promise<AudioBuffer | null>> = new Map();
 
   // Listener position (ship). Pan + distance falloff are computed relative
@@ -5489,6 +5498,17 @@ export class Sound {
   // for 32-second loops with internal chord changes than for the round-1
   // 8-second loops, where any seam landed within one bar of the bass clock
   // anyway.
+  // True while startHaloMusic / startHaloFullMusic await their buffers. The
+  //   caller polls every sim frame and picks a fresh track whenever no node
+  //   exists, so without this it drew and started again on every frame of the
+  //   wait — and how many frames that is depends on the display's refresh rate
+  //   (a 60 Hz tick steps two sim frames), which put the audio-pick stream in a
+  //   different place on every machine.
+  private haloMusicStartPending = false;
+  private haloFullMusicStartPending = false;
+  get haloMusicStarting(): boolean { return this.haloMusicStartPending; }
+  get haloFullMusicStarting(): boolean { return this.haloFullMusicStartPending; }
+
   async startHaloMusic(variation: HaloMusicVariation, melodicActive: boolean,
                        measureAlignDelay: number = 0,
                        currentBeatTime: number = 0,
@@ -5508,11 +5528,17 @@ export class Sound {
 
     // immediate: these play the moment they resolve, so they must not wait
     // for an idle slot behind the background queue.
-    const [ambientBuf, melodicBuf, layer3Buf] = await Promise.all([
-      this.loadHaloMusicBuffer(this.haloMusicUrl(variation, "ambient"), true),
-      this.loadHaloMusicBuffer(this.haloMusicUrl(variation, "melodic"), true),
-      this.loadHaloMusicBuffer(this.haloMusicUrl(variation, "layer3"), true),
-    ]);
+    this.haloMusicStartPending = true;
+    let ambientBuf: AudioBuffer | null, melodicBuf: AudioBuffer | null, layer3Buf: AudioBuffer | null;
+    try {
+      [ambientBuf, melodicBuf, layer3Buf] = await Promise.all([
+        this.loadHaloMusicBuffer(this.haloMusicUrl(variation, "ambient"), true),
+        this.loadHaloMusicBuffer(this.haloMusicUrl(variation, "melodic"), true),
+        this.loadHaloMusicBuffer(this.haloMusicUrl(variation, "layer3"), true),
+      ]);
+    } finally {
+      this.haloMusicStartPending = false;
+    }
     if (!this.ctx || !this.master) return;
     if (!ambientBuf || !melodicBuf) return;
     if (this.haloMusic) return;  // raced with another start
@@ -5820,9 +5846,15 @@ export class Sound {
     // A full song and a loop track never play together.
     if (this.haloMusic) this.stopHaloMusic();
 
-    const bufs = await Promise.all(
-      Array.from({ length: 6 }, (_, i) => this.loadHaloMusicBuffer(this.haloFullMusicUrl(song, i + 1), true)),
-    );
+    this.haloFullMusicStartPending = true;
+    let bufs: (AudioBuffer | null)[];
+    try {
+      bufs = await Promise.all(
+        Array.from({ length: 6 }, (_, i) => this.loadHaloMusicBuffer(this.haloFullMusicUrl(song, i + 1), true)),
+      );
+    } finally {
+      this.haloFullMusicStartPending = false;
+    }
     if (!this.ctx || !this.master) return;
     if (this.haloFullMusic) return;  // raced with another start
     if (bufs.some((b) => !b)) return;  // a layer failed to load — bail cleanly
@@ -6156,20 +6188,24 @@ export class Sound {
     if (!this.ctx || !this.chVocalsBaked) return 0;
     const urls = pilotLogUrlsForIndex(milestone);
     if (urls.length === 0) return 0;
-    // Cosmetic draw (see game/rng.ts) — which take plays doesn't affect
-    //   sim state, but it must still be deterministic so a replay/export
-    //   re-sim picks the exact take the original run played.
-    const url = urls[Math.floor(cosmeticRng() * urls.length)];
+    // Audio-pick draw (see game/rng.ts): which take plays doesn't affect sim
+    //   state, but a replay/export re-sim must pick the take the original run
+    //   played, and the cosmetic stream can't promise that — render code draws
+    //   from it at the display's rate.
+    const url = urls[Math.floor(audioRng() * urls.length)];
     const targetStartTime = this.ctx.currentTime + Math.max(0, delaySec);
+    this.pilotLogBusyUntil = targetStartTime + Sound.PILOT_LOG_HOLD_WHILE_LOADING_SEC;
     const buf = await this.loadPilotLogBuffer(url, true);
-    if (!buf || !this.ctx || !this.chVocalsBaked) return 0;
+    if (!buf || !this.ctx || !this.chVocalsBaked) { this.pilotLogBusyUntil = 0; return 0; }
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     const g = this.ctx.createGain();
     g.gain.value = gain;
     src.connect(g);
     g.connect(this.chVocalsBaked);
-    src.start(Math.max(this.ctx.currentTime, targetStartTime));
+    const startAt = Math.max(this.ctx.currentTime, targetStartTime);
+    src.start(startAt);
+    this.pilotLogBusyUntil = startAt + buf.duration + 0.5;
     return buf.duration;
   }
 

@@ -35,11 +35,24 @@ page.on("console", (m) => { const t = m.text(); if (!t.startsWith("[vite]")) con
 await page.goto(`http://localhost:${PORT}/sound`, { waitUntil: "domcontentloaded" });
 
 const result = await page.evaluate(async () => {
-  const [{ Sound }, cfg, cap] = await Promise.all([
+  const [{ Sound }, cfg, cap, rngMod, haloCfg] = await Promise.all([
     import("/src/Sound.ts"),
     import("/src/soundConfig.ts"),
     import("/src/game/audioCapture.ts"),
+    import("/src/game/rng.ts"),
+    import("/src/game/haloMusicConfig.ts"),
   ]);
+  // Audible picks must not move with the cosmetic stream, which render code
+  // draws from at the display's rate: the same seed must yield the same music
+  // whether or not a thousand cosmetic draws happened in between.
+  const pickSeq = (cosmeticDraws) => {
+    rngMod.seedRng(0x5EED1234);
+    for (let i = 0; i < cosmeticDraws; i++) rngMod.cosmeticRng();
+    const out = [];
+    for (let i = 0; i < 6; i++) { const v = haloCfg.pickHaloMusicVariation(3); out.push(v, haloCfg.pickHaloMusicVariationExcluding(v, 3)); }
+    return out.join(",");
+  };
+  const picksStable = pickSeq(0) === pickSeq(1000);
   await cfg.loadSoundConfig();
   const sound = new Sound();
   sound.ensureContext();
@@ -170,11 +183,12 @@ const result = await page.evaluate(async () => {
     maxStepAtTeardown: r4(maxStepIn(STREAK_OFF + 0.5, STREAK_OFF + 0.8)),
     rmsAfterTeardown: r4(rms(STREAK_OFF + 1.0, STREAK_OFF + 1.8)),
   };
-  return { prewarmMs, states, fired, peak: r4(peak), perSecondRms: perSecond, channels: rendered.numberOfChannels, paramFailures, hum, streak };
+  return { prewarmMs, states, fired, peak: r4(peak), perSecondRms: perSecond, channels: rendered.numberOfChannels, paramFailures, picksStable, hum, streak };
 });
 
 console.log(JSON.stringify(result, null, 1));
 const failures = [...result.paramFailures.map((f) => `capture param ${f}`)];
+if (!result.picksStable) failures.push("halo music pick moves with the cosmetic RNG stream");
 const silentSeconds = result.perSecondRms.slice(0, 5).filter((v) => v < 1e-4).length;
 if (!(result.peak > 0.01)) failures.push("render is silent");
 if (silentSeconds !== 0) failures.push(`${silentSeconds} silent second(s) among the first five`);

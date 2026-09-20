@@ -520,6 +520,9 @@ const syncHaloAmbient = (game: Game) => {
     // pool entirely on these waves; boss/haunting waves still use it below.
     if (hasYellowHalo) {
       if (!game.sound.haloFullMusic) {
+        // A start is async; picking again on every frame of its buffer wait
+        //   would draw the audio-pick stream once per frame of latency.
+        if (game.sound.haloFullMusicStarting) return;
         const song = pickFullHaloSong();
         const nextDownbeat = Math.ceil(game.beatTime / BASS_MEASURE_LENGTH) * BASS_MEASURE_LENGTH;
         const measureAlignDelay = nextDownbeat - game.beatTime;
@@ -544,6 +547,10 @@ const syncHaloAmbient = (game: Game) => {
     const bossWave = bossTheme !== null;
     if (hasYellowHalo) {
       if (!game.sound.haloMusic) {
+        // A start is async; picking again on every frame of its buffer wait
+        //   would draw the audio-pick stream once per frame of latency, and
+        //   race a second node against the first.
+        if (game.sound.haloMusicStarting) return;
         const variation = bossTheme ?? pickHaloMusicVariation(game.wave);
         // Schedule the music's downbeat on the next bass-measure boundary
         // so the loop's chord changes align with the bass field's measure

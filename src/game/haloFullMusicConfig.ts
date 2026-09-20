@@ -13,7 +13,7 @@
 // Stems live in /sounds/halo-music-full/{song}-l1..l6.mp3, built by
 // scripts/music-gen/process_mothlight-full.py (115 BPM → locked to 120, key
 // shifted to C major to sit on the bass field's C bed like the loop pool).
-import { cosmeticRng as rng } from "./rng";
+import { audioRng as rng } from "./rng";
 
 // The combo thresholds at which each of the six layers fades in. Index i is the
 // combo at which layer (i+1) becomes audible. Shared by every full song.
@@ -59,8 +59,8 @@ export function isFullHaloWave(wave: number): boolean {
 
 const ALL_SONGS = Object.keys(FULL_HALO_SONGS) as FullHaloSong[];
 
-// Pick a random full song. Like the loop pool's picker this draws the cosmetic
-// RNG (never the gameplay stream) so the muted replay re-sim doesn't desync.
+// Pick a random full song. Like the loop pool's picker this draws the
+//   audio-pick stream (see game/rng.ts), never the gameplay one.
 export function pickFullHaloSong(): FullHaloSong {
   return ALL_SONGS[Math.floor(rng() * ALL_SONGS.length)];
 }

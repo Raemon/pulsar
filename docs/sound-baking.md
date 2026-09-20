@@ -133,6 +133,25 @@ reason a few things are done the way they are:
 The check script drives a reticule hum through swell → release → teardown and
 a streak loop through the same, and asserts both fade instead of stepping.
 
+Two more rules keep the export's *decisions* identical to live playback, not
+just its voices:
+
+- **Audible picks draw `audioRng`, never `cosmeticRng`.** The halo music
+  variation, its 24x swap, the full-halo song and the Pilot's Log take are
+  chosen from sim code. Render code also draws the cosmetic stream, at the
+  display's refresh rate, so a pick made through it landed on a different
+  track in the original run, in a replay on another display, and in the
+  export. `audioRng` is drawn only by those picks.
+- **An async music start is not re-picked while it loads.** `syncHaloAmbient`
+  polls every sim frame; `Sound.haloMusicStarting` covers the buffer await so
+  the frames of latency (one at 120 Hz, two at 60 Hz) don't each draw another
+  variation and race another node.
+
+`scripts/check-export-audio.mjs` asserts the picks don't move with the
+cosmetic stream, and the export sweep drains the microtask queue every frame
+so a start that reads the clock after its buffer await sees the frame that
+triggered it.
+
 One consequence worth knowing: **`bgBeat`'s intensity buckets are derived from
 `CFG.bgBeatIntensity`**, not hardcoded. The ramp runs 0.6 → 1.0 over 30 waves,
 so only 5 of the 11 buckets are reachable and the other 24 files are never
