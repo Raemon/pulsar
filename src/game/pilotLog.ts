@@ -40,21 +40,19 @@ const showUnlockToast = (label: string) => {
 // Vocals are rationed on the same 4h window as the intro's full-hint triplet:
 //   a line the player already heard this session stays quiet on every later run
 //   until the session lapses (see sessionTracker). Replay playback is exempt —
-//   playPilotLog draws its take from the shared cosmetic RNG stream, so
-//   skipping the call on one viewer's machine and not another's would drift
-//   every downstream cosmetic draw in the re-sim.
+//   playPilotLog draws its take from the audio-pick RNG stream, so skipping the
+//   call on one viewer's machine and not another's would drift every later
+//   audio pick in the re-sim.
 const allowLogVocal = (game: Game, milestone: number): boolean =>
   game.state === "replaying" || shouldPlayPilotLog(milestone);
 
-// Schedule the vocal on the next downbeat and hold the mutex for its duration.
+// Schedule the vocal on the next downbeat. Sound holds the pilotLogPlaying
+//   mutex on the audio clock for the take's duration.
 const playLogVocal = (game: Game, milestone: number) => {
   if (!allowLogVocal(game, milestone)) return;
   if (game.state !== "replaying") markPilotLogHeard(milestone);
-  game.sound.pilotLogPlaying = true;
   const delay = nextDownbeatDelay(game.beatTime);
-  game.sound.playPilotLog(milestone, delay, 1.0).then((dur) => {
-    window.setTimeout(() => { game.sound.pilotLogPlaying = false; }, (delay + dur + 0.5) * 1000);
-  });
+  void game.sound.playPilotLog(milestone, delay, 1.0);
 };
 
 // Fire the combo-x6 unlock: HUD toast immediately, vocal cue on the next
