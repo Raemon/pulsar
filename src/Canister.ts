@@ -3,14 +3,13 @@ import { ENTITY_CONFIG } from "./game/entityConfig";
 import { OCTAHEDRON_EDGES, projectOctahedron } from "./octahedron";
 import { SIDE_THRUST_ALWAYS_ON } from "./ship/shipPhysics";
 
-// Five powerup kinds, each with its own glyph so the player can read the
-// canister at a glance from across the screen. Keeping the list short
-// (rather than 10+ kinds) means each one stays familiar after a few waves.
+// Powerup kinds. The canister doesn't reveal which one it holds — the
+// player finds out on pickup.
 export type PowerupKind = "prong" | "rapid" | "pierce" | "shield" | "slow" | "radar" | "longshot" | "sideEngines" | "lasershot" | "bomb";
 
 // Hue is kept for downstream effects (pickup burst tinting) but the canister
 // itself renders pure white so the player reads it as "incoming pod" first
-// and only resolves its kind from the glyph.
+// and only learns its kind on pickup.
 export const POWERUP_HUE: Record<PowerupKind, number> = {
   prong: 180,
   rapid: 300,
@@ -22,19 +21,6 @@ export const POWERUP_HUE: Record<PowerupKind, number> = {
   sideEngines: 25,
   lasershot: 195,
   bomb: 0,
-};
-
-const POWERUP_GLYPH: Record<PowerupKind, string> = {
-  prong: "Y",
-  rapid: "R",
-  pierce: "P",
-  shield: "S",
-  slow: "Z",
-  radar: "X",
-  longshot: "F",
-  sideEngines: "E",
-  lasershot: "L",
-  bomb: "B",
 };
 
 // sideEngines is dropped from the pool when side thrust is always-on (it would
@@ -152,14 +138,6 @@ export class Canister {
       ctx.lineTo(vb.x, vb.y);
       ctx.stroke();
     }
-
-    // Glyph stays upright (no counter-rotation needed since we never rotated
-    // the canvas) so the player can always read which powerup is incoming.
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.95 * pulse})`;
-    ctx.font = `bold ${Math.round(this.radius * 0.95)}px system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(POWERUP_GLYPH[this.kind], 0, 1);
 
     ctx.restore();
   }
