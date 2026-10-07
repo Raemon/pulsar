@@ -3,7 +3,7 @@
 // ship and the slowMoTimer itself keep wall-clock dt so the player's
 // reactions feel responsive and the effect doesn't extend its own lifespan.
 export const SLOW_MO_DURATION = 36;
-export const SLOW_MO_FACTOR = 0.5;
+export const SLOW_MO_FACTOR = 0.75;
 // Ease the music-clock factor 1.0 ↔ SLOW_MO_FACTOR over this many seconds at
 // each edge of the slow-mo window. The pulsar's quarter-note beat audibly
 // stretches into and out of slow-mo instead of snapping rate-changes mid-bar.
