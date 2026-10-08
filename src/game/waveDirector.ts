@@ -217,6 +217,19 @@ export const activeSpecialsForWave = (_game: Game, wave: number): AsteroidKind[]
   return [...bassSlot(), ...bassSlot()];
 };
 
+// Giant bassteroid roll: rare through display-level 10 (and only when both
+//   bass slots filled), common after (any bass slot, borrowing a normal slot).
+//   Returns the giant's kind, or null for the ordinary bass spawns.
+const rollGiantBass = (game: Game, activeSpecials: AsteroidKind[], totalCount: number): AsteroidKind | null => {
+  const cfg = CFG.bassteroid;
+  if (displayWave(game.wave) >= cfg.giantLateDisplayLevel) {
+    if (activeSpecials.length === 0 || totalCount < 2) return null;
+    return rng() < cfg.giantChanceLate ? activeSpecials[0] : null;
+  }
+  if (activeSpecials.length < 2) return null;
+  return rng() < cfg.giantChanceEarly ? activeSpecials[0] : null;
+};
+
 // boost velocity in place by the current rhythm-speed multiplier; called
 //   *after* rhythm alignment so the alignment math (which works in the
 //   unscaled SIZE_SPAWN_SPEED band) stays valid — the speedup just makes the
@@ -759,7 +772,9 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
   // The swarm wave thins its asteroid field so the meteor flock is the headline.
   const totalCount = game.wave === swarm.wave ? Math.max(1, Math.round(baseCount * swarm.asteroidCountMul)) : baseCount;
   const activeSpecials = activeSpecialsForWave(game, game.wave);
-  const normalCount = Math.max(0, totalCount - activeSpecials.length);
+  const giantBass = rollGiantBass(game, activeSpecials, totalCount);
+  // A giant fills two slots whether the wave rolled one bass slot or two.
+  const normalCount = Math.max(0, totalCount - (giantBass ? 2 : activeSpecials.length));
 
   // Pre-roll the kind for each normal slot. On the introductory wave for a
   // given special (firstWave) we force exactly one slot of that kind so the
@@ -872,9 +887,8 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
       : spawnAsteroidAway(game, k, size, claimed);
     game.asteroids.push(rock);
   });
-  // A two-bass wave occasionally fuses both slots into one giant convoy.
-  if (activeSpecials.length === 2 && rng() < CFG.bassteroid.giantChance) {
-    game.asteroids.push(spawnSpecial(game, activeSpecials[0], claimed, "huge"));
+  if (giantBass) {
+    game.asteroids.push(spawnSpecial(game, giantBass, claimed, "huge"));
     return;
   }
   for (const kind of activeSpecials) {
