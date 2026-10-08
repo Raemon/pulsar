@@ -7,6 +7,7 @@ import { comboGrid } from "./rhythmGate";
 import { BASS_MEASURE_LENGTH } from "../Asteroid";
 import { resonanceValueOf } from "./resonanceBonus";
 import { popupBassEcho } from "./popups";
+import { superBassInterval } from "./bassClock";
 
 // Bass-echo lightning: when an on-rhythm kill (at a healthy combo) lands on
 // the same beat-slot a live bassteroid plays, an arc jumps from that
@@ -59,18 +60,22 @@ const BAR_FLOOR = 0.2;
 const BAR_MAX_LEN = 9;
 const BAR_STEP = 2;
 
-const measureSlot = (t: number): number => {
-  const m = t % BASS_MEASURE_LENGTH;
-  return m < 0 ? m + BASS_MEASURE_LENGTH : m;
+// A source rings once per `period`: a whole measure for Bassteroids and boss
+// shards, every 2 beats for the superBassCrystal. A kill echoes off it when
+// the kill's beat and the source's next pulse share a slot within that period.
+const slotIn = (t: number, period: number): number => {
+  const m = t % period;
+  return m < 0 ? m + period : m;
 };
 
-const sameSlot = (a: number, b: number): boolean => {
-  const d = Math.abs(a - b);
-  return Math.min(d, BASS_MEASURE_LENGTH - d) < 0.01;
+const onSourceSlot = (a: Asteroid, beatCenter: number): boolean => {
+  const period = a.isSuperBassCrystal() ? superBassInterval() : BASS_MEASURE_LENGTH;
+  const d = Math.abs(slotIn(a.nextBeatAt, period) - slotIn(beatCenter, period));
+  return Math.min(d, period - d) < 0.01;
 };
 
 const newBolt = (source: Asteroid, target: Vec): BassLightning => {
-  const big = source.isBeatFragment();
+  const big = source.isBeatFragment() || source.isSuperBassCrystal();
   const d = Math.hypot(target.x - source.pos.x, target.y - source.pos.y);
   const n = Math.max(MIN_SAMPLES, Math.min(MAX_SAMPLES, Math.round(d / SAMPLE_SPACING)));
   const jagAmp = big ? JAG_AMPLITUDE * BIG_JAG_MUL : JAG_AMPLITUDE;
@@ -95,11 +100,10 @@ export const triggerBassLightning = (game: Game, targetPos: Vec, killed?: Astero
   if (game.beatCombo < COMBO_REQUIRED) return;
   const grid = comboGrid(game);
   const beatCenter = Math.round(game.perceivedBeatTime / grid) * grid;
-  const killSlot = measureSlot(beatCenter);
   const sources: Asteroid[] = [];
   for (const a of game.asteroids) {
-    if ((!a.isBass() && !a.isBeatFragment()) || a === killed) continue;
-    if (sameSlot(measureSlot(a.nextBeatAt), killSlot)) sources.push(a);
+    if ((!a.isBass() && !a.isBeatFragment() && !a.isSuperBassCrystal()) || a === killed) continue;
+    if (onSourceSlot(a, beatCenter)) sources.push(a);
   }
   if (sources.length === 0) return;
   const dist2 = (a: Asteroid) => {

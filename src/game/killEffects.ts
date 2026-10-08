@@ -68,7 +68,7 @@ const asteroidBucket = (a: Asteroid): KillBucket => {
   if (a.kind === "asteroidWithGem") return "asteroidWithGem";
   if (isBurstGem(a.kind)) return "burstGem";
   if (a.kind === "solidCrystal" || a.kind === "solidCrystalSmall") return "solidCrystal";
-  if (isMetalHull(a.kind)) return "metalChunk";
+  if (isMetalHull(a.kind) || a.isSuperBassCrystal()) return "metalChunk";
   if (isGlassPrison(a.kind)) return "glassPrison";
   if (a.kind === "wraith") return "wraith";
   return `asteroid_${a.size}`;
@@ -87,7 +87,7 @@ export const hitSoundFor = (
   // gem, so a noise explosion would feel wrong. Large parent + small frags
   // each get their own size-scaled shatter.
   if (a.kind === "solidCrystal") return "crystalShatterLarge";
-  if (a.kind === "solidCrystalSmall") return "crystalShatterSmall";
+  if (a.kind === "solidCrystalSmall" || a.kind === "superBassCrystal") return "crystalShatterSmall";
   // gold gem is a big cut-crystal body; its shards shatter small.
   if (isBurstGem(a.kind)) return "crystalShatterLarge";
   // A cathedral glass shard is still lit stained glass — it rings/shatters

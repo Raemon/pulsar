@@ -1,4 +1,5 @@
 import type { Game } from "../Game";
+import type { Asteroid } from "../Asteroid";
 import { BASS_MEASURE_LENGTH } from "../Asteroid";
 import { BEAT_GRID, PULSE_LOOKAHEAD } from "./rhythmConstants";
 import { tickBeatCues } from "./beatCues";
@@ -9,6 +10,13 @@ import { TAU } from "../vec";
 const WARBLE = ENTITY_CONFIG.warble;
 const CITADEL = ENTITY_CONFIG.citadel;
 const SEPULCHRE = ENTITY_CONFIG.sepulchre;
+const SUPER_BASS = ENTITY_CONFIG.superBassCrystal;
+
+// The superBassCrystal's pulse period, and the two voices it alternates
+// between: the cavernous boom on the first pulse, the tight 808 kick on the
+// next, so the pair reads as a call-and-answer rather than one repeated hit.
+export const superBassInterval = () => SUPER_BASS.pulseBeats * BEAT_GRID;
+const SUPER_BASS_VOICES = ["bassBoom", "bassKick"] as const;
 
 // Citadel phase-cycle geometry in seconds (BEAT_GRID = one beat). waveDirector
 // uses these to align a fresh citadel's offset so it spawns just-solid.
@@ -88,6 +96,10 @@ const tickBassAsteroids = (game: Game) => {
     // and a stack of fragment voices would muddy it). The spread of their
     // offsets across the measure is what makes the broken-up planet read as an
     // escalating, denser pulse.
+    if (a.isSuperBassCrystal()) {
+      tickSuperBassCrystal(game, a);
+      continue;
+    }
     const beatFragment = a.isBeatFragment();
     if (!a.isBass() && !beatFragment) continue;
     while (game.beatTime >= a.nextBeatAt) {
@@ -108,6 +120,20 @@ const tickBassAsteroids = (game: Game) => {
     const remaining = a.nextBeatAt - game.beatTime;
     a.beatPhase = Math.max(0, Math.min(1, 1 - remaining / interval));
   }
+};
+
+const tickSuperBassCrystal = (game: Game, a: Asteroid) => {
+  const interval = superBassInterval();
+  while (game.beatTime >= a.nextBeatAt) {
+    const voice = SUPER_BASS_VOICES[a.superBassPulses % SUPER_BASS_VOICES.length];
+    game.sound.play(voice, 1, a.pos);
+    a.superBassPulses += 1;
+    a.beatFlash = 1.0;
+    a.haloEcho = 1.0;
+    a.nextBeatAt = Math.round((a.nextBeatAt + interval) / BEAT_GRID) * BEAT_GRID;
+  }
+  const remaining = a.nextBeatAt - game.beatTime;
+  a.beatPhase = Math.max(0, Math.min(1, 1 - remaining / interval));
 };
 
 // Warble phasing — every measure (4 beats) each warble fades from solid down
