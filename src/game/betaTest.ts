@@ -85,6 +85,7 @@ const ASTEROID_TILES: Record<AsteroidKind, AsteroidTile | null> = {
   bigGlassPrison: { label: "Big Prison", group: "Special Rock" },
   metalChunk: { label: "Metal Chunk", group: "Special Rock", size: "medium" },
   metalShard: null,
+  superBassCrystal: null,
   torus: { label: "Torus Ring", group: "Special Rock" },
   torusArc: null,
   torusChunk: null,
