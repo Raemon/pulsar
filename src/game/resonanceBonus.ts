@@ -1,5 +1,6 @@
 import type { Game } from "../Game";
 import type { Asteroid, AsteroidSize } from "../Asteroid";
+import { ENTITY_CONFIG } from "./entityConfig";
 
 // Per-piece resonance value by size. Large bassteroids are worth nothing (an
 //   unbroken rock gives no bonus); the medium and small fragments a break leaves
@@ -21,7 +22,10 @@ const BEAT_FRAGMENT_VALUE = 40;
 //   and the bass-echo "+N" tag a lightning arc pins beside the piece. Both
 //   Bassteroid splinters and beat-active boss shards qualify.
 export const resonanceValueOf = (a: Asteroid): number =>
-  a.isBass() ? RESONANCE_VALUE[a.size] : a.isBeatFragment() ? BEAT_FRAGMENT_VALUE : 0;
+  a.isBass() ? RESONANCE_VALUE[a.size]
+  : a.isBeatFragment() ? BEAT_FRAGMENT_VALUE
+  : a.isSuperBassCrystal() ? ENTITY_CONFIG.superBassCrystal.resonanceValue
+  : 0;
 
 // Resonance bonus: the summed value of every live bassteroid piece on the field.
 //   Each piece contributes independently of the others, so destroying one medium

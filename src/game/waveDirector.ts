@@ -12,7 +12,7 @@ import { newWaveEventSchedule, maybeSchedule, scheduleAt } from "./waveEvents";
 import { startShockwave } from "./shockwave";
 import { emitCrackParticles } from "./particleBursts";
 import { alignVelocityToRhythm, BeatClaimSet, newBeatClaimSet } from "./rhythmTrajectory";
-import { citadelCycleLen, citadelFadeLen } from "./bassClock";
+import { citadelCycleLen, citadelFadeLen, superBassInterval } from "./bassClock";
 import { ENTITY_CONFIG as CFG } from "./entityConfig";
 import { BOSS_FORESHADOW_WAVES, BOSS_WAVES, bossEncounterForWave } from "./acts";
 import { spawnSepulchreEncounter } from "./sepulchre";
@@ -103,6 +103,7 @@ export const alignSplitChildToRhythm = (game: Game, child: Asteroid, claimed?: B
     if (child.isBeatFragment()) seedBeatFragmentSlot(game, child);
     return;
   }
+  if (child.isSuperBassCrystal()) seedSuperBassSlot(game, child);
   // Torus fragments ride a shared phantom ring — their own velocity is unused
   // (the group's drift owns their motion) and their position is recomputed each
   // tick, so rhythm-aligning either would just be thrown away.
@@ -194,6 +195,13 @@ const seedBeatFragmentSlot = (game: Game, a: Asteroid) => {
   const k = Math.ceil((game.beatTime - gridSnappedOffset - 1e-6) / BASS_MEASURE_LENGTH);
   const raw = k * BASS_MEASURE_LENGTH + gridSnappedOffset;
   a.nextBeatAt = Math.round(raw / BEAT_GRID) * BEAT_GRID;
+};
+
+// The freed crystal's first pulse lands on the next 2-beat grid point, so it
+// rings on the same downbeat-anchored pair of slots as everything else.
+const seedSuperBassSlot = (game: Game, a: Asteroid) => {
+  const interval = superBassInterval();
+  a.nextBeatAt = Math.ceil((game.beatTime + 1e-6) / interval) * interval;
 };
 
 // paired-wave intro (one bass, then both) trains the player gradually.

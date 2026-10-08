@@ -154,11 +154,16 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 //
 // "metalChunk" is a dense tungsten ingot — a medium-sized, extremely heavy cube
 // behind damageReduction 8 (only a drift-tier-2+ shot or the super laser bites
-// through). Its 8 HP shatters it into 4 slow "metalShard" cubes, each 1 HP but
-// still behind the same DR 8 armour, so the fragments are as tough to punch
-// through as the parent — a lingering field of stubborn scrap.
+// through). Its 8 HP cleaves it diagonally into 2 slow triangular "metalShard"
+// wedges, each 1 HP but still behind the same DR 8 armour, and frees the
+// "superBassCrystal" that was sealed inside it.
+//
+// "superBassCrystal" is the slab's heart: a small magenta crystal that pulses
+// every 2 beats, alternating between two bass voices, and acts as a bass-echo
+// lightning source on those beats — an on-beat kill that lands on its pulse
+// arcs from it and pays its resonance bounty, exactly like a Bassteroid piece.
 // Rare across display-levels 5-9, then a common obstacle afterwards.
-export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard";
+export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard" | "superBassCrystal";
 
 // Phased kinds share the ghost render path and phase drone. bassClock drives
 // the warble's cosine and the citadel/bearer's longer square cycles.
@@ -1044,6 +1049,9 @@ export class Asteroid {
   // beat. Set by Game when the asteroid is spawned / split. Unused for
   // non-bass kinds.
   nextBeatAt = 0;
+  // Pulses a superBassCrystal has fired; its parity picks which of the two
+  // bass voices the next pulse plays. Unused for every other kind.
+  superBassPulses = 0;
   // 0→1 progress through the current beat interval (0 just after a beat fires,
   // 1 the instant before the next). Updated each tick from beatTime in
   // bassClock; drives the halo shimmer and the pre-beat warm-up so the
@@ -1623,6 +1631,17 @@ export class Asteroid {
       // the 8 samples.
       freqs = [3, 5];
       ampScale = 0.5;
+    } else if (kind === "metalShard") {
+      // Triangular wedge: triangleProfile carries the silhouette; a faint
+      // chipped wobble keeps the pair from being identical. 15 samples, so
+      // stay off 3 and 5.
+      freqs = [1, 2, 4];
+      ampScale = 0.3;
+    } else if (kind === "superBassCrystal") {
+      // Same hard-polygon recipe as the solid crystal (7 samples), a touch
+      // calmer so the small body still reads as one cut gem.
+      freqs = [1, 2, 4, 5];
+      ampScale = 1.3;
     } else if (isMetalHull(kind)) {
       // A dense tungsten block: computeOutline's cubeProfile carries the
       // rounded-cube silhouette; these low harmonics only add a faint chipped
@@ -1760,7 +1779,7 @@ export class Asteroid {
     if (this.kind === "warble") this.paintWarbleBody(ctx);
     if (isCitadel) this.paintCitadelShell(ctx);
     if (this.kind === "asteroidWithGem") this.paintEmbeddedGem(ctx);
-    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall") this.paintSolidCrystalBody(ctx);
+    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || this.kind === "superBassCrystal") this.paintSolidCrystalBody(ctx);
     if (isBurstGem(this.kind)) this.paintBurstGemBody(ctx);
     if (isGlassPrison(this.kind)) this.paintGlassPrisonBody(ctx);
     if (this.kind === "bell") this.paintCathedralFragmentBody(ctx);
@@ -3133,7 +3152,7 @@ export class Asteroid {
   // painted panel. A hard specular on the lit shoulder + a pinpoint corner glint
   // sell the dense-metal sheen; a two-stroke rim seats it against the starfield.
   // No rivets, seams, or gouges — this is a solid ingot, not riveted plate. Both
-  // tiers share this; the shard is just a smaller block. Pre-baked, clipped to
+  // tiers share this; the shard is a triangular wedge cleaved off the block. Pre-baked, clipped to
   // the silhouette. Deterministic seed off the harmonics so each block is stably
   // distinct across the bake.
   private paintMetalChunkBody(ctx: CanvasRenderingContext2D) {
@@ -4062,6 +4081,19 @@ export class Asteroid {
     return 1 / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
   }
 
+  // Equilateral-triangle radius at `angle` for a wedge cleaved off the cube,
+  // unit circumradius (corners reach 1, flat faces sit at the 0.5 inradius).
+  // The tilt snaps to the sample grid, and outlineSamples is a multiple of 3,
+  // so all three corners land exactly on samples and stay sharp.
+  private triangleProfile(angle: number): number {
+    const step = TAU / this.outlineSamples;
+    const rawTilt = this.harmonics.reduce((s, h) => s + h.phase * h.freq, 0);
+    const tilt = Math.round(rawTilt / step) * step;
+    const sector = TAU / 3;
+    const a = ((((angle - tilt) % sector) + sector) % sector) - sector / 2;
+    return 0.5 / Math.cos(a);
+  }
+
   // Wedge geometry for a citadel fragment, in world px and cached (the outline
   // sampler and every collision test ask for it). The shape is the sector of a
   // disc of radius `arcR` centred on `apex` — which sits behind the fragment's
@@ -4108,9 +4140,10 @@ export class Asteroid {
   }
 
   computeOutline(): number[] {
-    const isClamped = this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind);
+    const isClamped = this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
     const isDiamond = isDiamondCut(this.kind) || this.isPrisonShard;
-    const isCube = isMetalHull(this.kind);
+    const isCube = this.kind === "metalChunk";
+    const isTriangle = this.kind === "metalShard";
     const isWedge = this.kind === "warble";
     const samples: number[] = [];
     for (let i = 0; i < this.outlineSamples; i++) {
@@ -4125,6 +4158,7 @@ export class Asteroid {
       if (isClamped) r = Math.max(0.45, Math.min(1.55, r));
       if (isDiamond) r *= this.diamondProfile(angle);
       if (isCube) r *= this.cubeProfile(angle);
+      if (isTriangle) r *= this.triangleProfile(angle);
       if (isWedge) r *= this.wedgeProfile(angle);
       samples.push(r * this.radius);
     }
@@ -4138,11 +4172,12 @@ export class Asteroid {
     }
     // Mirror the clamp in computeOutline so the collision surface matches
     // the visible silhouette for the high-amp crystal / cathedral harmonics.
-    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || isMetalHull(this.kind)) {
+    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal") {
       r = Math.max(0.45, Math.min(1.55, r));
     }
     if (isDiamondCut(this.kind) || this.isPrisonShard) r *= this.diamondProfile(angle);
-    if (isMetalHull(this.kind)) r *= this.cubeProfile(angle);
+    if (this.kind === "metalChunk") r *= this.cubeProfile(angle);
+    if (this.kind === "metalShard") r *= this.triangleProfile(angle);
     if (this.kind === "warble") r *= this.wedgeProfile(angle);
     return r * this.radius;
   }
@@ -4862,6 +4897,10 @@ export class Asteroid {
     return this.kind === "bossPlate" || this.kind === "bossIrisShard";
   }
 
+  isSuperBassCrystal(): boolean {
+    return this.kind === "superBassCrystal";
+  }
+
   // `impactDir` is the bullet's velocity direction at the moment of the kill.
   // Falls back to the parent's velocity direction when no impactDir is given
   // (e.g. shockwave splits).
@@ -5311,25 +5350,34 @@ export class Asteroid {
       }
       return fragmentList;
     }
-    // Metal chunk: the slab breaks into 4 slow shards that barely drift (dense
-    // scrap that just sits there once cracked) and keep the parent's DR 8, so
-    // each one is another drift-shot the player has to line up. This IS the
-    // entity's job — teach the drift shot — so it makes the reward legible: two
-    // of the four shards are placed on the ship's ACTUAL prong-bullet rays. The
+    // Metal chunk: the slab cleaves diagonally into 2 slow triangular wedges
+    // that barely drift and keep the parent's DR 8, and frees the
+    // superBassCrystal sealed at its heart. The slab's job is to teach the drift
+    // shot, so the wedges land on the ship's ACTUAL prong-bullet rays: the
     // first prong pair fans ±half a prong step off the heading, but each bullet
     // also inherits BULLET_VEL_INHERIT·shipVel, so at speed the rays bend off
-    // the pure heading; we reproduce that bend here and drop a shard on each
+    // the pure heading; we reproduce that bend here and drop a wedge on each
     // true ray at the slab's distance. A player who owns prong and fires right
-    // now, at this velocity, threads both. The other two fling off to the sides
-    // so the break still reads as a burst. metalShards are terminal.
+    // now, at this velocity, threads both. The crystal slips out sideways so
+    // it isn't caught in that same volley. Wedges and crystal are terminal.
     if (this.kind === "metalChunk") {
       const parentSpeed = Math.hypot(this.vel.x, this.vel.y);
-      // Slow shove on top of the ponderous parent drift, so shards linger.
+      // Slow shove on top of the ponderous parent drift, so wedges linger.
       const shardSpeed = () => parentSpeed * rand(0.7, 1.0) + rand(20, 45);
       const newShard = (pos: Vec, vel: Vec): Asteroid => {
         const s = new Asteroid(pos, vel, "small", this.hue, "metalShard");
         s.rotSpeed = rand(-0.5, 0.5);
         return s;
+      };
+      const newCrystal = (angle: number): Asteroid => {
+        const pos = {
+          x: this.pos.x + Math.cos(angle) * this.radius * 0.35,
+          y: this.pos.y + Math.sin(angle) * this.radius * 0.35,
+        };
+        wrapMut(pos, WORLD_W, WORLD_H);
+        const c = new Asteroid(pos, fromAngle(angle, parentSpeed * 0.8 + rand(35, 55)), "small", undefined, "superBassCrystal");
+        c.rotSpeed = rand(-0.8, 0.8);
+        return c;
       };
       const fragmentList: Asteroid[] = [];
       const half = PRONG_ANGLE_STEP / 2; // first prong pair sits at heading ± this
@@ -5351,7 +5399,7 @@ export class Asteroid {
           const m = Math.hypot(vx, vy) || 1;
           return { x: vx / m, y: vy / m };
         };
-        // Two shards, one on each true prong ray, at the slab's distance — the
+        // Two wedges, one on each true prong ray, at the slab's distance — the
         // pair sits right where the slab was, so the prong shot threads both.
         for (const sign of [-1, 1] as const) {
           const d = prongRayDir(sign * half);
@@ -5361,33 +5409,27 @@ export class Asteroid {
           const outAngle = Math.atan2(d.y, d.x) + rand(-0.1, 0.1);
           fragmentList.push(newShard(pos, fromAngle(outAngle, shardSpeed())));
         }
-        // Remaining two spall off perpendicular to the heading, one per side, so
-        // the four together read as the slab bursting apart.
-        for (const sign of [-1, 1] as const) {
-          const sideAngle = heading + sign * (Math.PI / 2) + rand(-0.2, 0.2);
-          const pos = {
-            x: this.pos.x + Math.cos(sideAngle) * this.radius * 0.5,
-            y: this.pos.y + Math.sin(sideAngle) * this.radius * 0.5,
-          };
-          fragmentList.push(newShard(pos, fromAngle(sideAngle, shardSpeed())));
-        }
+        const side = rand(0, 1) < 0.5 ? -1 : 1;
+        fragmentList.push(newCrystal(heading + side * (Math.PI / 2) + rand(-0.25, 0.25)));
         return fragmentList;
       }
-      // Fallback: even radial burst around the impact when there's no ship pose.
+      // Fallback: the wedges split apart across the impact axis and the crystal
+      // carries on along it.
       const baseAngle = impactDir
         ? Math.atan2(impactDir.y, impactDir.x)
         : Math.atan2(this.vel.y, this.vel.x);
-      const shardCount = ENTITY_CONFIG.metalChunk.shardCount;
-      for (let i = 0; i < shardCount; i++) {
-        const childAngle = baseAngle + (i / shardCount) * TAU + rand(-0.15, 0.15);
+      for (const sign of [-1, 1] as const) {
+        const childAngle = baseAngle + sign * (Math.PI / 2) + rand(-0.15, 0.15);
         const pos = {
           x: this.pos.x + Math.cos(childAngle) * this.radius * 0.5,
           y: this.pos.y + Math.sin(childAngle) * this.radius * 0.5,
         };
         fragmentList.push(newShard(pos, fromAngle(childAngle, shardSpeed())));
       }
+      fragmentList.push(newCrystal(baseAngle + rand(-0.2, 0.2)));
       return fragmentList;
     }
+    if (this.kind === "superBassCrystal") return [];
     if (this.kind === "metalShard") return [];
     // Solid crystal: large shatters into 2 fast-moving small crystal
     // fragments fanning around the bullet's heading. Smalls don't split
@@ -5802,6 +5844,8 @@ export class Asteroid {
     // Pallbearer lamp + toll ring, over the baked block.
     if (this.kind === "pallbearer") this.renderPallbearerLive(ctx, time);
 
+    if (this.kind === "superBassCrystal") this.renderSuperBassPulse(ctx);
+
     // Glass prison: live eye-glow pulse over the baked silhouette. One pair of
     // faint red pinpricks per captive, breathing in and out so the figures
     // inside read as "alive, watching" — and so the player can COUNT what a
@@ -5868,6 +5912,34 @@ export class Asteroid {
     this.renderCracks(ctx);
 
     ctx.restore();
+  }
+
+  // The crystal's heartbeat, over the baked gem (caller is in local space,
+  // additive). A core glow swells through the 2-beat interval as beatPhase
+  // climbs — the pre-beat warm-up — then the pulse slams it white and throws a
+  // soundwave ring off the rim that rides haloEcho outward. Cracks and hit
+  // flash are drawn by the caller after this.
+  private renderSuperBassPulse(ctx: CanvasRenderingContext2D) {
+    const R = this.radius;
+    const H = this.hue;
+    const warm = this.beatPhase * this.beatPhase;
+    const flash = this.beatFlash;
+    drawGlow(ctx, 0, 0, R * (1.1 + 0.5 * warm + 1.2 * flash), H, 0.25 + 0.3 * warm + 0.55 * flash);
+    if (flash > 0.02) drawGlow(ctx, 0, 0, R * (0.5 + 0.5 * flash), H, 0.8 * flash, true);
+    ctx.globalAlpha = 1;
+    if (this.haloEcho > 0.001) {
+      const age = 1 - this.haloEcho;
+      ctx.lineWidth = 1 + 2.2 * this.haloEcho;
+      for (let r = 0; r < 2; r++) {
+        const a = Math.min(1, age + r * 0.18);
+        const alpha = this.haloEcho * (1 - r * 0.45) * 0.75;
+        if (alpha < 0.02) continue;
+        ctx.strokeStyle = `hsla(${H + 15}, 100%, ${72 + 18 * flash}%, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, R * (1.05 + 2.2 * a), 0, TAU);
+        ctx.stroke();
+      }
+    }
   }
 
   // Render a torus body (whole ring) or one of its arc/chunk fragments: blit

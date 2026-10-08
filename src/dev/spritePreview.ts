@@ -63,6 +63,7 @@ const SIZES_FOR: Partial<Record<AsteroidKind, AsteroidSize[]>> = {
   burstGemBig: ["large"],
   metalChunk: ["medium"],
   metalShard: ["small"],
+  superBassCrystal: ["small"],
   torus: ["large"],
   cathedralKeystone: ["small"],
   glassShard: ["small"],
@@ -82,7 +83,7 @@ const ASTEROID_GROUPS: { group: string; kinds: AsteroidKind[] }[] = [
   { group: "Treasure", kinds: ["burstGemMedium", "burstGemBig"] },
   { group: "Prison", kinds: ["glassPrison", "bigGlassPrison", "wraith"] },
   { group: "Torus", kinds: ["torus"] },
-  { group: "Metal", kinds: ["metalChunk", "metalShard"] },
+  { group: "Metal", kinds: ["metalChunk", "metalShard", "superBassCrystal"] },
   { group: "Boss", kinds: ["boss", "bossHemisphere", "bossEye", "bossPlate", "bossIrisShard", "bossEmber"] },
   { group: "Sepulchre", kinds: ["sepulchre", "pallbearer"] },
 ];

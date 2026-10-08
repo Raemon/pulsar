@@ -307,8 +307,8 @@ export const ENTITY_CONFIG = {
   // Metal chunk — a dense derelict slab of hull plate. Medium-sized but
   // extremely heavy (drifts in far slower than its band) and behind DR 8, so it
   // shrugs off everything short of a drift-tier-2+ shot or the super laser. The
-  // killing hit shatters it into 4 slow metalShard pieces (combat stats in
-  // ENTITY_STATS). Rare across display-levels 5-9, then a common obstacle after
+  // killing hit cleaves it into 2 slow triangular metalShard wedges and frees a
+  // superBassCrystal (combat stats in ENTITY_STATS). Rare across display-levels 5-9, then a common obstacle after
   // the boss arc opens up.
   metalChunk: {
     firstWave: 6,
@@ -320,8 +320,15 @@ export const ENTITY_CONFIG = {
     frequentChance: 0.2,
     // Heavy mass: drifts in slower than its size band so the tough target reads.
     spawnSpeedMul: 0.4,
-    // Fragments flung on the killing hit.
-    shardCount: 4,
+  },
+
+  // The crystal freed from a broken metal chunk. Pulses every `pulseBeats`
+  // beats, alternating its two bass voices, and is a bass-echo lightning
+  // source on those beats (see bassClock / bassLightning).
+  superBassCrystal: {
+    pulseBeats: 2,
+    // Live-field resonance bounty, same tier as a beat-active boss shard.
+    resonanceValue: 40,
   },
 
   // Glass prison — appears from display-level 11 onward (internal wave 12+,
@@ -676,12 +683,24 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     damageReduction: 8,
     outlineSamples: 16,
   },
+  // Triangular wedge: a triangle covers far less of its circumcircle than a
+  // cube, so it runs a larger radius to keep the parent's mass on screen. 15
+  // samples (a multiple of 3) so every corner lands on a sample.
   metalShard: {
     hp: 1,
     score: 250,
+    radius: 22,
     hue: 210,
     damageReduction: 8,
-    outlineSamples: 16,
+    outlineSamples: 15,
+  },
+  // Unarmoured — it's the prize inside the slab, not another drift-shot wall.
+  superBassCrystal: {
+    hp: 3,
+    score: 600,
+    radius: 18,
+    hue: 300,
+    outlineSamples: 7,
   },
 
   glassPrison: {
