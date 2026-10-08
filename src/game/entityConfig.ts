@@ -63,6 +63,10 @@ export const ENTITY_CONFIG = {
     // past maxLevel bassteroids still surface, but each candidate slot only
     // rolls one in this often, so they stay an occasional accent.
     rareChanceAfterMax: 0.25,
+    // On a wave that fills two bass slots, this often both slots merge into
+    // one giant (huge) bassteroid — a three-ship convoy of the first slot's
+    // kind that undocks into three larges. See Asteroid.undockGiantBass.
+    giantChance: 0.08,
   },
 
   // Decorator asteroid kinds (chime/bell/warble) share asteroid stats — they

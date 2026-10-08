@@ -612,6 +612,63 @@ const BASS_SPLIT_TREES: Record<"bassA" | "bassB" | "bassC" | "bassD", BassSplitT
   },
 };
 
+// ── Giant bassteroid ─────────────────────────────────────────────────────
+// A rare "huge" bassteroid is a convoy: three of its kind's own ships docked
+// nose-out around a brass clamp hub. The silhouette already shows the three
+// larges it breaks into, and split() launches each large from exactly where
+// its pod sat, in the same pose, so the break reads as the convoy undocking.
+const GIANT_POD_COUNT = 3;
+// Pod centre distance from the hub and pod scale, in the giant's radius-units.
+// Chosen so neighbouring pods just clear each other and the outermost tip
+// lands at ~radius 1.
+const GIANT_POD_DIST = 0.56;
+const GIANT_POD_SCALE = 0.46;
+// Local heading each kind's "nose" points along in buildBassteroidShape: the
+// Hauler's cockpit is +x, the others crown upward (-y). Pods turn so the nose
+// faces away from the hub.
+const BASS_NOSE_ANGLE: Record<"bassA" | "bassB" | "bassC" | "bassD", number> = {
+  bassA: 0,
+  bassB: -Math.PI / 2,
+  bassC: -Math.PI / 2,
+  bassD: -Math.PI / 2,
+};
+const giantPodAngle = (i: number): number => -Math.PI / 2 + (i / GIANT_POD_COUNT) * TAU;
+const giantPodTurn = (kind: "bassA" | "bassB" | "bassC" | "bassD", i: number): number =>
+  giantPodAngle(i) - BASS_NOSE_ANGLE[kind];
+
+const buildGiantBassShape = (kind: "bassA" | "bassB" | "bassC" | "bassD"): BassShip => {
+  const ship = buildBassteroidShape(kind);
+  // Hub + clamp arms come first so the pods paint over their inner ends.
+  const modules: BassModule[] = [hexagon(0, 0, 0.17, Math.PI / 6)];
+  const lights: BassLight[] = [{ pos: v(0, 0), size: 0.05 }];
+  for (let i = 0; i < GIANT_POD_COUNT; i++) {
+    const a = giantPodAngle(i);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    // Clamp arm: a tapered radial quad from the hub rim out under the pod.
+    const arm = (r: number, half: number) => [
+      v(ca * r - sa * half, sa * r + ca * half),
+      v(ca * r + sa * half, sa * r - ca * half),
+    ];
+    const [i0, i1] = arm(0.1, 0.07);
+    const [o0, o1] = arm(GIANT_POD_DIST - 0.12, 0.045);
+    modules.push({ vertices: [i0, o0, o1, i1] });
+    lights.push({ pos: v(ca * 0.3, sa * 0.3), size: 0.03 });
+  }
+  for (let i = 0; i < GIANT_POD_COUNT; i++) {
+    const a = giantPodAngle(i);
+    const turn = giantPodTurn(kind, i);
+    const ct = Math.cos(turn), st = Math.sin(turn);
+    const ox = Math.cos(a) * GIANT_POD_DIST, oy = Math.sin(a) * GIANT_POD_DIST;
+    const place = (p: Vec): Vec => {
+      const x = p.x * GIANT_POD_SCALE, y = p.y * GIANT_POD_SCALE;
+      return v(ox + x * ct - y * st, oy + x * st + y * ct);
+    };
+    for (const m of ship.modules) modules.push({ vertices: m.vertices.map(place) });
+    for (const l of ship.lights) lights.push({ pos: place(l.pos), size: l.size * GIANT_POD_SCALE });
+  }
+  return { modules, lights };
+};
+
 // Build a simplified closed silhouette from a BassShip — the outer hull of
 // all module vertices, resampled at fixed angular intervals around the
 // centroid. Used by SoundwaveRadiator: a wave that wears the actual chunk's
@@ -928,9 +985,11 @@ const getHaloOutline = (ship: BassShip, radius: number, gapPx: number): { x: num
 // both gen-1 mediums, and all four gen-2 smalls of each kind — so the O(edges²)
 // union-clip never runs during a frame, not even on a split-child's first
 // render. The fragment trees are deterministic, so this is the complete set
-// (4 kinds × 7 shapes = 28 outlines), all baked before the game starts.
+// (4 kinds × 8 shapes — giant, large, 2 mediums, 4 smalls — = 32 outlines),
+// all baked before the game starts.
 const prewarmHaloOutlines = () => {
   for (const kind of BASS_KINDS) {
+    getHaloOutline(buildGiantBassShape(kind), SIZE_RADIUS.huge, BASS_HALO_GAP_PX);
     getHaloOutline(buildBassteroidShape(kind), SIZE_RADIUS.large, BASS_HALO_GAP_PX);
     for (const m of BASS_SPLIT_TREES[kind].mediums) {
       getHaloOutline(normalizeFragment(m.fragment), SIZE_RADIUS.medium, BASS_HALO_GAP_PX);
@@ -1273,8 +1332,8 @@ export class Asteroid {
       // Split children inherit a chunk of the parent's modules so they look
       // like a literal piece of the original ship rather than a scaled-down
       // copy of the whole silhouette. Gen-0 spawns use the full hand-built
-      // ship.
-      this.bassShip = inheritBass ?? buildBassteroidShape(kind);
+      // ship; a giant wears the three-ship convoy (buildGiantBassShape).
+      this.bassShip = inheritBass ?? (size === "huge" ? buildGiantBassShape(kind) : buildBassteroidShape(kind));
       // Bassteroids orient by intent (engines/cockpit point a way) so a
       // wildly spinning silhouette would muddy the modular read. Keep them
       // drifting slowly.
@@ -1453,7 +1512,7 @@ export class Asteroid {
     // outward from their position. Trail hue / radiator hue both match the
     // bassteroid's own hue (set above from KIND_HUE).
     if (isBass) {
-      if (size === "large") {
+      if (size === "large" || size === "huge") {
         const bassRateByKind: Record<string, number> = {
           bassA: 0.65,
           bassB: 0.85,
@@ -3798,6 +3857,9 @@ export class Asteroid {
     const ship = this.bassShip!;
     const r = this.radius;
     const baseHue = this.hue;
+    // Surface detail (panel stripes, craters) sizes to the panels, so a giant's
+    // pods carry the same texture scale as the larges they undock into.
+    const dr = this.size === "huge" ? r * GIANT_POD_SCALE : r;
 
     ctx.translate(size / 2, size / 2);
     ctx.globalCompositeOperation = "lighter";
@@ -3864,8 +3926,8 @@ export class Asteroid {
       ctx.lineWidth = 0.8;
       ctx.strokeStyle = `hsla(${baseHue + 30}, 100%, 85%, 0.45)`;
       ctx.beginPath();
-      ctx.moveTo(cx - r * 0.4, cy);
-      ctx.lineTo(cx + r * 0.4, cy);
+      ctx.moveTo(cx - dr * 0.4, cy);
+      ctx.lineTo(cx + dr * 0.4, cy);
       ctx.stroke();
       ctx.restore();
     }
@@ -3884,9 +3946,9 @@ export class Asteroid {
         const s1 = Math.abs(Math.sin(baseHue * 12.9 + i * 78.2 + cx * 0.7));
         const s2 = Math.abs(Math.sin(baseHue * 39.3 + i * 17.7 + cy * 0.7));
         const s3 = Math.abs(Math.sin(baseHue * 4.41 + i * 91.0));
-        const px = cx + (s1 - 0.5) * r * 0.7;
-        const py = cy + (s2 - 0.5) * r * 0.7;
-        const cr = r * (0.05 + s3 * 0.08);
+        const px = cx + (s1 - 0.5) * dr * 0.7;
+        const py = cy + (s2 - 0.5) * dr * 0.7;
+        const cr = dr * (0.05 + s3 * 0.08);
         ctx.fillStyle = `hsla(${baseHue - 10}, 80%, 5%, 0.55)`;
         ctx.beginPath();
         ctx.arc(px, py, cr, 0, TAU);
@@ -3920,6 +3982,32 @@ export class Asteroid {
     // brass (hue ~48) is the boss eye-aperture colour, the shared family
     // signature marking both as built by the same hand.
     ctx.globalCompositeOperation = "lighter";
+    // Giant convoy: brass docking beams run hub → pod, the one live thing
+    // holding three separate ships together — the shot that breaks it cuts them.
+    if (this.size === "huge") {
+      for (let i = 0; i < GIANT_POD_COUNT; i++) {
+        const a = giantPodAngle(i);
+        const ex = Math.cos(a) * GIANT_POD_DIST * r;
+        const ey = Math.sin(a) * GIANT_POD_DIST * r;
+        const beam = ctx.createLinearGradient(0, 0, ex, ey);
+        beam.addColorStop(0, `hsla(48, 100%, 80%, 0.55)`);
+        beam.addColorStop(0.6, `hsla(${baseHue + 10}, 100%, 65%, 0.35)`);
+        beam.addColorStop(1, `hsla(${baseHue}, 100%, 60%, 0)`);
+        ctx.strokeStyle = beam;
+        ctx.lineCap = "round";
+        ctx.lineWidth = r * 0.07;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = `hsla(48, 100%, 92%, 0.6)`;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r * 0.17, Math.sin(a) * r * 0.17);
+        ctx.lineTo(ex * 0.75, ey * 0.75);
+        ctx.stroke();
+      }
+    }
     for (const light of ship.lights) {
       const lx = light.pos.x * r;
       const ly = light.pos.y * r;
@@ -4692,6 +4780,29 @@ export class Asteroid {
     return entityStat(this.kind, this.size, "score");
   }
 
+  // Giant bassteroid break: each docked pod becomes a fresh gen-0 large of the
+  // same kind, launched outward from where it sat and in the pose it held, so
+  // the convoy visibly undocks rather than shattering. The three larges sit a
+  // beat apart (kind slot, +1, +2) — the giant's one hit becomes a three-beat
+  // roll in its voice instead of a triple-stacked hit on one beat.
+  undockGiantBass(): Asteroid[] {
+    const kind = this.kind as "bassA" | "bassB" | "bassC" | "bassD";
+    const out: Asteroid[] = [];
+    for (let i = 0; i < GIANT_POD_COUNT; i++) {
+      const a = this.rotation + giantPodAngle(i);
+      const d = GIANT_POD_DIST * this.radius;
+      const pos = v(this.pos.x + Math.cos(a) * d, this.pos.y + Math.sin(a) * d);
+      const outward = fromAngle(a + rand(-0.15, 0.15), splitChildSpeed(this.vel, "large"));
+      const vel = v(this.vel.x * 0.5 + outward.x, this.vel.y * 0.5 + outward.y);
+      const child = new Asteroid(pos, vel, "large", this.hue, kind);
+      child.rotation = this.rotation + giantPodTurn(kind, i);
+      child.measureOffset = (this.measureOffset + (i * BASS_MEASURE_LENGTH) / 4) % BASS_MEASURE_LENGTH;
+      child.haloOutline = child.buildHaloOutline(BASS_HALO_GAP_PX);
+      out.push(child);
+    }
+    return out;
+  }
+
   isBass(): boolean {
     return this.kind === "bassA" || this.kind === "bassB" || this.kind === "bassC" || this.kind === "bassD";
   }
@@ -5012,6 +5123,7 @@ export class Asteroid {
     // kind (and therefore the parent's voice) so the four percussive timbres
     // spread across the measure as the field thickens. Fresh HP per the
     // child size — no carryover from the parent.
+    if (this.isBass() && this.size === "huge") return this.undockGiantBass();
     if (this.isBass()) {
       if (this.splitLevel >= BASS_MAX_SPLIT_LEVEL) return [];
       const childLevel = this.splitLevel + 1;

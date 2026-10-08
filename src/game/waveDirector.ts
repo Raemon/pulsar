@@ -299,8 +299,8 @@ export const spawnAsteroidAway = (
 };
 
 // specials need alignBassBeat so their first downbeat lands on the pulsar grid immediately.
-const spawnSpecial = (game: Game, kind: AsteroidKind, claimed?: BeatClaimSet): Asteroid => {
-  const a = spawnAsteroidAway(game, kind, undefined, claimed);
+const spawnSpecial = (game: Game, kind: AsteroidKind, claimed?: BeatClaimSet, size?: AsteroidSize): Asteroid => {
+  const a = spawnAsteroidAway(game, kind, size, claimed);
   alignBassBeat(game, a);
   return a;
 };
@@ -872,6 +872,11 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
       : spawnAsteroidAway(game, k, size, claimed);
     game.asteroids.push(rock);
   });
+  // A two-bass wave occasionally fuses both slots into one giant convoy.
+  if (activeSpecials.length === 2 && rng() < CFG.bassteroid.giantChance) {
+    game.asteroids.push(spawnSpecial(game, activeSpecials[0], claimed, "huge"));
+    return;
+  }
   for (const kind of activeSpecials) {
     game.asteroids.push(spawnSpecial(game, kind, claimed));
   }

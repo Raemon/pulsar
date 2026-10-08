@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 40;
+export const REPLAY_FORMAT_VERSION = 41;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -9,6 +9,8 @@ export const REPLAY_FORMAT_VERSION = 40;
 // v40 swaps the Far Shot's N-1 rhythm payout for a flat +50 points paid on the
 //   hit (no combo multiply, no staged flashes), so a v39 recording that landed a
 //   far shot re-sims with different combo totals and score (→ bonus lives).
+// v41 adds the giant-bassteroid roll on two-bass waves, an extra gameplay-rng
+//   draw that shifts every later spawn in a v40 recording.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
