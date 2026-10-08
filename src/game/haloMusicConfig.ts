@@ -50,10 +50,11 @@
 import { BOSS_ENCOUNTERS, bossEncounterForWave, type BossKind } from "./acts";
 
 import type { HaloMusicVariation } from "../Sound";
-// Music-track variation picks are audio/cosmetic and fire from syncHaloAmbient,
-//   which branches on live audio state the muted replay re-sim doesn't share —
-//   so they must draw the cosmetic stream, never the gameplay one (would desync).
-import { cosmeticRng as rng } from "./rng";
+// Music-track variation picks fire from syncHaloAmbient, so they must never
+//   draw the gameplay stream (that would desync replays); they draw the
+//   audio-pick stream, whose draw count only sim code decides, so the original
+//   run, a replay on any display and the export all land on the same track.
+import { audioRng as rng } from "./rng";
 
 // Master on/off for the combo-driven music layers. When false, the 4x/6x/12x
 // halo tiers still light up visually but no music (pre-rendered or legacy

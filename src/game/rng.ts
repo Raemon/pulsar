@@ -11,12 +11,20 @@
 //     values per entity, so routing them through the gameplay stream shifts every
 //     downstream gameplay draw and desyncs the replay (see replay-resim notes).
 //     Kept on their own stream they can vary freely without touching gameplay.
-// Both are seeded from the run seed at startGame, so replays still reproduce the
-//   exact same visuals — the cosmetic draws just can't perturb the gameplay draw
-//   sequence anymore.
+//   - AUDIO PICKS (`audioRng`): audible choices made from sim code — the halo
+//     music variation and its 24x swap, the full-halo song and its rollover,
+//     the Pilot's Log take. Render code also draws from the cosmetic stream, at
+//     whatever rate the display refreshes, so a pick made through it differed
+//     between the original run, a replay on another display and the export.
+//     This stream is drawn only by those picks, whose count is fixed by the sim,
+//     so all three hear the same music.
+// All three are seeded from the run seed at startGame, so replays reproduce the
+//   same visuals and the same music — the cosmetic draws just can't perturb the
+//   gameplay draw sequence anymore.
 
 let state = (Math.random() * 0x100000000) >>> 0;
 let cosmeticState = (Math.random() * 0x100000000) >>> 0;
+let audioState = (Math.random() * 0x100000000) >>> 0;
 
 const mulberry32 = (s: number): { value: number; next: number } => {
   let t = (s + 0x6D2B79F5) >>> 0;
@@ -31,6 +39,7 @@ export const seedRng = (seed: number): void => {
   // Derive the cosmetic seed from the same run seed (xor a constant so the two
   //   streams don't march in lockstep) — deterministic, but independent.
   cosmeticState = (state ^ 0x9E3779B9) >>> 0;
+  audioState = (state ^ 0x7F4A7C15) >>> 0;
 };
 
 export const getRngSeed = (): number => state;
@@ -47,6 +56,12 @@ export const rng = (): number => {
 export const cosmeticRng = (): number => {
   const { value, next } = mulberry32(cosmeticState);
   cosmeticState = next;
+  return value;
+};
+
+export const audioRng = (): number => {
+  const { value, next } = mulberry32(audioState);
+  audioState = next;
   return value;
 };
 

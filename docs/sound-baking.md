@@ -109,6 +109,84 @@ Two rules follow, and both are easy to break by accident:
 offline-render path and asserts the render is stereo, non-silent, and
 non-silent in every second it fired a voice.
 
+The offline context also differs from a live one in three ways that voice
+code written for live playback trips over. `src/game/audioCapture.ts` absorbs
+all three, so voice code needs no export-specific branches — but they are the
+reason a few things are done the way they are:
+
+- **`AudioParam.value` is meaningless before an offline render starts** — it
+  reports the last value assigned, not the level the automation has reached.
+  Every "hold the current level, then fade" release reads it, so capture
+  hands out params that mirror their automation into a JS timeline and answer
+  `.value` from that. (Chromium's `cancelAndHoldAtTime` has the same blind
+  spot for a `setTargetAtTime` param, so it is no substitute.)
+- **Topology is not time-stamped.** A `disconnect()` during the sweep removes
+  that path from the whole render, past included — the voice vanishes from the
+  movie. Capture nodes ignore `disconnect`; a voice ends on the timeline through
+  its gain fade and its scheduled `stop()`, never by unplugging.
+- **Wall-clock timers don't follow the export clock.** Deferred teardowns and
+  scheduler pumps go through `Sound.voiceTimeout` / `voiceInterval`, which
+  queue on the `ExportClock` while capturing and fire from `advanceTo()`; a
+  raw `setTimeout` would land at whatever point of the timeline the machine
+  happened to have reached.
+
+The check script drives a reticule hum through swell → release → teardown and
+a streak loop through the same, and asserts both fade instead of stepping.
+
+Two more rules keep the export's *decisions* identical to live playback, not
+just its voices:
+
+- **Audible picks draw `audioRng`, never `cosmeticRng`.** The halo music
+  variation, its 24x swap, the full-halo song and the Pilot's Log take are
+  chosen from sim code. Render code also draws the cosmetic stream, at the
+  display's refresh rate, so a pick made through it landed on a different
+  track in the original run, in a replay on another display, and in the
+  export. `audioRng` is drawn only by those picks.
+- **An async music start is not re-picked while it loads.** `syncHaloAmbient`
+  polls every sim frame; `Sound.haloMusicStarting` covers the buffer await so
+  the frames of latency (one at 120 Hz, two at 60 Hz) don't each draw another
+  variation and race another node.
+
+`scripts/check-export-audio.mjs` asserts the picks don't move with the
+cosmetic stream, and the export sweep drains the microtask queue every frame
+so a start that reads the clock after its buffer await sees the frame that
+triggered it.
+
+### A replay moves the music onto the clock, not the clock onto the music
+
+Live play keeps the bass and the halo music together with a watchdog
+(`tickBeatResnap`) that once a measure drags `beatTime` onto the music's
+actual playback position, and records the net adjustment into the replay.
+
+A replay may not do that: `beatTime` there is a recorded sum that the sim, its
+checkpoints and the combo gate all depend on, so it re-applies the recorded
+adjustments verbatim. But those adjustments were cancelling a drift the
+*original* run's clock had, and a replay's freshly-started music does not have
+it — so applying them slides the bass off the music by their whole total. On a
+measured wave-2 run that is 319 ms, growing monotonically, and it is what made
+an exported movie drift further out of time the longer it ran.
+
+So a replay holds the two together from the other side: `tickReplayMusicPhase`
+trims the music's *playback rate* onto the sim clock, the mirror of what live
+play does to `beatTime`. Two things make it inaudible rather than a wobble:
+
+- **The cap is 1%** (17 cents). The recorded corrections arrive in bursts — the
+  live watchdog bleeds each measure's error over ~0.15 s — and chasing a burst
+  at its own speed would bend a sustained pad by most of a semitone. Spreading
+  it instead leaves a transient of a few tens of ms that decays before the next
+  burst, and 1% is still about twice the average correction a run needs, so the
+  error is pulled back rather than accumulating.
+- **The rate is measured against the audio clock**, over spans of at least
+  0.1 s, not from `musicDt / dt`. One render tick can step several recorded
+  frames while the audio clock stands still, and browser playback is paced by a
+  wall-clock accumulator, so only the audio clock says how fast the sim is
+  actually running.
+
+This also means `audioBeatTimeFromMusic` has to stay exact once a rate has
+moved. It reads a beat anchor that `setHaloMusicPlaybackRate` advances on every
+change; computing it as "start + elapsed" ignores every trim, and the check
+script asserts it across a rate change for that reason.
+
 One consequence worth knowing: **`bgBeat`'s intensity buckets are derived from
 `CFG.bgBeatIntensity`**, not hardcoded. The ramp runs 0.6 → 1.0 over 30 waves,
 so only 5 of the 11 buckets are reachable and the other 24 files are never
