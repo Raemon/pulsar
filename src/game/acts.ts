@@ -46,15 +46,15 @@ export const actOfWave = (wave: number): number => {
   return BOSS_ENCOUNTERS[BOSS_ENCOUNTERS.length - 1].act;
 };
 
-const ACT_TWO = BOSS_ENCOUNTERS[1];
-const ACT_TWO_FIRST_WAVE = BOSS_ENCOUNTERS[0].wave + 1;
-
-// How far into Act II a (possibly fractional) wave level sits, 0 at its first
-// wave and 1 on the boss wave. The sky reads this to walk the Sepulchre's
-// satellites out of the background and into the field around the player, so it
-// takes the smoothed wave level rather than the integer wave — the swarm has
-// to glide across a wave boundary, not jump.
-export const actTwoProgress = (waveLevel: number): number => {
-  const span = ACT_TWO.wave - ACT_TWO_FIRST_WAVE;
-  return Math.max(0, Math.min(1, (waveLevel - ACT_TWO_FIRST_WAVE) / span));
+// How far through its own act a (possibly fractional) wave level sits, 0 at
+// the act's first wave and 1 on its boss wave. The sky reads this to swell each
+// boss body on its own act's clock, and to walk the Sepulchre's satellites out
+// of the background and into the field around the player, so it takes the
+// smoothed wave level rather than the integer wave — things have to glide
+// across a wave boundary, not jump.
+export const actProgress = (act: number, waveLevel: number): number => {
+  const index = BOSS_ENCOUNTERS.findIndex((b) => b.act === act);
+  const firstWave = index === 0 ? 1 : BOSS_ENCOUNTERS[index - 1].wave + 1;
+  const span = BOSS_ENCOUNTERS[index].wave - firstWave;
+  return Math.max(0, Math.min(1, (waveLevel - firstWave) / span));
 };

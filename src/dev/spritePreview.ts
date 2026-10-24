@@ -180,13 +180,16 @@ const buildCatalogue = (): Subject[] => {
     },
   });
 
-  for (const size of ["big", "medium", "small"] as AlienSize[]) {
-    try {
-      const alien = new Alien({ x: 0, y: 0 }, { x: 0, y: 0 }, size);
-      alien.pos = { x: 0, y: 0 };
-      out.push({ group: "Alien", label: `alien · ${size}`, radius: alien.radius, draw: (ctx, t) => alien.render(ctx, t) });
-    } catch (err) {
-      out.push(brokenCell("Alien", `alien · ${size}`, err));
+  for (const act of [1, 2]) {
+    for (const size of ["big", "medium", "small"] as AlienSize[]) {
+      const label = `alien${act === 2 ? " II" : ""} · ${size}`;
+      try {
+        const alien = new Alien({ x: 0, y: 0 }, { x: 0, y: 0 }, size, act);
+        alien.pos = { x: 0, y: 0 };
+        out.push({ group: "Alien", label, radius: alien.radius, draw: (ctx, t) => alien.render(ctx, t) });
+      } catch (err) {
+        out.push(brokenCell("Alien", label, err));
+      }
     }
   }
 
@@ -364,7 +367,7 @@ const start = () => {
       ctx.scale(dpr, dpr);
       ctx.translate(CELL / 2, CELL / 2);
       // Fit the body to the cell, then apply the toolbar zoom on top, so a
-      // 16px shard and a 140px citadel are both legible at 1×.
+      // 16px shard and a citadel are both legible at 1×.
       const fit = (CELL * 0.4) / Math.max(12, subject.radius);
       ctx.scale(fit * opts.zoom, fit * opts.zoom);
       try {

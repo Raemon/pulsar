@@ -12,6 +12,8 @@ import { WARP_OUT_DURATION, warpAnchorOffset } from "./game/wormhole";
 //              decrements hp by 1, the killing hit explodes it.
 //   "medium" : 2 HP, fires every beat (BEAT_GRID).
 //   "small"  : 1 HP, fires every beat (BEAT_GRID).
+//   Act II aliens are a tougher purple breed with faster bullets (see
+//   AlienBreed / ENTITY_CONFIG.alien.actTwo).
 //
 // Aliens fly across the field on a slow arcing curve with a lazy weave on top.
 // They don't wrap — once they drift off the far side of the screen they're gone.
@@ -26,13 +28,19 @@ const SIZE_SPEED = ENTITY_CONFIG.alien.speed;
 const SIZE_BULLET_SPEED = ENTITY_CONFIG.alien.bulletSpeed;
 
 const SIZE_HUE: Record<AlienSize, number> = {
-  // Dark blood-red manta family — all three sizes sit in the same crimson band
+  // Act I's dark blood-red manta family — all three sizes sit in the same crimson band
   // so they read as the same species. Big sits deepest, small drifts a touch
   // warmer toward orange-red, medium sits between them.
   big: 356,
   medium: 0,
   small: 6,
 };
+
+// Each act fields its own breed of manta: the colour it wears and how it scales
+// the per-size HP and bullet speed.
+type AlienBreed = { hue: Record<AlienSize, number>; hpMul: number; bulletSpeedMul: number };
+const ACT_ONE_BREED: AlienBreed = { hue: SIZE_HUE, hpMul: 1, bulletSpeedMul: 1 };
+const ACT_TWO_BREED: AlienBreed = ENTITY_CONFIG.alien.actTwo;
 
 // Per-size firing pattern: gaps (in BEAT_GRID units) between consecutive
 // shots, cycled forever. Each entry is the wait BEFORE the next shot. Game
@@ -300,6 +308,8 @@ export class Alien {
   hue: number;
   hp: number;
   maxHp: number;
+  // Muzzle speed of every shot, set by size and breed.
+  bulletSpeed: number;
   cracks: AlienCrack[];
   // Game-time at which to fire the next bullet. Set on spawn (aligned to the
   // global beat grid) and advanced after each shot by the next gap in the
@@ -365,14 +375,17 @@ export class Alien {
   // alien voice's amplitude LFO. See Trail.ts.
   trail: Trail;
 
-  constructor(pos: Vec, vel: Vec, size: AlienSize) {
+  // `act` picks the breed (see AlienBreed).
+  constructor(pos: Vec, vel: Vec, size: AlienSize, act: number = 1) {
+    const breed = act >= 2 ? ACT_TWO_BREED : ACT_ONE_BREED;
     this.pos = pos;
     this.vel = vel;
     this.size = size;
     this.radius = SIZE_RADIUS[size];
-    this.hue = SIZE_HUE[size];
-    this.maxHp = SIZE_HP[size];
+    this.hue = breed.hue[size];
+    this.maxHp = SIZE_HP[size] * breed.hpMul;
     this.hp = this.maxHp;
+    this.bulletSpeed = SIZE_BULLET_SPEED[size] * breed.bulletSpeedMul;
     this.cracks = rollAlienCracks(this.maxHp);
     this.weavePhase = rand(0, TAU);
     this.weaveSpeed = rand(0.6, 1.1);
@@ -494,7 +507,7 @@ export class Alien {
     const dx = target.x - this.pos.x;
     const dy = target.y - this.pos.y;
     const angle = Math.atan2(dy, dx) + angleOffset;
-    const speed = SIZE_BULLET_SPEED[this.size];
+    const speed = this.bulletSpeed;
     const muzzle = add(this.pos, mul(fromAngle(angle, 1), this.radius + 4));
     return new AlienBullet(muzzle, fromAngle(angle, speed), this.size, this.hue);
   }
@@ -922,7 +935,7 @@ export class Alien {
   }
 }
 
-export const spawnAlienAtEdge = (w: number, h: number, size: AlienSize): Alien => {
+export const spawnAlienAtEdge = (w: number, h: number, size: AlienSize, act: number = 1): Alien => {
   const edge = Math.floor(rng() * 4);
   let pos: Vec;
   let target: Vec;
@@ -948,7 +961,7 @@ export const spawnAlienAtEdge = (w: number, h: number, size: AlienSize): Alien =
   const norm = Math.hypot(dx, dy);
   const [smin, smax] = SIZE_SPEED[size];
   const speed = rand(smin, smax);
-  const alien = new Alien(pos, v((dx / norm) * speed, (dy / norm) * speed), size);
+  const alien = new Alien(pos, v((dx / norm) * speed, (dy / norm) * speed), size, act);
   // Let it cross the full screen and clear the far edge before despawning. The
   // diagonal is the worst-case crossing (corner to corner); the pad covers the
   // sprite extent + the weave/arc lengthening the path. See Alien.update.

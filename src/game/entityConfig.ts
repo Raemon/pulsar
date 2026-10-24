@@ -66,9 +66,11 @@ export const ENTITY_CONFIG = {
     // Giant (huge) bassteroid — a three-ship convoy that undocks into three
     // larges (see Asteroid.undockGiantBass) and fills two wave slots. Through
     // display-level 10 it only replaces a wave's pair of bass slots, and
-    // rarely; past it any wave with a bass slot rolls the higher chance,
-    // borrowing a normal slot when only one bass slot filled.
+    // rarely. In Act II every wave of two or more slots rolls the higher
+    // chance, whether or not a bass slot filled, borrowing normal slots to make
+    // room; past Act II it needs a bass slot again.
     giantChanceEarly: 0.03,
+    giantChanceActTwo: 0.4,
     giantChanceLate: 0.3,
     giantLateDisplayLevel: 11,
   },
@@ -122,7 +124,11 @@ export const ENTITY_CONFIG = {
     // config so the render crossfade and the tick's solid flip stay aligned.
     solidThreshold: 0.75,
     // Escape hole = the ship's visible triangle scaled up by this factor.
-    holeScale: 4.0,
+    holeScale: 6.0,
+    // Outline harmonic amplitude scale. With holeScale 6 at radius 168 the
+    // hole's corners reach ~0.87 of the radius; at 0.2 the rim dips at most 5%,
+    // so the corners never break through. Retune together with those two.
+    shellWobble: 0.2,
   },
 
   canister: {
@@ -151,6 +157,13 @@ export const ENTITY_CONFIG = {
       small: [63, 93],
     } as Record<AlienSize, [number, number]>,
     bulletSpeed: { big: 110, medium: 140, small: 200 } as Record<AlienSize, number>,
+    // Act II breed: dark purple instead of blood red, tougher, and firing
+    // faster bullets. Hue per size, like the Act I crimson band in Alien.ts.
+    actTwo: {
+      hue: { big: 272, medium: 276, small: 280 } as Record<AlienSize, number>,
+      hpMul: 2,
+      bulletSpeedMul: 1.5,
+    },
   },
 
   // Wave-skip portal a player-killed alien tears open at its death spot. Fly
@@ -459,6 +472,13 @@ export const ENTITY_CONFIG = {
     eyeRadius: 48,
     // Bolt projectile speed; cadence + telegraph snap to the boss 8-beat rhythm.
     eyeBulletSpeed: 200,
+    // Outward kick (px/s, on top of the planetoid's own drift) the break gives
+    // each hemisphere and the eye core, so the pieces scatter with real force.
+    hemisphereEjectSpeed: 170,
+    eyeEjectSpeed: 65,
+    // The same kick for the shards a hemisphere and the eye break into.
+    plateEjectSpeed: 80,
+    irisShardEjectSpeed: 90,
     // Total dormant intro before the boss becomes live and damageable; only the
     // trailing revealActiveDuration carries the shudder / dust-off / eye-open.
     revealDuration: 60.0,
@@ -545,6 +565,9 @@ export type EntityStats = {
   outlineSamples?: number;
 };
 
+const scaleSizeBand = (band: Record<AsteroidSize, number>, k: number): Record<AsteroidSize, number> =>
+  ({ huge: band.huge * k, large: band.large * k, medium: band.medium * k, small: band.small * k });
+
 export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
   // Bassteroids are 2× the stock HP ladder (armoured); each voice has its hue.
   bassA: {
@@ -572,7 +595,10 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     hue: 285,
     outlineSamples: 22,
   },
+  // Twice the stock size band at every tier — a warble is a sizeable chunk of
+  // citadel wall, not a pebble.
   warble: {
+    radius: scaleSizeBand(ENTITY_CONFIG.asteroid.radius, 2),
     hue: 130,
     // The wedge silhouette (Asteroid.wedgeProfile) needs enough samples that
     // the shell arc stays smooth and the corners where it meets the two
@@ -587,7 +613,7 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
   citadel: {
     hp: 4,
     score: 2200,
-    radius: 140,
+    radius: 168,
     hue: 150,
     damageReduction: 8,
   },
@@ -603,10 +629,11 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
   },
   // Hemisphere armour is directional: the rounded shell keeps the reduction,
   // the exposed cut face has none (see Asteroid.damageReductionAt).
+  // Nearly the whole planetoid's radius: each half is most of the body.
   bossHemisphere: {
     hp: 18,
     score: 800,
-    radius: 104,
+    radius: 124,
     hue: 12,
     damageReduction: 4,
   },
