@@ -4,7 +4,7 @@ import { spawnGemSwarm } from "../Gem";
 import { spawnComet as spawnCometAtEdge, spawnMeteorShower, COMET_LIFETIME } from "../Comet";
 import { AlienSize, spawnAlienAtEdge } from "../Alien";
 import { spawnCanister } from "../Canister";
-import { rand, randInt, v, TAU, nearestImageOf, wrapMut } from "../vec";
+import { pick, rand, randInt, v, TAU, nearestImageOf, wrapMut } from "../vec";
 import { rng } from "./rng";
 import { BEAT_GRID } from "./rhythmConstants";
 import { stageEntrance, audiblePos } from "./entrance";
@@ -212,13 +212,14 @@ const seedSuperBassSlot = (game: Game, a: Asteroid) => {
 // Each bass slot rolls a fresh kind from the full BASS_KINDS pool, so any of
 // the four colours can show up on any bass wave (re-rolled per wave spawn).
 // The chime/bell/warble sound-decorator asteroids are no longer spawned here.
+const randomBassKind = (): AsteroidKind => pick(BASS_KINDS);
+
 export const activeSpecialsForWave = (_game: Game, wave: number): AsteroidKind[] => {
   if (wave < 3) return [];
-  const randomBass = (): AsteroidKind => BASS_KINDS[Math.floor(rng() * BASS_KINDS.length)];
   // each slot decides independently whether a bass piece fills it
   const bassSlot = (): AsteroidKind[] =>
     wave <= CFG.bassteroid.maxLevel || rng() < CFG.bassteroid.rareChanceAfterMax
-      ? [randomBass()]
+      ? [randomBassKind()]
       : [];
   if (wave === 3) return bassSlot();
   if (wave === 4) return bassSlot();
@@ -231,8 +232,10 @@ export const activeSpecialsForWave = (_game: Game, wave: number): AsteroidKind[]
 const rollGiantBass = (game: Game, activeSpecials: AsteroidKind[], totalCount: number): AsteroidKind | null => {
   const cfg = CFG.bassteroid;
   if (displayWave(game.wave) >= cfg.giantLateDisplayLevel) {
-    if (totalCount < 2 || rng() >= cfg.giantChanceLate) return null;
-    return activeSpecials[0] ?? BASS_KINDS[Math.floor(rng() * BASS_KINDS.length)];
+    if (totalCount < 2) return null;
+    // Only waves that pass the size gate draw the roll (replays depend on it).
+    if (rng() >= cfg.giantChanceLate) return null;
+    return activeSpecials[0] ?? randomBassKind();
   }
   if (activeSpecials.length < 2) return null;
   return rng() < cfg.giantChanceEarly ? activeSpecials[0] : null;

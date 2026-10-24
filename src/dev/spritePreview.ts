@@ -367,7 +367,7 @@ const start = () => {
       ctx.scale(dpr, dpr);
       ctx.translate(CELL / 2, CELL / 2);
       // Fit the body to the cell, then apply the toolbar zoom on top, so a
-      // 16px shard and a 168px citadel are both legible at 1×.
+      // 16px shard and a citadel are both legible at 1×.
       const fit = (CELL * 0.4) / Math.max(12, subject.radius);
       ctx.scale(fit * opts.zoom, fit * opts.zoom);
       try {

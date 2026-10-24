@@ -12,8 +12,8 @@ import { WARP_OUT_DURATION, warpAnchorOffset } from "./game/wormhole";
 //              decrements hp by 1, the killing hit explodes it.
 //   "medium" : 2 HP, fires every beat (BEAT_GRID).
 //   "small"  : 1 HP, fires every beat (BEAT_GRID).
-//   Act II aliens are a purple breed with double these HP and faster bullets
-//   (ENTITY_CONFIG.alien.actTwo).
+//   Act II aliens are a tougher purple breed with faster bullets (see
+//   AlienBreed / ENTITY_CONFIG.alien.actTwo).
 //
 // Aliens fly across the field on a slow arcing curve with a lazy weave on top.
 // They don't wrap — once they drift off the far side of the screen they're gone.
@@ -26,16 +26,21 @@ const SIZE_HP = ENTITY_CONFIG.alien.hp;
 const SIZE_SCORE = ENTITY_CONFIG.alien.score;
 const SIZE_SPEED = ENTITY_CONFIG.alien.speed;
 const SIZE_BULLET_SPEED = ENTITY_CONFIG.alien.bulletSpeed;
-const ACT_TWO = ENTITY_CONFIG.alien.actTwo;
 
 const SIZE_HUE: Record<AlienSize, number> = {
-  // Dark blood-red manta family — all three sizes sit in the same crimson band
+  // Act I's dark blood-red manta family — all three sizes sit in the same crimson band
   // so they read as the same species. Big sits deepest, small drifts a touch
   // warmer toward orange-red, medium sits between them.
   big: 356,
   medium: 0,
   small: 6,
 };
+
+// Each act fields its own breed of manta: the colour it wears and how it scales
+// the per-size HP and bullet speed.
+type AlienBreed = { hue: Record<AlienSize, number>; hpMul: number; bulletSpeedMul: number };
+const ACT_ONE_BREED: AlienBreed = { hue: SIZE_HUE, hpMul: 1, bulletSpeedMul: 1 };
+const ACT_TWO_BREED: AlienBreed = ENTITY_CONFIG.alien.actTwo;
 
 // Per-size firing pattern: gaps (in BEAT_GRID units) between consecutive
 // shots, cycled forever. Each entry is the wait BEFORE the next shot. Game
@@ -303,6 +308,7 @@ export class Alien {
   hue: number;
   hp: number;
   maxHp: number;
+  // Muzzle speed of every shot, set by size and breed.
   bulletSpeed: number;
   cracks: AlienCrack[];
   // Game-time at which to fire the next bullet. Set on spawn (aligned to the
@@ -369,18 +375,17 @@ export class Alien {
   // alien voice's amplitude LFO. See Trail.ts.
   trail: Trail;
 
-  // `act` picks the breed: Act II aliens are the purple, tougher, faster-
-  // shooting kind (ENTITY_CONFIG.alien.actTwo).
+  // `act` picks the breed (see AlienBreed).
   constructor(pos: Vec, vel: Vec, size: AlienSize, act: number = 1) {
-    const actTwo = act >= 2;
+    const breed = act >= 2 ? ACT_TWO_BREED : ACT_ONE_BREED;
     this.pos = pos;
     this.vel = vel;
     this.size = size;
     this.radius = SIZE_RADIUS[size];
-    this.hue = actTwo ? ACT_TWO.hue[size] : SIZE_HUE[size];
-    this.maxHp = SIZE_HP[size] * (actTwo ? ACT_TWO.hpMul : 1);
+    this.hue = breed.hue[size];
+    this.maxHp = SIZE_HP[size] * breed.hpMul;
     this.hp = this.maxHp;
-    this.bulletSpeed = SIZE_BULLET_SPEED[size] * (actTwo ? ACT_TWO.bulletSpeedMul : 1);
+    this.bulletSpeed = SIZE_BULLET_SPEED[size] * breed.bulletSpeedMul;
     this.cracks = rollAlienCracks(this.maxHp);
     this.weavePhase = rand(0, TAU);
     this.weaveSpeed = rand(0.6, 1.1);

@@ -123,6 +123,10 @@ export const ENTITY_CONFIG = {
     solidThreshold: 0.75,
     // Escape hole = the ship's visible triangle scaled up by this factor.
     holeScale: 6.0,
+    // Outline harmonic amplitude scale. With holeScale 6 at radius 168 the
+    // hole's corners reach ~0.87 of the radius; at 0.2 the rim dips at most 5%,
+    // so the corners never break through. Retune together with those two.
+    shellWobble: 0.2,
   },
 
   canister: {
@@ -151,8 +155,8 @@ export const ENTITY_CONFIG = {
       small: [63, 93],
     } as Record<AlienSize, [number, number]>,
     bulletSpeed: { big: 110, medium: 140, small: 200 } as Record<AlienSize, number>,
-    // Act II breed: dark purple instead of blood red, twice as tough, and
-    // firing faster bullets. Hue per size, like the Act I crimson band.
+    // Act II breed: dark purple instead of blood red, tougher, and firing
+    // faster bullets. Hue per size, like the Act I crimson band in Alien.ts.
     actTwo: {
       hue: { big: 272, medium: 276, small: 280 } as Record<AlienSize, number>,
       hpMul: 2,
@@ -470,6 +474,9 @@ export const ENTITY_CONFIG = {
     // each hemisphere and the eye core, so the pieces scatter with real force.
     hemisphereEjectSpeed: 170,
     eyeEjectSpeed: 65,
+    // The same kick for the shards a hemisphere and the eye break into.
+    plateEjectSpeed: 80,
+    irisShardEjectSpeed: 90,
     // Total dormant intro before the boss becomes live and damageable; only the
     // trailing revealActiveDuration carries the shudder / dust-off / eye-open.
     revealDuration: 60.0,
@@ -556,6 +563,9 @@ export type EntityStats = {
   outlineSamples?: number;
 };
 
+const scaleSizeBand = (band: Record<AsteroidSize, number>, k: number): Record<AsteroidSize, number> =>
+  ({ huge: band.huge * k, large: band.large * k, medium: band.medium * k, small: band.small * k });
+
 export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
   // Bassteroids are 2× the stock HP ladder (armoured); each voice has its hue.
   bassA: {
@@ -586,7 +596,7 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
   // Twice the stock size band at every tier — a warble is a sizeable chunk of
   // citadel wall, not a pebble.
   warble: {
-    radius: { huge: 200, large: 100, medium: 56, small: 32 },
+    radius: scaleSizeBand(ENTITY_CONFIG.asteroid.radius, 2),
     hue: 130,
     // The wedge silhouette (Asteroid.wedgeProfile) needs enough samples that
     // the shell arc stays smooth and the corners where it meets the two

@@ -43,11 +43,9 @@ type Planet = {
   baseLight: number;
   lightDrop: number;
   // Set on the two planets that are really bosses biding their time. A boss
-  // body ignores the linear growth above and swells on a hard power curve of
-  // its own act's progress instead (see actProgress), so it stays a distant
-  // speck for most of its act and only looms in the last stretch, reaching
-  // full size on its own boss wave. Each act's body grows on the same clock,
-  // so the tomb through levels 11-19 is the size the planetoid was through 1-9.
+  // body ignores the linear growth above and swells over its own act instead
+  // (see render), so the tomb through levels 11-19 runs about the size the
+  // planetoid did through levels 1-9.
   bossAct?: number;
 };
 
@@ -835,7 +833,7 @@ export class Pulsar {
     // Camera roll applied to all background planets so their orbits rotate
     // with the rest of the scene — sells "this is one coherent camera view"
     // rather than each layer floating independently.
-    const actTwo = actProgress(2, this.displayWaveLevel);
+    const tombRingProgress = actProgress(2, this.displayWaveLevel);
     for (let pi = this.planets.length - 1; pi >= 0; pi--) {
       const planet = this.planets[pi];
       if (planet.bossAct !== undefined && this.hiddenBossActs.has(planet.bossAct)) continue;
@@ -847,8 +845,8 @@ export class Pulsar {
       let size: number;
       let colorApproach: number;
       if (planet.bossAct !== undefined) {
-        // Normalized progress 0→1 where 1 = full size on this body's own boss
-        // wave. Eased with a power curve so it stays a small distant speck for
+        // Progress through this body's own act, 0 at its first wave and 1 =
+        // full size on its boss wave. Eased with a power curve so it stays a small distant speck for
         // many waves and only swells noticeably in the final stretch.
         const fullness = actProgress(planet.bossAct, this.displayWaveLevel);
         const easedFullness = Math.pow(fullness, 2.8);
@@ -863,13 +861,13 @@ export class Pulsar {
       }
 
       this.renderPlanet(ctx, planet, px, py, size, ppx, ppy, r, colorApproach, beat, flare);
-      if (planet.bossAct === 2 && actTwo > 0) this.renderTombRing(ctx, px, py, size, actTwo);
+      if (planet.bossAct === 2 && tombRingProgress > 0) this.renderTombRing(ctx, px, py, size, tombRingProgress);
     }
 
     // The moons that have already broken orbit, drifting through the near
     // field. Drawn after the planets — they are the closest thing in the sky,
     // and by the end of Act II they are wheeling around the ship itself.
-    if (actTwo > 0 && !this.hiddenBossActs.has(2)) this.renderNearSatellites(ctx, actTwo);
+    if (tombRingProgress > 0 && !this.hiddenBossActs.has(2)) this.renderNearSatellites(ctx, tombRingProgress);
 
     this.renderShockwave(ctx);
   }
@@ -1318,13 +1316,9 @@ export class Pulsar {
     }
   }
 
-  // One moon, at any scale: a pitch-black body with only a faint terminator, a
-  // scatter of carved pits so the silhouette is a worked thing rather than a
-  // ball, and a dark contact rim under a thin cold catch of light to seat it
-  // against the starfield. No colour and no lamp — these are unlit shadows that
-  // blot out the stars as they pass, and stay that way until they wake as
-  // Pallbearers on the boss wave. The only sign of life is the catch on the
-  // limb brightening on the beat each one tolls.
+  // One moon, at any scale: an unlit black body with carved pits and a dark
+  // contact rim, blotting out the stars until it wakes as a Pallbearer. Its
+  // only sign of life is the cold catch on the limb, which brightens on its toll.
   private paintSatellite(
     ctx: CanvasRenderingContext2D,
     x: number,

@@ -53,7 +53,7 @@ export const actOfWave = (wave: number): number => {
 // smoothed wave level rather than the integer wave — things have to glide
 // across a wave boundary, not jump.
 export const actProgress = (act: number, waveLevel: number): number => {
-  const index = act - 1;
+  const index = BOSS_ENCOUNTERS.findIndex((b) => b.act === act);
   const firstWave = index === 0 ? 1 : BOSS_ENCOUNTERS[index - 1].wave + 1;
   const span = BOSS_ENCOUNTERS[index].wave - firstWave;
   return Math.max(0, Math.min(1, (waveLevel - firstWave) / span));
