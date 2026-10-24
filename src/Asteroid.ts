@@ -186,17 +186,19 @@ const WARBLE_WEDGE_SPAN: Record<AsteroidSize, number> = {
 };
 
 // The citadel's escape hole: the ship's visible triangle (hull + halo, nose
-// along local +x) scaled up by holeScale. Built once — every citadel wears the
-// same hole, rotated with its body.
+// along local +x) scaled up by holeScale, slid back along the axis so its
+// circumcentre sits on the citadel's centre — that keeps all three corners the
+// same distance in from the rim, so the wall stays whole at the nose and both
+// wings. Built once — every citadel wears the same hole, rotated with its body.
 const CITADEL_HOLE_VERTS: ReadonlyArray<Vec> = (() => {
   const scale = ENTITY_CONFIG.citadel.holeScale;
   const nose = (SHIP_BODY_RADIUS * SHIP_NOSE_MUL + SHIP_HALO_OFFSET) * scale;
   const wing = (SHIP_BODY_RADIUS + SHIP_HALO_OFFSET) * scale;
-  return [
-    v(nose, 0),
-    v(Math.cos(SHIP_WING_ANGLE) * wing, Math.sin(SHIP_WING_ANGLE) * wing),
-    v(Math.cos(-SHIP_WING_ANGLE) * wing, Math.sin(-SHIP_WING_ANGLE) * wing),
-  ];
+  const wingX = Math.cos(SHIP_WING_ANGLE) * wing;
+  const wingY = Math.sin(SHIP_WING_ANGLE) * wing;
+  // On the axis, equidistant from the nose and a wing tip.
+  const shift = (nose * nose - wingX * wingX - wingY * wingY) / (2 * (nose - wingX));
+  return [v(nose - shift, 0), v(wingX - shift, wingY), v(wingX - shift, -wingY)];
 })();
 
 // Append the escape-hole triangle to the current path. `pos`/`rotation`
@@ -222,6 +224,15 @@ export const traceCitadelHolePath = (ctx: CanvasRenderingContext2D, pos?: Vec, r
 // needing a live Ship. Used by the citadel break-up to place its fragments
 // outside anything the hull could possibly be touching.
 const SHIP_CLEAR_RADIUS = SHIP_BODY_RADIUS * SHIP_NOSE_MUL + SHIP_HALO_OFFSET + 10;
+
+// A boss hemisphere's torn cut face, in its local frame (see
+// Asteroid.hemisphereWound). Chunk `verts` are per-vertex radius multipliers.
+type HemisphereDebris = { x: number; y: number; size: number; spin: number; verts: number[] };
+type HemisphereWound = {
+  edge: Vec[];
+  lodged: HemisphereDebris[];
+  loose: (HemisphereDebris & { phase: number; rate: number })[];
+};
 
 // Same-side sign test against each edge; works for either winding.
 const pointInTriangle = (px: number, py: number, tri: ReadonlyArray<Vec>): boolean => {
@@ -1600,10 +1611,11 @@ export class Asteroid {
       ampScale = 0.3;
     } else if (kind === "citadel") {
       // Fortress mass: the warble's lobed family resemblance at a fraction of
-      // the amplitude, so the huge shell reads solid and the escape hole
-      // stays comfortably inside the silhouette at every angle.
+      // the amplitude, so the huge shell reads solid. Kept low enough that the
+      // escape hole's corners, which reach to ~0.87 of the radius, never break
+      // through the rim (worst-case dip is 5%).
       freqs = [3, 5, 8];
-      ampScale = 0.4;
+      ampScale = 0.2;
     } else if (isGlassPrison(kind)) {
       // Black diamond shell: the diamondProfile in computeOutline carries the
       // sharp rhombus silhouette; these harmonics only add a faint per-gem
@@ -4981,7 +4993,7 @@ export class Asteroid {
           x: this.pos.x + Math.cos(childAngle) * ejectDist,
           y: this.pos.y + Math.sin(childAngle) * ejectDist,
         };
-        const speedMag = parentSpeed * rand(0.9, 1.3) + 95;
+        const speedMag = parentSpeed * rand(0.9, 1.3) + ENTITY_CONFIG.boss.hemisphereEjectSpeed;
         const hemi = new Asteroid(childPos, fromAngle(childAngle, speedMag), "medium", this.hue, "bossHemisphere");
         // Remember which side of the cut this hemisphere came from so the
         // renderer can paint the flat diameter facing back along the cut
@@ -5013,7 +5025,7 @@ export class Asteroid {
         x: this.pos.x + Math.cos(baseAngle) * ejectDist * 0.4,
         y: this.pos.y + Math.sin(baseAngle) * ejectDist * 0.4,
       };
-      const eyeSpeed = parentSpeed * rand(0.7, 1.0) + 30;
+      const eyeSpeed = parentSpeed * rand(0.7, 1.0) + ENTITY_CONFIG.boss.eyeEjectSpeed;
       const eye = new Asteroid(eyePos, fromAngle(baseAngle, eyeSpeed), "medium", this.hue, "bossEye");
       // Offset the eye's base a quarter measure off the hemispheres so its two
       // iris shards ring in the gaps between the plate flashes.
@@ -5284,8 +5296,8 @@ export class Asteroid {
       // A fragment must be BORN clear of the hull, not merely aimed away from
       // it: its own radius, the ship's silhouette, the ±18 px the rhythm
       // aligner may nudge it back down its ray (alignSplitChildToRhythm), and
-      // a little slack. A large warble is r=50 against a 140-radius shell, so
-      // the old radius·0.5 ring put fragment bodies straight over the centre —
+      // a little slack. A large warble is r=100 against a 168-radius shell, so
+      // a radius·0.5 ring would put fragment bodies straight over the centre —
       // exactly where the player is standing for the intended kill.
       const clearance = entityStat("warble", "large", "radius") + SHIP_CLEAR_RADIUS + 18 + 16;
       // Ship in this citadel's unwrapped frame; null for a shockwave-driven
@@ -7610,16 +7622,17 @@ export class Asteroid {
   // (Old dt-based sightline removed — replaced by paintBossLaserChargeBeam
   // which is driven by bossLaserCharge from the 8-beat rhythm.)
 
-  // Hemisphere fragment: a half-disc with the freshly-revealed inner
-  // cross-section facing the cut axis. The straight edge (the diameter) is
-  // the unarmoured molten interior — strata, hot core, spilling furnace
-  // light — while the curved limb wears its share of the equatorial
-  // Bassteroid ring under a heavy plated rim. The visual armour split
-  // matches the mechanical one in damageReductionAt.
+  // Hemisphere fragment: half the planetoid, torn open along the cut. The
+  // curved limb keeps its armoured shell and its share of the equatorial
+  // Bassteroid ring; the cut side has no shell at all — a ragged, sagging
+  // underbelly of molten mantle with dark rubble lodged in it and loose debris
+  // still tumbling off the wound. The visual armour split matches the
+  // mechanical one in damageReductionAt (shell on local +x, bare on -x).
   renderBossHemisphere(ctx: CanvasRenderingContext2D, t: number) {
     const baseHue = this.hue;
     const damageT = 1 - this.hp / Math.max(1, this.maxHp);
     const r = this.radius;
+    const { edge, lodged, loose } = this.hemisphereWound();
 
     ctx.save();
     ctx.translate(this.pos.x, this.pos.y);
@@ -7627,9 +7640,22 @@ export class Asteroid {
 
     // The hemisphere is the half-disc on the side opposite the cut axis.
     // In its own local frame we draw the half on +x side (so the cut
-    // diameter is the y-axis), then the outer rotation places it correctly.
+    // runs along the y-axis), then the outer rotation places it correctly.
     // Apply the fragment angle so the cut faces the recorded direction.
     ctx.rotate(this.bossFragmentAngle);
+
+    // Shell arc out round the limb, then back up the torn edge.
+    const bodyPath = () => {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+      for (let i = edge.length - 1; i >= 0; i--) ctx.lineTo(edge[i].x, edge[i].y);
+      ctx.closePath();
+    };
+    const edgePath = () => {
+      ctx.beginPath();
+      ctx.moveTo(edge[0].x, edge[0].y);
+      for (let i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+    };
 
     // Wide outer corona — same hue family as the whole boss
     ctx.save();
@@ -7647,13 +7673,28 @@ export class Asteroid {
     ctx.fill();
     ctx.restore();
 
-    // The half-disc body itself (curved side on +x). Clip a circular path
-    // to the +x half-plane so the renderer can paint architecture inside.
+    const facePulse = 0.5 + 0.5 * Math.sin(t * 0.004 + this.membranePhase);
+    const fireFlare = Math.max(this.bossTopFlash, this.bossBottomFlash);
+    const heat = Math.min(1, 0.55 + 0.25 * facePulse + 0.6 * fireFlare + 0.3 * damageT);
+
+    // Furnace light pouring out of the wound — additive glow on the bare side
+    // only, so the open belly lights the debris in front of it.
     ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const spillR = r * (0.62 + 0.14 * facePulse + 0.3 * fireFlare);
+    const spill = ctx.createRadialGradient(0, 0, r * 0.04, 0, 0, spillR);
+    spill.addColorStop(0, `hsla(${baseHue + 22}, 100%, 60%, ${0.45 * heat})`);
+    spill.addColorStop(0.5, `hsla(${baseHue + 10}, 100%, 50%, ${0.2 * heat})`);
+    spill.addColorStop(1, `hsla(${baseHue}, 100%, 45%, 0)`);
+    ctx.fillStyle = spill;
     ctx.beginPath();
-    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(0, -r);
+    ctx.arc(0, 0, spillR, Math.PI / 2, Math.PI * 1.5);
     ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    bodyPath();
     ctx.clip();
 
     // Body fill — dark planetoid base
@@ -7662,18 +7703,18 @@ export class Asteroid {
     body.addColorStop(0.5, `hsl(${baseHue}, 75%, 12%)`);
     body.addColorStop(1, `hsl(${baseHue - 8}, 80%, 4%)`);
     ctx.fillStyle = body;
-    ctx.fillRect(0, -r, r, r * 2);
+    ctx.fillRect(-r * 0.2, -r, r * 1.2, r * 2);
 
-    // Equatorial ring slice — this hemisphere wore half the boss's ring.
-    // Draw it as a horizontal band on the +x side; the diameter edge cuts
-    // the band so its left edge is the broken cross-section.
+    // Equatorial ring slice — this hemisphere wore half the boss's ring. It
+    // stops well short of the wound: the panels nearest the cut were ripped
+    // away and are among the debris below.
     const bandHeight = r * 0.36;
+    const bandStart = r * 0.3;
     const bassHues = [0, 28, 192, 290];
-    for (let i = 0; i < 7; i++) {
-      const u = i / 7;
-      const x0 = u * r * 1.05;
-      const x1 = (u + 1 / 7) * r * 1.05;
-      const hueBand = bassHues[Math.floor(u * 4) % 4];
+    for (let i = 0; i < 5; i++) {
+      const x0 = bandStart + (i / 5) * (r * 1.05 - bandStart);
+      const x1 = bandStart + ((i + 1) / 5) * (r * 1.05 - bandStart);
+      const hueBand = bassHues[(i + 1) % 4];
       const panel = ctx.createLinearGradient(0, -bandHeight, 0, bandHeight);
       panel.addColorStop(0, `hsla(${hueBand}, 60%, 18%, 0.5)`);
       panel.addColorStop(0.5, `hsla(${hueBand}, 75%, 28%, 0.8)`);
@@ -7687,73 +7728,46 @@ export class Asteroid {
       ctx.lineTo(x1, bandHeight);
       ctx.stroke();
     }
+    // The band's torn end: a dark scorched break instead of a clean seam.
+    const tear = ctx.createLinearGradient(bandStart - r * 0.12, 0, bandStart + r * 0.06, 0);
+    tear.addColorStop(0, `hsla(${baseHue}, 60%, 4%, 0)`);
+    tear.addColorStop(0.6, `hsla(${baseHue}, 60%, 4%, 0.85)`);
+    tear.addColorStop(1, `hsla(${baseHue}, 60%, 4%, 0)`);
+    ctx.fillStyle = tear;
+    ctx.fillRect(bandStart - r * 0.12, -bandHeight * 1.1, r * 0.18, bandHeight * 2.2);
 
-    ctx.restore();
-
-    // The cut cross-section — the flat diameter face of the broken planet.
-    // This is the unarmoured side (see damageReductionAt), so it has to read
-    // as soft exposed viscera against the plated shell: furnace light spills
-    // off the open face, molten mantle strata layer into the body, a
-    // white-hot core sits at the centre, and heat veins crawl into the rock.
-    // The whole face breathes, flares when this half fires its plasma, and
-    // burns angrier as the hemisphere takes damage.
-    const facePulse = 0.5 + 0.5 * Math.sin(t * 0.004 + this.membranePhase);
-    const fireFlare = Math.max(this.bossTopFlash, this.bossBottomFlash);
-    const heat = Math.min(1, 0.55 + 0.25 * facePulse + 0.6 * fireFlare + 0.3 * damageT);
-
-    // Furnace light escaping the wound — additive half-glow on the bare side
-    // only, so the open face casts light where the shell casts none.
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    const spillR = r * (0.5 + 0.14 * facePulse + 0.3 * fireFlare);
-    const spill = ctx.createRadialGradient(0, 0, r * 0.04, 0, 0, spillR);
-    spill.addColorStop(0, `hsla(${baseHue + 22}, 100%, 62%, ${0.5 * heat})`);
-    spill.addColorStop(0.5, `hsla(${baseHue + 10}, 100%, 52%, ${0.25 * heat})`);
-    spill.addColorStop(1, `hsla(${baseHue}, 100%, 45%, 0)`);
-    ctx.fillStyle = spill;
-    ctx.beginPath();
-    ctx.arc(0, 0, spillR, Math.PI / 2, Math.PI * 1.5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // Exposed interior, clipped to the body so the strata stop at the shell.
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(0, -r);
-    ctx.closePath();
-    ctx.clip();
-
-    // Mantle strata: nested half-ellipses reaching into the body, each layer
-    // hotter and brighter than the one wrapping it — the sliced planet's
-    // insides laid bare. Each stratum fades with depth so the face stays the
-    // hottest edge.
+    // The underbelly: molten mantle filling the open side, hottest at the
+    // wound and cooling into the rock. Each layer's boundary wanders, so the
+    // strata read as slumped, half-melted insides rather than drawn rings.
     const strata = [
-      { depth: 0.44, span: 0.97, hueOff: 0, light: 26 },
-      { depth: 0.3, span: 0.78, hueOff: 10, light: 40 },
-      { depth: 0.18, span: 0.55, hueOff: 20, light: 54 },
+      { depth: 0.6, span: 0.98, hueOff: 0, light: 22 },
+      { depth: 0.42, span: 0.82, hueOff: 10, light: 36 },
+      { depth: 0.25, span: 0.6, hueOff: 20, light: 50 },
     ];
-    for (const s of strata) {
+    for (let si = 0; si < strata.length; si++) {
+      const s = strata[si];
       const molten = ctx.createLinearGradient(0, 0, r * s.depth, 0);
       molten.addColorStop(0, `hsla(${baseHue + s.hueOff + 8}, 100%, ${s.light + 10}%, ${0.95 * heat})`);
       molten.addColorStop(1, `hsla(${baseHue + s.hueOff - 4}, 95%, ${s.light - 8}%, ${0.8 * heat})`);
       ctx.fillStyle = molten;
       ctx.beginPath();
-      ctx.ellipse(0, 0, r * s.depth, r * s.span, 0, -Math.PI / 2, Math.PI / 2);
+      const steps = 14;
+      for (let k = 0; k <= steps; k++) {
+        const a = -Math.PI / 2 + (k / steps) * Math.PI;
+        const wobble = 1 + 0.12 * Math.sin(k * 2.3 + si * 1.9 + this.membranePhase) * Math.sin((k / steps) * Math.PI);
+        const x = Math.cos(a) * r * s.depth * wobble;
+        const y = Math.sin(a) * r * s.span;
+        if (k === 0) ctx.moveTo(-r * 0.2, y);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(-r * 0.2, r * s.span);
       ctx.closePath();
       ctx.fill();
-      // Hairline seam where this stratum meets the cooler one around it.
-      ctx.strokeStyle = `hsla(${baseHue + s.hueOff + 24}, 100%, 72%, ${0.35 * heat})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, r * s.depth, r * s.span, 0, -Math.PI / 2, Math.PI / 2);
-      ctx.stroke();
     }
 
     ctx.globalCompositeOperation = "lighter";
 
-    // White-hot core — the softest spot, breathing at the heart of the face.
+    // White-hot core — the softest spot, breathing at the heart of the belly.
     const coreR = r * (0.16 + 0.05 * facePulse + 0.12 * fireFlare);
     const core = ctx.createRadialGradient(r * 0.05, 0, coreR * 0.1, r * 0.06, 0, coreR);
     core.addColorStop(0, `hsla(${baseHue + 38}, 100%, 95%, ${heat})`);
@@ -7764,7 +7778,7 @@ export class Asteroid {
     ctx.arc(r * 0.05, 0, coreR, 0, TAU);
     ctx.fill();
 
-    // Heat veins crawling off the face into the rock — brightest at the cut,
+    // Heat veins crawling off the wound into the rock — brightest at the cut,
     // dying out where the armoured depth begins. Deterministic zig-zags (pure
     // functions of the vein index) so the render draws nothing from the rng.
     for (let v = 0; v < 5; v++) {
@@ -7783,48 +7797,73 @@ export class Asteroid {
       }
       ctx.stroke();
     }
+
+    // Rubble lodged in the molten belly: dark broken stone with the furnace
+    // glowing round it, so the soft insides read as full of wreckage.
+    ctx.globalCompositeOperation = "source-over";
+    for (const chunk of lodged) this.paintHemisphereDebris(ctx, chunk.x, chunk.y, chunk.size, chunk.spin, chunk.verts, baseHue, heat);
     ctx.restore();
 
-    // Molten seam at the cut itself: a soft hot flank under a thin white-hot
-    // line — the glowing lip of the wound.
+    // Molten lip along the torn edge — a soft glow only; no bright seam line,
+    // so the cut never reads as a rim of shell.
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    ctx.strokeStyle = `hsla(${baseHue + 18}, 100%, 60%, ${0.5 * heat})`;
-    ctx.lineWidth = 4.5;
-    ctx.beginPath();
-    ctx.moveTo(0, -r);
-    ctx.lineTo(0, r);
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = `hsla(${baseHue + 18}, 100%, 55%, ${0.32 * heat})`;
+    ctx.lineWidth = r * 0.07;
+    edgePath();
     ctx.stroke();
-    ctx.strokeStyle = `hsla(${baseHue + 32}, 100%, 92%, ${0.6 + 0.4 * heat})`;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(0, -r);
-    ctx.lineTo(0, r);
+    ctx.strokeStyle = `hsla(${baseHue + 28}, 100%, 70%, ${0.28 * heat})`;
+    ctx.lineWidth = r * 0.025;
+    edgePath();
     ctx.stroke();
+    ctx.restore();
+
+    // Loose debris still coming off the wound — each chunk bobs and turns on
+    // its own slow cycle just outside the cut, lit from behind by the belly.
+    ctx.save();
+    for (const chunk of loose) {
+      const drift = Math.sin(t * 0.0011 * chunk.rate + chunk.phase);
+      const x = chunk.x - r * 0.05 * (1 + drift);
+      const y = chunk.y + r * 0.03 * Math.cos(t * 0.0009 * chunk.rate + chunk.phase);
+      const spin = chunk.spin + t * 0.0004 * chunk.rate;
+      this.paintHemisphereDebris(ctx, x, y, chunk.size, spin, chunk.verts, baseHue, heat);
+    }
+    // Embers flaking off the belly.
+    ctx.globalCompositeOperation = "lighter";
+    for (let e = 0; e < 7; e++) {
+      const life = (t * 0.00035 * (1 + (e % 3) * 0.3) + e * 0.37) % 1;
+      const ey = (Math.sin(e * 4.1 + this.membranePhase) * 0.8) * r;
+      const ex = -life * r * 0.55;
+      const ea = (1 - life) * 0.75 * heat;
+      ctx.fillStyle = `hsla(${baseHue + 30}, 100%, 75%, ${ea})`;
+      ctx.beginPath();
+      ctx.arc(ex, ey, r * 0.014 * (1.4 - life), 0, TAU);
+      ctx.fill();
+    }
     ctx.restore();
 
     // Armoured limb rim — dark occlusion stroke under a bright catch, so the
-    // curved shell reads as heavy plating against the soft open face.
+    // curved shell reads as heavy plating. It stops short of the wound: the
+    // plating ends in the tear, it doesn't wrap round the cut.
+    const rimEnd = Math.PI / 2 - 0.16;
     ctx.save();
     ctx.strokeStyle = `hsla(${baseHue}, 45%, 7%, 0.9)`;
     ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+    ctx.arc(0, 0, r, -rimEnd, rimEnd);
     ctx.stroke();
     ctx.globalCompositeOperation = "lighter";
     ctx.strokeStyle = `hsla(${baseHue + 15}, 100%, 75%, 0.85)`;
     ctx.lineWidth = 1.8;
     ctx.beginPath();
-    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+    ctx.arc(0, 0, r, -rimEnd, rimEnd);
     ctx.stroke();
     ctx.restore();
 
-    // Damage cracks (clipped to the half-disc)
+    // Damage cracks (clipped to the body)
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(0, -r);
-    ctx.closePath();
+    bodyPath();
     ctx.clip();
     this.renderBossCracks(ctx, damageT);
     ctx.restore();
@@ -7833,14 +7872,90 @@ export class Asteroid {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       ctx.fillStyle = `hsla(${baseHue + 30}, 100%, 90%, ${this.flashAmount * 0.4})`;
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 1.05, -Math.PI / 2, Math.PI / 2);
-      ctx.lineTo(0, -r);
-      ctx.closePath();
+      bodyPath();
       ctx.fill();
       ctx.restore();
     }
 
+    ctx.restore();
+  }
+
+  // A hemisphere's wound, laid out once in its local frame (body on +x, cut on
+  // the y-axis): the torn edge's polyline, rubble lodged in the belly, and the
+  // loose chunks drifting off it. Pure functions of membranePhase, so the
+  // render never draws from the rng and the wound is the same every frame.
+  private hemisphereWoundCache: HemisphereWound | null = null;
+  private hemisphereWound(): HemisphereWound {
+    if (this.hemisphereWoundCache) return this.hemisphereWoundCache;
+    const r = this.radius;
+    const seed = this.membranePhase;
+    const hash = (n: number): number => {
+      const s = Math.sin(n * 12.9898 + seed * 78.233) * 43758.5453;
+      return s - Math.floor(s);
+    };
+    const chunkVerts = (n: number): number[] =>
+      Array.from({ length: 5 + Math.floor(hash(n * 11) * 3) }, (_, k) => 0.5 + 0.5 * hash(n * 7 + k));
+    // Tapered to meet the shell arc cleanly at both ends; in between the edge
+    // bites into the body and juts out past the cut in turn.
+    const edgeCount = 13;
+    const edge: Vec[] = [];
+    for (let i = 0; i < edgeCount; i++) {
+      const u = i / (edgeCount - 1);
+      const taper = Math.sqrt(Math.sin(u * Math.PI));
+      const jag = (hash(i) - 0.35) * 0.16 + (i % 2 === 0 ? 0.03 : -0.03);
+      edge.push(v(jag * taper * r, (u * 2 - 1) * r));
+    }
+    const lodged = Array.from({ length: 7 }, (_, i) => ({
+      x: r * (0.03 + 0.24 * hash(20 + i)),
+      y: r * (((i + 0.2 + 0.6 * hash(25 + i)) / 7 - 0.5) * 1.6),
+      size: r * (0.035 + 0.07 * hash(30 + i) ** 2),
+      spin: hash(40 + i) * TAU,
+      verts: chunkVerts(50 + i),
+    }));
+    const loose = Array.from({ length: 6 }, (_, i) => ({
+      x: -r * (0.1 + 0.22 * hash(60 + i)),
+      y: r * ((i + 0.5) / 6 - 0.5) * 1.6,
+      size: r * (0.04 + 0.05 * hash(70 + i)),
+      spin: hash(80 + i) * TAU,
+      verts: chunkVerts(90 + i),
+      phase: hash(100 + i) * TAU,
+      rate: 0.7 + 0.6 * hash(110 + i),
+    }));
+    this.hemisphereWoundCache = { edge, lodged, loose };
+    return this.hemisphereWoundCache;
+  }
+
+  // One chunk of hemisphere rubble: dark stone lit up-left, a molten catch on
+  // the face turned to the belly (local +x), under the usual double rim.
+  private paintHemisphereDebris(
+    ctx: CanvasRenderingContext2D, x: number, y: number, size: number, spin: number, verts: number[], hue: number, heat: number,
+  ) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.beginPath();
+    for (let k = 0; k < verts.length; k++) {
+      const a = spin + (k / verts.length) * TAU;
+      const px = Math.cos(a) * size * verts[k];
+      const py = Math.sin(a) * size * verts[k];
+      if (k === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    const stone = ctx.createLinearGradient(-size, -size, size, size);
+    stone.addColorStop(0, `hsl(${hue + 14}, 30%, 36%)`);
+    stone.addColorStop(0.45, `hsl(${hue + 4}, 38%, 17%)`);
+    stone.addColorStop(1, `hsl(${hue - 8}, 50%, 5%)`);
+    ctx.fillStyle = stone;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `hsla(${hue}, 40%, 4%, 0.9)`;
+    ctx.stroke();
+    const molten = ctx.createLinearGradient(size, 0, -size * 0.2, 0);
+    molten.addColorStop(0, `hsla(${hue + 24}, 100%, 66%, ${0.85 * heat})`);
+    molten.addColorStop(1, `hsla(${hue + 10}, 100%, 50%, 0)`);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = molten;
+    ctx.stroke();
     ctx.restore();
   }
 

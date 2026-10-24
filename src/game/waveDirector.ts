@@ -14,7 +14,7 @@ import { emitCrackParticles } from "./particleBursts";
 import { alignVelocityToRhythm, BeatClaimSet, newBeatClaimSet } from "./rhythmTrajectory";
 import { citadelCycleLen, citadelFadeLen, superBassInterval } from "./bassClock";
 import { ENTITY_CONFIG as CFG } from "./entityConfig";
-import { BOSS_FORESHADOW_WAVES, BOSS_WAVES, bossEncounterForWave } from "./acts";
+import { BOSS_FORESHADOW_WAVES, BOSS_WAVES, actOfWave, bossEncounterForWave } from "./acts";
 import { spawnSepulchreEncounter } from "./sepulchre";
 
 // snap each fresh edge-spawn so its crossing of the player's natural
@@ -226,13 +226,13 @@ export const activeSpecialsForWave = (_game: Game, wave: number): AsteroidKind[]
 };
 
 // Giant bassteroid roll: rare through display-level 10 (and only when both
-//   bass slots filled), common after (any bass slot, borrowing a normal slot).
+//   bass slots filled), common after (any wave of two slots, bass or not).
 //   Returns the giant's kind, or null for the ordinary bass spawns.
 const rollGiantBass = (game: Game, activeSpecials: AsteroidKind[], totalCount: number): AsteroidKind | null => {
   const cfg = CFG.bassteroid;
   if (displayWave(game.wave) >= cfg.giantLateDisplayLevel) {
-    if (activeSpecials.length === 0 || totalCount < 2) return null;
-    return rng() < cfg.giantChanceLate ? activeSpecials[0] : null;
+    if (totalCount < 2 || rng() >= cfg.giantChanceLate) return null;
+    return activeSpecials[0] ?? BASS_KINDS[Math.floor(rng() * BASS_KINDS.length)];
   }
   if (activeSpecials.length < 2) return null;
   return rng() < cfg.giantChanceEarly ? activeSpecials[0] : null;
@@ -336,7 +336,7 @@ const spawnSolidCrystalSmall = (game: Game, claimed?: BeatClaimSet): Asteroid =>
 // fire pattern (see ALIEN_FIRE_PATTERN_BEATS in Alien.ts).
 export const spawnAlien = (game: Game, size: AlienSize) => {
   const origin = shipFrameOrigin(game);
-  const a = spawnAlienAtEdge(game.w, game.h, size);
+  const a = spawnAlienAtEdge(game.w, game.h, size, actOfWave(game.wave));
   a.pos.x += origin.x;
   a.pos.y += origin.y;
   applyRhythmSpeed(game, a.vel);
@@ -781,7 +781,7 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
   const totalCount = game.wave === swarm.wave ? Math.max(1, Math.round(baseCount * swarm.asteroidCountMul)) : baseCount;
   const activeSpecials = activeSpecialsForWave(game, game.wave);
   const giantBass = rollGiantBass(game, activeSpecials, totalCount);
-  // A giant fills two slots whether the wave rolled one bass slot or two.
+  // A giant fills two slots however many bass slots the wave rolled.
   const normalCount = Math.max(0, totalCount - (giantBass ? 2 : activeSpecials.length));
 
   // Pre-roll the kind for each normal slot. On the introductory wave for a

@@ -12,6 +12,8 @@ import { WARP_OUT_DURATION, warpAnchorOffset } from "./game/wormhole";
 //              decrements hp by 1, the killing hit explodes it.
 //   "medium" : 2 HP, fires every beat (BEAT_GRID).
 //   "small"  : 1 HP, fires every beat (BEAT_GRID).
+//   Act II aliens are a purple breed with double these HP and faster bullets
+//   (ENTITY_CONFIG.alien.actTwo).
 //
 // Aliens fly across the field on a slow arcing curve with a lazy weave on top.
 // They don't wrap — once they drift off the far side of the screen they're gone.
@@ -24,6 +26,7 @@ const SIZE_HP = ENTITY_CONFIG.alien.hp;
 const SIZE_SCORE = ENTITY_CONFIG.alien.score;
 const SIZE_SPEED = ENTITY_CONFIG.alien.speed;
 const SIZE_BULLET_SPEED = ENTITY_CONFIG.alien.bulletSpeed;
+const ACT_TWO = ENTITY_CONFIG.alien.actTwo;
 
 const SIZE_HUE: Record<AlienSize, number> = {
   // Dark blood-red manta family — all three sizes sit in the same crimson band
@@ -300,6 +303,7 @@ export class Alien {
   hue: number;
   hp: number;
   maxHp: number;
+  bulletSpeed: number;
   cracks: AlienCrack[];
   // Game-time at which to fire the next bullet. Set on spawn (aligned to the
   // global beat grid) and advanced after each shot by the next gap in the
@@ -365,14 +369,18 @@ export class Alien {
   // alien voice's amplitude LFO. See Trail.ts.
   trail: Trail;
 
-  constructor(pos: Vec, vel: Vec, size: AlienSize) {
+  // `act` picks the breed: Act II aliens are the purple, tougher, faster-
+  // shooting kind (ENTITY_CONFIG.alien.actTwo).
+  constructor(pos: Vec, vel: Vec, size: AlienSize, act: number = 1) {
+    const actTwo = act >= 2;
     this.pos = pos;
     this.vel = vel;
     this.size = size;
     this.radius = SIZE_RADIUS[size];
-    this.hue = SIZE_HUE[size];
-    this.maxHp = SIZE_HP[size];
+    this.hue = actTwo ? ACT_TWO.hue[size] : SIZE_HUE[size];
+    this.maxHp = SIZE_HP[size] * (actTwo ? ACT_TWO.hpMul : 1);
     this.hp = this.maxHp;
+    this.bulletSpeed = SIZE_BULLET_SPEED[size] * (actTwo ? ACT_TWO.bulletSpeedMul : 1);
     this.cracks = rollAlienCracks(this.maxHp);
     this.weavePhase = rand(0, TAU);
     this.weaveSpeed = rand(0.6, 1.1);
@@ -494,7 +502,7 @@ export class Alien {
     const dx = target.x - this.pos.x;
     const dy = target.y - this.pos.y;
     const angle = Math.atan2(dy, dx) + angleOffset;
-    const speed = SIZE_BULLET_SPEED[this.size];
+    const speed = this.bulletSpeed;
     const muzzle = add(this.pos, mul(fromAngle(angle, 1), this.radius + 4));
     return new AlienBullet(muzzle, fromAngle(angle, speed), this.size, this.hue);
   }
@@ -922,7 +930,7 @@ export class Alien {
   }
 }
 
-export const spawnAlienAtEdge = (w: number, h: number, size: AlienSize): Alien => {
+export const spawnAlienAtEdge = (w: number, h: number, size: AlienSize, act: number = 1): Alien => {
   const edge = Math.floor(rng() * 4);
   let pos: Vec;
   let target: Vec;
@@ -948,7 +956,7 @@ export const spawnAlienAtEdge = (w: number, h: number, size: AlienSize): Alien =
   const norm = Math.hypot(dx, dy);
   const [smin, smax] = SIZE_SPEED[size];
   const speed = rand(smin, smax);
-  const alien = new Alien(pos, v((dx / norm) * speed, (dy / norm) * speed), size);
+  const alien = new Alien(pos, v((dx / norm) * speed, (dy / norm) * speed), size, act);
   // Let it cross the full screen and clear the far edge before despawning. The
   // diagonal is the worst-case crossing (corner to corner); the pad covers the
   // sprite extent + the weave/arc lengthening the path. See Alien.update.

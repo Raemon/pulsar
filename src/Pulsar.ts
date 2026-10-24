@@ -1,7 +1,7 @@
 import { Vec, v, rand, TAU, toroidalDelta } from "./vec";
 import { rng, cosmeticRng } from "./game/rng";
 import { ENTITY_CONFIG, ENTITY_STATS } from "./game/entityConfig";
-import { actTwoProgress } from "./game/acts";
+import { actProgress } from "./game/acts";
 import { BEAT_GRID } from "./game/rhythmConstants";
 
 // Background pulsar + parallax planets. The pulsar spins continuously (twin
@@ -43,12 +43,12 @@ type Planet = {
   baseLight: number;
   lightDrop: number;
   // Set on the two planets that are really bosses biding their time. A boss
-  // body ignores the linear growth above and swells on a hard power curve
-  // instead, so it stays a distant speck for most of its act and only looms
-  // in the last stretch; `fullApproach` is the approach value at which it
-  // reaches full size — its own boss wave.
+  // body ignores the linear growth above and swells on a hard power curve of
+  // its own act's progress instead (see actProgress), so it stays a distant
+  // speck for most of its act and only looms in the last stretch, reaching
+  // full size on its own boss wave. Each act's body grows on the same clock,
+  // so the tomb through levels 11-19 is the size the planetoid was through 1-9.
   bossAct?: number;
-  fullApproach?: number;
 };
 
 // A moon of the Act II tomb. During Act II these are what the player watches
@@ -239,8 +239,6 @@ export class Pulsar {
         baseLight: 7,
         lightDrop: 4,
         bossAct: 1,
-        // approach() reads ~0.60 by the level-10 boss wave.
-        fullApproach: 0.60,
       },
       // The Act II tomb. It has been up there since wave 1 as an unremarkable
       // second world; what makes it the Sepulchre is the ring of moons that
@@ -258,8 +256,6 @@ export class Pulsar {
         baseLight: 6,
         lightDrop: 2,
         bossAct: 2,
-        // approach() has reached its 0.78 ceiling by the level-20 boss wave.
-        fullApproach: 0.78,
       },
     ];
 
@@ -839,7 +835,7 @@ export class Pulsar {
     // Camera roll applied to all background planets so their orbits rotate
     // with the rest of the scene — sells "this is one coherent camera view"
     // rather than each layer floating independently.
-    const actTwo = actTwoProgress(this.displayWaveLevel);
+    const actTwo = actProgress(2, this.displayWaveLevel);
     for (let pi = this.planets.length - 1; pi >= 0; pi--) {
       const planet = this.planets[pi];
       if (planet.bossAct !== undefined && this.hiddenBossActs.has(planet.bossAct)) continue;
@@ -854,7 +850,7 @@ export class Pulsar {
         // Normalized progress 0→1 where 1 = full size on this body's own boss
         // wave. Eased with a power curve so it stays a small distant speck for
         // many waves and only swells noticeably in the final stretch.
-        const fullness = Math.min(1, approach / planet.fullApproach!);
+        const fullness = actProgress(planet.bossAct, this.displayWaveLevel);
         const easedFullness = Math.pow(fullness, 2.8);
         size = planet.baseSize * (1 + easedFullness * planet.growthRate);
         // Color stays pure black until the body is nearly full size, then the
@@ -867,7 +863,7 @@ export class Pulsar {
       }
 
       this.renderPlanet(ctx, planet, px, py, size, ppx, ppy, r, colorApproach, beat, flare);
-      if (planet.bossAct === 2 && actTwo > 0) this.renderTombRing(ctx, planet, px, py, size, actTwo);
+      if (planet.bossAct === 2 && actTwo > 0) this.renderTombRing(ctx, px, py, size, actTwo);
     }
 
     // The moons that have already broken orbit, drifting through the near
@@ -1266,7 +1262,6 @@ export class Pulsar {
   // edge-on-ish rather than a flat circle pasted over the planet.
   private renderTombRing(
     ctx: CanvasRenderingContext2D,
-    planet: Planet,
     px: number,
     py: number,
     size: number,
@@ -1291,10 +1286,8 @@ export class Pulsar {
         px + u * cosE - v * sinE,
         py + u * sinE + v * cosE,
         Math.max(1.5, size * satellite.sizeFrac),
-        planet.hue,
         alpha,
         this.satelliteToll(satellite.tollBeat),
-        1.7,
       );
     }
   }
@@ -1319,64 +1312,61 @@ export class Pulsar {
         ((x0 % spanX) + spanX) % spanX - margin,
         ((y0 % spanY) + spanY) % spanY - margin,
         satellite.passRadius,
-        this.planets[1].hue,
         alpha,
         this.satelliteToll(satellite.tollBeat),
-        0.8,
       );
     }
   }
 
-  // One moon, at any scale: a lit body with a real terminator, a scatter of
-  // carved pits so the silhouette is a worked thing rather than a ball, and a
-  // dark contact rim with a thin catch of light over it to seat it against the
-  // starfield. The lamp on its face is a small hot point, not a wash — these
-  // have to loom past the playfield without ever competing with a target for
-  // the player's eye, so the only moment one is bright is the beat it tolls on.
+  // One moon, at any scale: a pitch-black body with only a faint terminator, a
+  // scatter of carved pits so the silhouette is a worked thing rather than a
+  // ball, and a dark contact rim under a thin cold catch of light to seat it
+  // against the starfield. No colour and no lamp — these are unlit shadows that
+  // blot out the stars as they pass, and stay that way until they wake as
+  // Pallbearers on the boss wave. The only sign of life is the catch on the
+  // limb brightening on the beat each one tolls.
   private paintSatellite(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
     radius: number,
-    hue: number,
     alpha: number,
     toll: number,
-    lampScale: number,
   ) {
     ctx.save();
-    ctx.globalAlpha = alpha * 0.62;
+    ctx.globalAlpha = alpha * 0.9;
 
     const body = ctx.createRadialGradient(x - radius * 0.4, y - radius * 0.45, radius * 0.1, x, y, radius * 1.15);
-    body.addColorStop(0, `hsl(${hue + 6}, 26%, 13%)`);
-    body.addColorStop(0.55, `hsl(${hue}, 30%, 6%)`);
-    body.addColorStop(1, `hsl(${hue - 14}, 38%, 2%)`);
+    body.addColorStop(0, "hsl(225, 6%, 6%)");
+    body.addColorStop(0.55, "hsl(225, 4%, 2.5%)");
+    body.addColorStop(1, "hsl(0, 0%, 0%)");
     ctx.fillStyle = body;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, TAU);
     ctx.fill();
 
-    // Pits, each with a lit up-left lip and a dark floor. Deterministic off the
-    // index so a moon weathers the same way every frame.
+    // Pits, each with a faint up-left lip and a black floor. Deterministic off
+    // the index so a moon weathers the same way every frame.
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, TAU);
     ctx.clip();
     for (let i = 0; i < 4; i++) {
-      const a = i * 2.4 + hue;
+      const a = i * 2.4;
       const d = radius * (0.25 + 0.45 * Math.abs(Math.cos(i * 1.7)));
       const pr = radius * (0.12 + 0.1 * Math.abs(Math.sin(i * 1.3)));
       const px = x + Math.cos(a) * d;
       const py = y + Math.sin(a) * d;
       const pit = ctx.createRadialGradient(px + pr * 0.25, py + pr * 0.25, 0, px, py, pr);
-      pit.addColorStop(0, `hsla(${hue}, 30%, 2%, 0.55)`);
-      pit.addColorStop(1, `hsla(${hue}, 26%, 12%, 0)`);
+      pit.addColorStop(0, "hsla(0, 0%, 0%, 0.7)");
+      pit.addColorStop(1, "hsla(0, 0%, 0%, 0)");
       ctx.fillStyle = pit;
       ctx.beginPath();
       ctx.arc(px, py, pr, 0, TAU);
       ctx.fill();
       const lip = ctx.createRadialGradient(px - pr * 0.4, py - pr * 0.4, 0, px - pr * 0.4, py - pr * 0.4, pr * 0.85);
-      lip.addColorStop(0, `hsla(${hue + 10}, 24%, 40%, 0.16)`);
-      lip.addColorStop(1, `hsla(${hue}, 24%, 20%, 0)`);
+      lip.addColorStop(0, "hsla(225, 6%, 30%, 0.08)");
+      lip.addColorStop(1, "hsla(225, 6%, 15%, 0)");
       ctx.fillStyle = lip;
       ctx.beginPath();
       ctx.arc(px - pr * 0.4, py - pr * 0.4, pr * 0.85, 0, TAU);
@@ -1384,29 +1374,16 @@ export class Pulsar {
     }
     ctx.restore();
 
-    ctx.strokeStyle = `hsla(${hue}, 40%, 2%, 0.9)`;
+    ctx.strokeStyle = "hsla(0, 0%, 0%, 0.95)";
     ctx.lineWidth = Math.max(1, radius * 0.05);
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, TAU);
     ctx.stroke();
-    ctx.strokeStyle = `hsla(${hue + 12}, 55%, 58%, 0.22)`;
+    ctx.strokeStyle = `hsla(220, 10%, 62%, ${0.1 + 0.3 * toll})`;
     ctx.lineWidth = Math.max(0.6, radius * 0.011);
     ctx.beginPath();
     ctx.arc(x, y, radius * 0.96, Math.PI * 0.82, Math.PI * 1.88);
     ctx.stroke();
-
-    ctx.globalCompositeOperation = "lighter";
-    // Small bodies far away need a proportionally bigger lamp to read at all;
-    // a near one needs a smaller one or it washes its own face out.
-    const lampR = radius * 0.13 * lampScale * (1 + 0.4 * toll);
-    const lamp = ctx.createRadialGradient(x, y, 0, x, y, lampR * 3.2);
-    lamp.addColorStop(0, `hsla(${hue + 20}, 100%, 90%, ${0.14 + 0.5 * toll})`);
-    lamp.addColorStop(0.35, `hsla(${hue + 4}, 100%, 62%, ${0.04 + 0.16 * toll})`);
-    lamp.addColorStop(1, `hsla(${hue}, 100%, 55%, 0)`);
-    ctx.fillStyle = lamp;
-    ctx.beginPath();
-    ctx.arc(x, y, lampR * 3.2, 0, TAU);
-    ctx.fill();
     ctx.restore();
   }
 

@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 42;
+export const REPLAY_FORMAT_VERSION = 43;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -14,6 +14,11 @@ export const REPLAY_FORMAT_VERSION = 42;
 //   different field, rng sequence and bass-echo score.
 // v42 adds the giant-bassteroid roll on bass waves, an extra gameplay-rng draw
 //   that shifts every later spawn in a v41 recording.
+// v43 rolls Act II giant bassteroids on every wave (not just bass waves),
+//   doubles Act II alien HP and speeds up their bullets, grows warbles,
+//   citadels and the citadel's escape hole, enlarges the boss hemispheres and
+//   flings the boss's pieces faster, so a v42 recording re-sims differently
+//   from the level-10 boss on.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
