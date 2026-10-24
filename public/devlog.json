@@ -1,5 +1,50 @@
 [
   {
+    "id": "2026-10-24-eb3a59c",
+    "date": "2026-10-24",
+    "title": "Giant bassteroids, metal chunk splits, audio fixes",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Giant bassteroids occasionally appear, docking three large ships around a central hub — destroying one launches all three at once.",
+          "Metal chunks now split into two triangular wedges and release a pulsing superBassCrystal that echoes bass hits for a 40-point resonance bounty.",
+          "Giant bassteroids are rare through level 10 (3% chance) and become common from level 11 onward (30% chance)."
+        ]
+      },
+      {
+        "heading": "Fixed",
+        "items": [
+          "Music in replays and exported videos now stays locked to the beat instead of drifting out of sync over time.",
+          "Exported videos no longer produce a loud click on every on-beat kill caused by reticule hums jumping to full volume at release.",
+          "Exported videos now choose the same music track variation as live play."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "Slow-motion effect is softened to 0.75× speed.",
+          "Power-up glyph is no longer shown on canisters."
+        ]
+      }
+    ],
+    "commits": [
+      "eb3a59c",
+      "a726a7e",
+      "260cde8",
+      "48c2b94",
+      "593b06c",
+      "f03cf1e",
+      "020c22b",
+      "174d76d",
+      "2987a7d",
+      "052c460",
+      "9cab4df",
+      "9f99ebf",
+      "71e9b01"
+    ]
+  },
+  {
     "id": "2026-09-13-defab28",
     "date": "2026-09-13",
     "title": "Sepulchre boss, wormhole visuals, Far Shot points",
