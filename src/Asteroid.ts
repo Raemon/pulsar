@@ -254,7 +254,9 @@ const buildHemisphereWound = (r: number): HemisphereWound => {
   for (let i = 0; i < edgeCount; i++) {
     const u = i / (edgeCount - 1);
     const taper = Math.sqrt(Math.sin(u * Math.PI));
-    const jag = cosmeticRand(-0.056, 0.104) + (i % 2 === 0 ? 0.03 : -0.03);
+    // Mostly jutting out past the cut (bare, like the rest of the wound side);
+    // the bites into the armoured side stay shallow.
+    const jag = cosmeticRand(-0.12, 0.04) + (i % 2 === 0 ? 0.03 : -0.03);
     edge.push(v(jag * taper * r, (u * 2 - 1) * r));
   }
   const lodged = Array.from({ length: 7 }, (_, i) => ({
@@ -5037,7 +5039,7 @@ export class Asteroid {
       // Two hemispheres — one to each side of the cut axis.
       for (let i = 0; i < 2; i++) {
         const sign = i === 0 ? -1 : 1;
-        const childAngle = cutAxis + sign * 0.15;
+        const childAngle = cutAxis + (sign === -1 ? Math.PI : 0) + sign * 0.15;
         const childPos = {
           x: this.pos.x + Math.cos(childAngle) * ejectDist,
           y: this.pos.y + Math.sin(childAngle) * ejectDist,

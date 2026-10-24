@@ -66,10 +66,12 @@ export const ENTITY_CONFIG = {
     // Giant (huge) bassteroid — a three-ship convoy that undocks into three
     // larges (see Asteroid.undockGiantBass) and fills two wave slots. Through
     // display-level 10 it only replaces a wave's pair of bass slots, and
-    // rarely; past it every wave of two or more slots rolls the higher chance,
-    // whether or not a bass slot filled, borrowing normal slots to make room.
+    // rarely. In Act II every wave of two or more slots rolls the higher
+    // chance, whether or not a bass slot filled, borrowing normal slots to make
+    // room; past Act II it needs a bass slot again.
     giantChanceEarly: 0.03,
-    giantChanceLate: 0.4,
+    giantChanceActTwo: 0.4,
+    giantChanceLate: 0.3,
     giantLateDisplayLevel: 11,
   },
 

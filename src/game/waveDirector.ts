@@ -227,15 +227,22 @@ export const activeSpecialsForWave = (_game: Game, wave: number): AsteroidKind[]
 };
 
 // Giant bassteroid roll: rare through display-level 10 (and only when both
-//   bass slots filled), common after (any wave of two slots, bass or not).
+//   bass slots filled); common in Act II on any wave of two slots, bass or
+//   not; and past Act II only on a wave that filled a bass slot.
 //   Returns the giant's kind, or null for the ordinary bass spawns.
 const rollGiantBass = (game: Game, activeSpecials: AsteroidKind[], totalCount: number): AsteroidKind | null => {
   const cfg = CFG.bassteroid;
   if (displayWave(game.wave) >= cfg.giantLateDisplayLevel) {
     if (totalCount < 2) return null;
-    // Only waves that pass the size gate draw the roll (replays depend on it).
-    if (rng() >= cfg.giantChanceLate) return null;
-    return activeSpecials[0] ?? randomBassKind();
+    // Act II's opening wave is spent introducing its new rocks, and a giant
+    // would leave no slots for them.
+    if (game.wave === CFG.postBoss.firstWave) return null;
+    if (actOfWave(game.wave) === 2) {
+      if (rng() >= cfg.giantChanceActTwo) return null;
+      return activeSpecials[0] ?? randomBassKind();
+    }
+    if (activeSpecials.length === 0) return null;
+    return rng() < cfg.giantChanceLate ? activeSpecials[0] : null;
   }
   if (activeSpecials.length < 2) return null;
   return rng() < cfg.giantChanceEarly ? activeSpecials[0] : null;
