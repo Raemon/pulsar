@@ -5,7 +5,7 @@ import { SoundwaveRadiator } from "./SoundwaveRadiator";
 import { rng, cosmeticRng } from "./game/rng";
 import { ENTITY_CONFIG, ENTITY_STATS, entityStat } from "./game/entityConfig";
 import { SHIP_BODY_RADIUS, SHIP_HALO_OFFSET, SHIP_NOSE_MUL, SHIP_WING_ANGLE } from "./ship/shipHitbox";
-import { PRONG_ANGLE_STEP, BULLET_VEL_INHERIT } from "./ship/shipWeapons";
+import { PRONG_ANGLE_STEP } from "./ship/shipWeapons";
 import { drawGlow } from "./glow";
 
 const HUE_PALETTE = [185, 200, 220, 250, 280, 310, 330];
@@ -5016,7 +5016,7 @@ export class Asteroid {
     return a;
   }
 
-  split(opts?: { impactDir?: Vec; impactPos?: Vec; combo?: number; onBeat?: boolean; awayFrom?: Vec; shipHeading?: number; shipVel?: Vec; bulletSpeed?: number }): Asteroid[] {
+  split(opts?: { impactDir?: Vec; impactPos?: Vec; combo?: number; onBeat?: boolean; awayFrom?: Vec; shipHeading?: number; shipVel?: Vec; prongRayDir?: (offset: number) => Vec }): Asteroid[] {
     const impactDir = opts?.impactDir;
     // Boss whole-body: cracks open into two hemisphere halves + the iris
     // eye-core (3 mediums total, but with distinct identities). Cleavage
@@ -5416,10 +5416,10 @@ export class Asteroid {
     // that barely drift and keep the parent's DR 8, and frees the
     // superBassCrystal sealed at its heart. The slab's job is to teach the drift
     // shot, so the wedges land on the ship's ACTUAL prong-bullet rays: the
-    // first prong pair fans ±half a prong step off the heading, but each bullet
-    // also inherits BULLET_VEL_INHERIT·shipVel, so at speed the rays bend off
-    // the pure heading; we reproduce that bend here and drop a wedge on each
-    // true ray at the slab's distance. A player who owns prong and fires right
+    // first prong pair fans ±half a prong step off the heading, but a bullet
+    // also inherits some ship velocity, so at speed the rays bend off the pure
+    // heading; the caller hands us the true rays (shipWeapons.shotRayDir) and
+    // we drop a wedge on each at the slab's distance. A player who owns prong and fires right
     // now, at this velocity, threads both. The crystal slips out sideways so
     // it isn't caught in that same volley. Wedges and crystal are terminal.
     if (this.kind === "metalChunk") {
@@ -5447,20 +5447,10 @@ export class Asteroid {
       // ship pose (shockwave-driven split), fall back to a plain radial burst.
       const ship = opts?.awayFrom;
       const heading = opts?.shipHeading;
-      if (ship && heading !== undefined) {
+      const prongRayDir = opts?.prongRayDir;
+      if (ship && heading !== undefined && prongRayDir) {
         const [sx, sy] = toroidalDelta(this.pos.x - ship.x, this.pos.y - ship.y, WORLD_W, WORLD_H);
         const dist = Math.max(this.radius, Math.hypot(sx, sy));
-        const shipVel = opts?.shipVel ?? { x: 0, y: 0 };
-        const bulletSpeed = opts?.bulletSpeed ?? 0;
-        // True unit direction a prong bullet at `offset` flies, matching
-        // launchBullet: speed·dir + inherit·shipVel, renormalised.
-        const prongRayDir = (offset: number): { x: number; y: number } => {
-          const a = heading + offset;
-          const vx = Math.cos(a) * bulletSpeed + shipVel.x * BULLET_VEL_INHERIT;
-          const vy = Math.sin(a) * bulletSpeed + shipVel.y * BULLET_VEL_INHERIT;
-          const m = Math.hypot(vx, vy) || 1;
-          return { x: vx / m, y: vy / m };
-        };
         // Two wedges, one on each true prong ray, at the slab's distance — the
         // pair sits right where the slab was, so the prong shot threads both.
         for (const sign of [-1, 1] as const) {

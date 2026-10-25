@@ -56,6 +56,8 @@ import { hideScoreEntry, isScoreEntryBlockingEnter, showScoreEntry, tickLeaderbo
 import { showGameOverIntro } from "./gameOverIntro";
 import { isDown, wasPressed, TUTORIAL_CONTROL_ACTIONS } from "./controlBindings";
 import { tickLaserShot, FIRE_FLASH_DECAY } from "./laserShot";
+import { handleBombs } from "./bombShot";
+import { setShotLife, shotLife } from "../ship/shipWeapons";
 import { BONUS_LIFE_FLASH_DECAY } from "./bonusLife";
 import { tickTorusCharge, tickSuperLaserFire } from "./torusCharge";
 import { tickEntrances, shiftEntranceFrames, audiblePos } from "./entrance";
@@ -1074,12 +1076,8 @@ const boostNewBullets = (game: Game, firstNewIndex: number) => {
     newBullet.onBeat = true;
     newBullet.boosted = boosted;
     newBullet.superBoosted = superBoosted;
-    if (superBoosted) {
-      newBullet.life *= 1.5;
-      newBullet.maxLife *= 1.5;
-      const slotCount = Math.max(1, Math.floor(newBullet.maxLife / BEAT_GRID));
-      newBullet.fadeStartLife = Math.max(0, newBullet.maxLife - slotCount * BEAT_GRID);
-    }
+    // A bomb's life is counted in pulses, not flight time, so reach doesn't apply.
+    if (superBoosted && !newBullet.bomb) setShotLife(newBullet, shotLife(game.ship, true));
   }
 };
 
@@ -1171,6 +1169,8 @@ const tickBulletReticuleCrossings = (game: Game) => {
   const grid = comboGrid(game);
   if (grid <= 0) return;
   for (const b of game.bullets) {
+    // a bomb shows the beat with its own blast-ring pulse (bombShot.ts).
+    if (b.bomb) continue;
     const age = b.maxLife - b.life;
     const expected = Math.floor(age / grid);
     if (expected > b.reticuleCrossings) {
@@ -1450,6 +1450,7 @@ const fireOneAlienShot = (game: Game, a: Alien) => {
 
 // collisions run before evaluateClosedBeats so trailing-edge closures see this frame's kills.
 const runCollisionPasses = (game: Game) => {
+  handleBombs(game);
   handleCollisions(game);
   handleAlienHits(game);
   handleAlienBulletHits(game);

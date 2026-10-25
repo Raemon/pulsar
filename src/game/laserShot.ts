@@ -1,10 +1,6 @@
 import type { Game } from "../Game";
 import type { Ship } from "../Ship";
-import type { Asteroid } from "../Asteroid";
-import type { Alien } from "../Alien";
-import type { Comet } from "../Comet";
 import { Vec, v, fromAngle, add, mul } from "../vec";
-import { Bullet } from "../Bullet";
 import { BEAT_GRID } from "./rhythmConstants";
 import { isDown } from "./controlBindings";
 import { isInBeatWindow } from "./rhythmGate";
@@ -13,20 +9,8 @@ import { buildJaggedBolt, strokePolyline } from "./bassLightning";
 import { drawGlow } from "../glow";
 // Beam seed/jag visuals only — cosmetic stream so it can't desync replays.
 import { cosmeticRng as rng } from "./rng";
-import {
-  onAsteroidKilledByBullet,
-  onAsteroidCrackedByBullet,
-  onAlienKilled,
-  onAlienCracked,
-  onCometKilled,
-  applyHitToCombo,
-  applyNonKillHitToCombo,
-} from "./killEffects";
-import { explodeCanister, expireGem, crackGemForCanister } from "./collisions";
-import type { Gem } from "../Gem";
-import type { Canister } from "../Canister";
-import { syncHud } from "./hud";
-import { prongOffsets } from "../ship/shipWeapons";
+import { applyStrikes, strikeShot, strikeTargets } from "./weaponStrike";
+import { prongOffsets, shotLife, muzzleOf } from "../ship/shipWeapons";
 import { FUEL_LASER_CHARGE_DRAIN, laserFireFuelCost, spendShipFuel } from "./fuel";
 import { emitLaserImpact } from "./particleBursts";
 import { scheduleLaserDots, cancelLaserChargeCues } from "./laserChargeCues";
@@ -76,16 +60,13 @@ export const maxLaserDots = (game: Game): number => {
 // overlap the previous trail.
 const LASER_BEAM_LIFE = 0.1;
 // The laser deliberately overshoots the reticule slot: bulletSpeed *
-// effectiveBulletLife * LASER_BASE_RANGE_MULT, then the pierce/longshot/
-// superBoosted multipliers shipWeapons uses stack on top. The base mult is
+// shotLife * LASER_BASE_RANGE_MULT, so the pierce/longshot/superBoosted range
+// upgrades stretch it exactly as they stretch a bullet. The base mult is
 // further scaled by a per-dot range factor so an uncharged shot is short.
 const LASER_BASE_RANGE_MULT = 1.8;
 // Range factor by dot count: a 0-dot shot reaches half the old length, a
 // full charge overshoots it.
 const LASER_RANGE_BY_DOTS = [0.5, 0.7, 0.85, 1.0, 1.2];
-const PIERCE_RANGE_MULT = 2;
-const LONGSHOT_RANGE_MULT = 1.5;
-const SUPERBOOSTED_RANGE_MULT = 1.5;
 // How fast the ambient charge glow eases toward its per-dot target.
 const CHARGE_GLOW_RATE = 6;
 // Fire flash decays to zero over this many seconds.
@@ -125,7 +106,7 @@ export class LaserBeam {
   jags: number[];
   seed: number;
   // Targets already damaged so a sweeping beam doesn't re-hit them each frame.
-  // Any laser-affectable entity (see laserTargetGroups) regardless of type.
+  // Any strikeable entity (see weaponStrike) regardless of type.
   alreadyHit: Set<object>;
   // Targets that existed when the beam first fired. The sweep only ever damages
   // these, so things spawned mid-beam (kill-spawned children, freshly-warped
@@ -157,13 +138,10 @@ export class LaserBeam {
     this.jags = [];
     this.alreadyHit = new Set();
     this.firedOnBeat = false;
-    // Eligibility is captured from every laser-affectable group at fire time, so
-    // adding a new damageable entity to laserTargetGroups makes the beam hit it
-    // automatically — no per-type wiring here.
-    this.eligible = new Set();
-    for (const group of laserTargetGroups(game)) {
-      for (const target of group.list()) this.eligible.add(target);
-    }
+    // Eligibility is captured from every strikeable group at fire time, so adding
+    // a new damageable entity to weaponStrike makes the beam hit it automatically
+    // — no per-type wiring here.
+    this.eligible = new Set(strikeTargets(game, true));
     if (dots >= 1) {
       const n = 14;
       for (let i = 0; i < n; i++) this.jags.push((rng() * 2 - 1) * LASER_JAG_AMPLITUDE);
@@ -183,14 +161,6 @@ export class LaserBeam {
     return this.life > 0;
   }
 }
-
-// Beam origin: the ship's muzzle, a touch ahead of the hull, along the beam's
-// (possibly prong-offset) heading. Module-private: single-direction beam
-// geometry never leaves this file — aim points only exit via laserAimFan.
-export const muzzleOf = (ship: Ship, headingOffset = 0): Vec => {
-  const dir = fromAngle(ship.heading + headingOffset, 1);
-  return add(ship.pos, mul(dir, ship.radius + 4));
-};
 
 // World position of one beam's far endpoint — same origin + length fireLaser
 // uses so the laser reticule lands on the actual beam tip.
@@ -234,19 +204,9 @@ export const resetLaserCharge = (ship: Ship) => {
   cancelLaserChargeCues();
 };
 
-// Effective bullet life mirrors shipWeapons.launchBullet + reticule render
-// so the beam reaches the same farthest on-beat slot the reticule paints.
-const effectiveBulletLife = (ship: Ship, superBoosted: boolean): number => {
-  let life = ship.bulletLife;
-  if (ship.pierceActive) life *= PIERCE_RANGE_MULT;
-  if (ship.longshotActive) life *= LONGSHOT_RANGE_MULT;
-  if (superBoosted) life *= SUPERBOOSTED_RANGE_MULT;
-  return life;
-};
-
 const computeBeamLength = (ship: Ship, superBoosted: boolean, dots: number): number => {
   const dotMult = LASER_RANGE_BY_DOTS[Math.min(dots, LASER_MAX_DOTS)];
-  return ship.bulletSpeed * effectiveBulletLife(ship, superBoosted) * LASER_BASE_RANGE_MULT * dotMult;
+  return ship.bulletSpeed * shotLife(ship, superBoosted) * LASER_BASE_RANGE_MULT * dotMult;
 };
 
 // Beam reach for each charge tier the current combo can reach, shortest first
@@ -442,133 +402,23 @@ export const fireSuperLaser = (game: Game, ship: Ship) => {
   game.laserChargeGlow = 0;
 };
 
-// A laser-affectable entity. Every damageable/shootable body in the game already
-// exposes collidesWith(pos, radius) for the bullet path; the beam swath reuses it
-// so the laser hits exactly what a bullet hits, with no per-type collision math.
-type LaserTarget = { pos: Vec; collidesWith: (p: Vec, r: number) => boolean };
-
-// One group per laser-affectable entity array. Each owns: the live array (read +
-// written through get/set so kill-spawned children replace the original), and an
-// onHit that routes a beam strike through the SAME kill-effect pipeline a bullet
-// uses. To make the laser hit a new entity type, add a group here — nothing else
-// in the sweep changes. This is the single source of truth for "what a laser can
-// hit", mirroring how bullets dispatch per-type kill handlers in collisions.ts.
-type LaserTargetGroup = {
-  list: () => LaserTarget[];
-  // Apply one beam strike to `target`. Returns the bodies that should remain in
-  // the array afterwards (the target itself if it survived, kill-spawned
-  // children if it died and split, or nothing).
-  onHit: (game: Game, target: LaserTarget, beam: LaserBeam, dir: Vec, fakeBullet: Bullet) => LaserTarget[];
-  set: (game: Game, surviving: LaserTarget[]) => void;
-};
-
-const laserTargetGroups = (game: Game): LaserTargetGroup[] => [
-  {
-    list: () => game.asteroids,
-    onHit: (game, target, beam, dir, fakeBullet) => {
-      const a = target as Asteroid;
-      // The laser is a charged shot — give the boss family the meaty armored
-      // impact every time it connects (the fake bullet is deliberately flagless,
-      // so the bossHit gate in killEffects won't catch it).
-      if (a.isBossFamily()) game.sound.play("bossHit", 1, a.pos);
-      const onBeat = beamHitOnBeat(game, fakeBullet);
-      const { killed } = a.applyDamage(beam.damage, false, fakeBullet.pos);
-      game.shake = Math.min(game.shake + (killed ? 0.3 : 0.15), 1.2);
-      if (!killed) {
-        a.applyKnockback(dir.x, dir.y, beam.damage);
-        onAsteroidCrackedByBullet(game, a, fakeBullet, onBeat);
-        return [a];
-      }
-      return onAsteroidKilledByBullet(game, a, fakeBullet, onBeat);
-    },
-    set: (game, surviving) => { game.asteroids = surviving as Asteroid[]; },
-  },
-  {
-    list: () => game.aliens,
-    onHit: (game, target, beam, dir, fakeBullet) => {
-      const al = target as Alien;
-      // Aliens take 1 hp per applyDamage; loop so charge tiers chew through HP
-      // in a single beam pass instead of needing N separate shots.
-      const onBeat = beamHitOnBeat(game, fakeBullet);
-      let killed = false;
-      for (let i = 0; i < beam.damage; i++) {
-        if (al.applyDamage().killed) { killed = true; break; }
-      }
-      if (killed) {
-        onAlienKilled(game, al, fakeBullet, onBeat);
-        return [];
-      }
-      al.applyKnockback(dir.x, dir.y, beam.damage);
-      onAlienCracked(game, onBeat, al.pos);
-      return [al];
-    },
-    set: (game, surviving) => { game.aliens = surviving as Alien[]; },
-  },
-  {
-    list: () => game.comets,
-    onHit: (game, target, _beam, _dir, fakeBullet) => {
-      const onBeat = beamHitOnBeat(game, fakeBullet);
-      onCometKilled(game, target as Comet, fakeBullet, onBeat);
-      return [];
-    },
-    set: (game, surviving) => { game.comets = surviving as Comet[]; },
-  },
-  {
-    // Gems crack (yield canister/score) only on an on-beat hit of ≥4 damage —
-    // the same gate the bullet path applies (handleGems). An off-beat or
-    // under-powered strike wastes the gem, exactly like an off-beat bullet.
-    list: () => game.gems,
-    onHit: (game, target, beam, _dir, fakeBullet) => {
-      const g = target as Gem;
-      const onBeat = beamHitOnBeat(game, fakeBullet);
-      // Beams carry no drift tier (driftTierAtHit is 0), so an on-beat crack
-      // scores rhythm-multiplied but never stages a drift bonus — same as a
-      // plain on-beat bullet.
-      if (onBeat && beam.damage >= 4) {
-        applyHitToCombo(game, onBeat, fakeBullet.pos);
-        crackGemForCanister(game, g, fakeBullet.driftTierAtHit());
-      } else {
-        applyNonKillHitToCombo(game, onBeat, fakeBullet.pos);
-        expireGem(game, g); // wasted-gem feedback, same as an off-beat bullet
-      }
-      return [];
-    },
-    set: (game, surviving) => { game.gems = surviving as Gem[]; },
-  },
-  {
-    // Shooting a canister wastes the powerup (white pop), same as a bullet.
-    list: () => game.canisters,
-    onHit: (game, target) => {
-      explodeCanister(game, target as Canister);
-      return [];
-    },
-    set: (game, surviving) => { game.canisters = surviving as Canister[]; },
-  },
-];
-
 // Sweep-damages every target the beam segment crosses this frame, skipping any
 // already hit by this beam. The swath widens with charge (beamHalfWidth). Every
-// group routes through the same kill-effect helpers a real bullet would, with a
-// synthetic Bullet feeding the impact position into the existing pipeline.
-const applyBeamDamage = (game: Game, beam: LaserBeam, dir: Vec) => {
-  for (const group of laserTargetGroups(game)) applyBeamToGroup(game, beam, dir, group);
-  syncHud(game);
-};
-
+// strike routes through the shared weaponStrike pipeline, so the laser scores
+// and splits exactly like a bullet. Pickups included: a beam through a canister
+// wastes it, as a bullet would.
+//
 // The beam's hit swath: a point is struck if it's within halfWidth + pad of the
 // beam segment. We pose that as a circle of that radius riding the beam's closest
 // approach to the target, then let the target's own collidesWith decide — so the
 // test honours each entity's real hitbox (faceted asteroid surface, tight alien
 // body, gem/comet/canister circles) exactly as the bullet path does.
-const applyBeamToGroup = (game: Game, beam: LaserBeam, dir: Vec, group: LaserTargetGroup) => {
+const applyBeamDamage = (game: Game, beam: LaserBeam, dir: Vec) => {
   const { origin, length } = beam;
   const { w, h } = game;
   const swathR = beamHalfWidth(beam.dots) + LASER_HIT_PAD;
-  const surviving: LaserTarget[] = [];
-  for (const target of group.list()) {
-    if (beam.alreadyHit.has(target) || !beam.eligible.has(target)) {
-      surviving.push(target); continue;
-    }
+  applyStrikes(game, true, (target) => {
+    if (beam.alreadyHit.has(target) || !beam.eligible.has(target)) return null;
     // The segment may run past the seam: sweep each wrap image of the target
     // and fold the contact point back in-domain so impact effects land on the
     // visible body.
@@ -582,19 +432,21 @@ const applyBeamToGroup = (game: Game, beam: LaserBeam, dir: Vec, group: LaserTar
         if (target.collidesWith(closest, swathR)) contact = closest;
       }
     }
-    if (!contact) {
-      surviving.push(target); continue;
-    }
+    if (!contact) return null;
     beam.alreadyHit.add(target);
     // Hot beam-strike gout at the contact point, on top of the target's own
     // kill/crack burst — sells the laser as a heavier hit than a bullet.
     emitLaserImpact(game.particles, contact, dir, beam.dots / LASER_MAX_DOTS);
-    const fakeBullet = makeFakeBullet(contact, dir, beam.firedOnBeat);
-    for (const remaining of group.onHit(game, target, beam, dir, fakeBullet)) {
-      surviving.push(remaining);
-    }
-  }
-  group.set(game, surviving);
+    // Beams carry no drift tier and no halo tier: an on-beat strike scores
+    // rhythm-multiplied like a plain on-beat bullet.
+    const shot = strikeShot(contact, dir, { onBeat: beam.firedOnBeat, boosted: false, superBoosted: false, driftLockedSlots: [] });
+    // A beam strike is an on-beat HIT under the same rule a bullet uses: the
+    // shot was fired on-beat AND it connects inside a beat window.
+    const onBeat = isInBeatWindow(game, game.perceivedBeatTime) && beam.firedOnBeat;
+    // The laser is a charged shot — give the boss family the meaty armored
+    // impact every time it connects, on-beat or not.
+    return { damage: beam.damage, onBeat, shot, bossImpact: true };
+  });
 };
 
 // The t-parameter along the beam (clamped to [0, length]) where the beam passes
@@ -604,31 +456,6 @@ const closestApproach = (origin: Vec, dir: Vec, length: number, pos: Vec): numbe
   const tRaw = (pos.x - origin.x) * dir.x + (pos.y - origin.y) * dir.y;
   return Math.max(0, Math.min(length, tRaw));
 };
-
-// Synthesises a Bullet just so the existing kill-effect helpers can read
-// .pos / .vel / .driftEligibleAtHit() without us re-wiring the whole kill
-// pipeline. The fake bullet is never added to game.bullets so it never
-// updates or renders.
-const makeFakeBullet = (pos: Vec, dir: Vec, firedOnBeat: boolean): Bullet => {
-  const b = new Bullet({ x: pos.x, y: pos.y }, { x: dir.x, y: dir.y }, 0.01);
-  // Carry the fire's on-beat state so beamHitOnBeat reads it just like the
-  // bullet path: a beam fired on-beat that connects in a beat window gains
-  // rhythm (priming-aware), shows the xN popup, and plays the escalating chime.
-  b.onBeat = firedOnBeat;
-  b.boosted = false;
-  b.superBoosted = false;
-  b.pierce = false;
-  b.driftLockedSlots = [];
-  b.instantHit = true;
-  return b;
-};
-
-// A beam strike is an on-beat HIT under the same rule a bullet uses: the shot
-// was fired on-beat AND it connects inside a beat window. Centralising it here
-// means every laserTargetGroups onHit gains rhythm identically — the general
-// "all weapons work the same way" guarantee.
-const beamHitOnBeat = (game: Game, fakeBullet: Bullet): boolean =>
-  isInBeatWindow(game, game.perceivedBeatTime) && fakeBullet.onBeat;
 
 // Small deterministic jag array for a charge crackle arc. Reseeds ~8x/sec via
 // a coarse time bucket so the bolt flickers without per-frame randomness.
