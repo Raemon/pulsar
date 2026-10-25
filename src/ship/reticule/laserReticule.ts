@@ -1,5 +1,6 @@
 import type { Game } from "../../Game";
-import { reachableBeamLengths, laserDotCount, maxLaserDots, laserAimFan, laserCooldownFrac, laserReady, muzzleOf } from "../../game/laserShot";
+import { reachableBeamLengths, laserDotCount, maxLaserDots, laserAimFan, laserCooldownFrac, laserReady } from "../../game/laserShot";
+import { muzzleOf } from "../shipWeapons";
 import { BEAT_GRID } from "../../game/rhythmConstants";
 import { drawGlow } from "../../glow";
 

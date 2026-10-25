@@ -1,4 +1,4 @@
-import { Vec, addScaledMut, wrapMut, TAU } from "./vec";
+import { Vec, wrapMut, TAU } from "./vec";
 import { drawGlow } from "./glow";
 
 // Damage dealt by a non-rhythm bullet — enough to one-shot a small asteroid
@@ -13,11 +13,21 @@ export const BULLET_DAMAGE_BEAT = 4;
 // halo is up (combo ≥ 4). Doubles the on-beat damage to reward the streak.
 export const BULLET_DAMAGE_BEAT_BOOSTED = 8;
 
-// The Bomb upgrade's tradeoff, in three numbers: twice the visible core (and
-// therefore twice the hitbox, since hitRadius derives from it), twice the
-// damage, and — via half the muzzle speed in shipWeapons — half the range.
-export const BOMB_RADIUS_MULT = 2;
+// The Bomb upgrade fires stock-sized shells that act as thrown mines: they
+// glide out, settle under drag, bounce off whatever they touch, and pulse on
+// every beat — detonating when a target sits inside the blast ring (see
+// game/bombShot.ts). The blast hits with twice the shot's damage.
 export const BOMB_DAMAGE_MULT = 2;
+// Linear drag on a bomb shell, per second. A shell launched at v0 comes to rest
+// v0 / BOMB_DRAG out from the muzzle; shipWeapons.shotTravel mirrors this curve
+// so the sight marks where the mine will actually be on each beat.
+export const BOMB_DRAG = 2;
+// Reach of a bomb's blast, from the shell's centre to a target's surface. The
+// ring the shell paints is drawn at exactly this radius: anything the ring
+// touches on a beat is caught in the blast.
+export const BOMB_BLAST_RADIUS = 96;
+// Seconds the beat-pulse ring takes to fade after flashing.
+const BOMB_PULSE_FADE_SEC = 0.3;
 
 // Seconds over which an on-beat flash's ballooned core shrinks back to its
 // resting size. The flash itself lasts longer (FLASH_DURATION_SEC in
@@ -44,15 +54,10 @@ export const BULLET_CORE_RADIUS = 1.8;
 // On-beat shots render (and therefore hit) larger than off-beat ones.
 const ON_BEAT_CORE_MULT = 2.38;
 
-export type BulletShape = { onBeat: boolean; bomb: boolean; superBoosted?: boolean };
-
-// How much bigger this weapon's shells are than a stock bullet. One number, and
-// every reticule length is proportional to it — see BULLET_SIGHT_* in
-// trajectoryPreview.
-export const bulletSizeScale = (bomb: boolean): number => (bomb ? BOMB_RADIUS_MULT : 1);
+export type BulletShape = { onBeat: boolean; superBoosted?: boolean };
 
 export const bulletCoreRadius = (shape: BulletShape): number =>
-  BULLET_CORE_RADIUS * (shape.onBeat ? ON_BEAT_CORE_MULT : 1) * bulletSizeScale(shape.bomb);
+  BULLET_CORE_RADIUS * (shape.onBeat ? ON_BEAT_CORE_MULT : 1);
 
 // super-boosted (combo >= 12) keeps the core size but tightens the halo (6 vs 10)
 // for a sharper, more pointed read — which also shortens its collision reach.
@@ -88,10 +93,18 @@ export class Bullet {
   // collision pass keeps a piercing bullet alive on hit instead of consuming
   // it, so a single shot can punch through a row of asteroids.
   pierce = false;
-  // Set by Ship.fire when the player has the bomb upgrade. Doubles core radius
-  // (and hitbox) and damage, and swaps the tier palette from blue/gold/white to
+  // Set by Ship.fire when the player has the bomb upgrade. The shell bounces
+  // instead of hitting, slows under BOMB_DRAG, and detonates on a beat pulse
+  // (game/bombShot.ts); it swaps the tier palette from blue/gold/white to
   // red/orange/white-with-a-gold-halo.
   bomb = false;
+  // Beat index (perceivedBeatTime / BEAT_GRID) of the bomb's next pulse; -1
+  // until bombShot arms it from firedAtBeatTime.
+  bombNextPulseBeat = -1;
+  // Pulses left before the bomb detonates whether or not anything is in range.
+  bombPulsesLeft = 0;
+  // Seconds since the last beat pulse, for the ring's flash-and-fade.
+  bombPulseAge = Infinity;
   // A bullet's momentum transfers once, ever. Set on the first knockback it
   // applies (deflection or cracked hit); repeat deflections off a spinning
   // armored crystal — or later pierce hits — shove nothing more.
@@ -199,7 +212,17 @@ export class Bullet {
     if (this.flashTimer > 0) this.flashTimer = Math.max(0, this.flashTimer - dt);
     this.trail.push({ ...this.pos });
     if (this.trail.length > 8) this.trail.shift();
-    addScaledMut(this.pos, this.vel, dt);
+    // Exact integration of linear drag, so the shell lands where shotTravel
+    // says whatever the frame rate.
+    const travel = this.bomb ? (1 - Math.exp(-BOMB_DRAG * dt)) / BOMB_DRAG : dt;
+    this.pos.x += this.vel.x * travel;
+    this.pos.y += this.vel.y * travel;
+    if (this.bomb) {
+      const decay = Math.exp(-BOMB_DRAG * dt);
+      this.vel.x *= decay;
+      this.vel.y *= decay;
+      this.bombPulseAge += dt;
+    }
     wrapMut(this.pos, w, h);
   }
 
@@ -219,6 +242,21 @@ export class Bullet {
   bombCoreFill(): string {
     if (this.superBoosted) return "hsla(0, 0%, 100%, 1)";
     return this.boosted ? "hsla(28, 100%, 88%, 1)" : "hsla(4, 100%, 86%, 1)";
+  }
+
+  // The bomb's blast ring, drawn at exactly BOMB_BLAST_RADIUS so "the ring is
+  // touching it" is the whole rule. A faint resting ring shows the reach between
+  // beats; each pulse flashes it bright and fades, so the player sees the beat
+  // the mine is listening on. The final pulse's lead-up burns hotter.
+  renderBlastRing(ctx: CanvasRenderingContext2D) {
+    const pulse = Math.max(0, 1 - this.bombPulseAge / BOMB_PULSE_FADE_SEC);
+    const lastBeat = this.bombPulsesLeft === 1;
+    const alpha = (lastBeat ? 0.32 : 0.18) + 0.6 * pulse * pulse;
+    ctx.strokeStyle = `hsla(${this.bombHue()}, 100%, ${70 + 25 * pulse}%, ${alpha})`;
+    ctx.lineWidth = 1.5 + 2 * pulse;
+    ctx.beginPath();
+    ctx.arc(this.pos.x, this.pos.y, BOMB_BLAST_RADIUS, 0, TAU);
+    ctx.stroke();
   }
 
   whiteGlow(): boolean {
@@ -258,6 +296,7 @@ export class Bullet {
     if (this.bomb && this.superBoosted) {
       drawGlow(ctx, this.pos.x, this.pos.y, coreRadius * headRadiusMul * 2.2, 45, 0.7 * rangeAlpha);
     }
+    if (this.bomb) this.renderBlastRing(ctx);
     if (flashing) {
       // sharp attack, tail-off — peak brightness lands on the first frame of the flash.
       const flashEnv = Math.min(1, this.flashTimer / CORE_FLASH_TAIL_SEC);

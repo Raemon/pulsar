@@ -1,6 +1,6 @@
 import type { Ship } from "../Ship";
-import { add, mul, fromAngle } from "../vec";
-import { Bullet } from "../Bullet";
+import { Vec, add, mul, fromAngle } from "../vec";
+import { Bullet, BOMB_DRAG } from "../Bullet";
 import { PowerupKind } from "../Canister";
 import { BEAT_GRID } from "../game/rhythmConstants";
 
@@ -29,44 +29,103 @@ export const prongOffsets = (prongCount: number): number[] => {
 const PIERCE_RANGE_MULT = 2;
 // longshot extends bullet range 1.5x so a shot reaches further than the 1-beat reticule.
 const LONGSHOT_RANGE_MULT = 1.5;
-// The Bomb upgrade halves muzzle speed and leaves lifetime alone, so its shells
-// travel half as far as a normal bullet — range is paid for in speed, which also
-// makes the slower, fatter shell readable in flight (see BOMB_* in Bullet.ts).
-const BOMB_SPEED_MULT = 0.5;
+// combo ≥ 12 (super-boosted) stretches an on-beat shot's life 1.5× — the reward is reach.
+const SUPERBOOSTED_RANGE_MULT = 1.5;
 
-// Muzzle speed the ship's bullets actually leave at. Every consumer of "how far
-// does a shot reach" — the beat reticules, the drift-aim distance reference, the
-// shard rays a metal chunk lays on the prong fan — must read this rather than
-// ship.bulletSpeed, or the bomb's shells land short of their own aim glyphs.
-export const effectiveBulletSpeed = (ship: Ship): number =>
-  ship.bombActive ? ship.bulletSpeed * BOMB_SPEED_MULT : ship.bulletSpeed;
+// Flight time of a stock shot under the live range upgrades. The bullet, the laser
+// (whose beam overshoots this) and the beat reticules all read it, so each upgrade
+// stretches every weapon's reach and its sight together.
+export const shotLife = (ship: Ship, superBoosted: boolean): number => {
+  let life = ship.bulletLife;
+  if (ship.pierceActive) life *= PIERCE_RANGE_MULT;
+  if (ship.longshotActive) life *= LONGSHOT_RANGE_MULT;
+  if (superBoosted) life *= SUPERBOOSTED_RANGE_MULT;
+  return life;
+};
+
+// Beat slots a shot of this life reaches — one reticule per slot.
+export const beatSlotCount = (life: number): number => Math.max(1, Math.floor(life / BEAT_GRID));
+
+// Where every weapon leaves the ship: a touch ahead of the hull along the
+// (possibly prong-offset) heading.
+export const muzzleOf = (ship: Ship, headingOffset = 0): Vec =>
+  add(ship.pos, mul(fromAngle(ship.heading + headingOffset, 1), ship.radius + 4));
 
 // bullet inherits a fraction of ship velocity so muzzle output reads as physical, not portaled.
-// Exported so metalChunk can reproduce the true (velocity-bent) prong ray when it
-// lays shards on the prong pair — see Asteroid.split.
-export const BULLET_VEL_INHERIT = 0.4;
-const launchBullet = (ship: Ship, headingOffset: number, pierce: boolean, longshot: boolean): Bullet => {
+const BULLET_VEL_INHERIT = 0.4;
+
+// A bomb inherits none of the ship's velocity. It detonates by where it sits when
+// a beat lands, judged against rocks in the world; inherited momentum would move
+// that spot by up to ±92px a beat depending on how the ship was flying — as wide
+// as the blast — and under the ship-pinned camera would make a mine thrown at
+// full thrust hang off the nose. With none, a bomb always lands where it was aimed.
+export const shotVelInherit = (ship: Ship): number => (ship.bombActive ? 0 : BULLET_VEL_INHERIT);
+
+// How far a shot has flown along its heading `t` seconds after leaving the muzzle,
+// before inherited ship velocity. Stock shots fly straight at bulletSpeed; a bomb
+// slows under BOMB_DRAG and settles bulletSpeed / BOMB_DRAG out. Every consumer of
+// "where is the shot after N beats" — the beat reticules, the aim circle, the
+// drift-aim distance reference — reads this so the sight matches the shell.
+export const shotTravel = (ship: Ship, t: number): number =>
+  ship.bombActive
+    ? (ship.bulletSpeed * (1 - Math.exp(-BOMB_DRAG * t))) / BOMB_DRAG
+    : ship.bulletSpeed * t;
+
+// Velocity a shot fired now at `headingOffset` leaves the muzzle with.
+const shotLaunchVel = (ship: Ship, headingOffset: number): Vec =>
+  add(mul(fromAngle(ship.heading + headingOffset, 1), ship.bulletSpeed), mul(ship.vel, shotVelInherit(ship)));
+
+// Unit direction a shot fired now at `headingOffset` flies along — bent off the
+// heading by inherited ship velocity. Drag only slows a bomb, never turns it.
+// Exported so metalChunk can lay its wedges on the true prong rays (Asteroid.split).
+export const shotRayDir = (ship: Ship, headingOffset: number): Vec => {
+  const v = shotLaunchVel(ship, headingOffset);
+  return mul(v, 1 / (Math.hypot(v.x, v.y) || 1));
+};
+
+// Where a shot fired now at `headingOffset` will be `t` seconds later — the one
+// trajectory both the fired shell and its sight follow.
+export const shotPositionAt = (ship: Ship, headingOffset: number, t: number): Vec => {
   const dir = fromAngle(ship.heading + headingOffset, 1);
-  const muzzle = add(ship.pos, mul(dir, ship.radius + 4));
-  const vel = add(mul(dir, effectiveBulletSpeed(ship)), mul(ship.vel, BULLET_VEL_INHERIT));
-  let life = ship.bulletLife;
-  if (pierce) life *= PIERCE_RANGE_MULT;
-  if (longshot) life *= LONGSHOT_RANGE_MULT;
-  const bullet = new Bullet(muzzle, vel, life);
-  bullet.pierce = pierce;
-  bullet.bomb = ship.bombActive;
-  // farthest reticule sits at floor(life/BEAT_GRID) beats out; anything past that
-  // can't land on a beat, so fade the bullet across the leftover tail to expiry.
-  const slotCount = Math.max(1, Math.floor(life / BEAT_GRID));
-  bullet.fadeStartLife = Math.max(0, life - slotCount * BEAT_GRID);
+  const inherited = mul(ship.vel, shotVelInherit(ship) * t);
+  return add(add(muzzleOf(ship, headingOffset), mul(dir, shotTravel(ship, t))), inherited);
+};
+
+// A bomb pulses this many beats, then detonates whether or not anything is near.
+export const BOMB_PULSES = 4;
+// Bomb sights: one per pulse would stack — by the third beat a settling mine has
+// barely moved (196 → 268 → 295px out), so the second sight already marks where
+// it rests, well inside its own blast ring.
+export const BOMB_SIGHT_SLOTS = 2;
+
+// (Re)sets a stock shot's flight time. The farthest reticule sits at
+// beatSlotCount(life) beats out; anything past that can't land on a beat, so the
+// bullet fades across the leftover tail to expiry.
+export const setShotLife = (bullet: Bullet, life: number) => {
+  bullet.life = life;
+  bullet.maxLife = life;
+  bullet.fadeStartLife = Math.max(0, life - beatSlotCount(life) * BEAT_GRID);
+};
+
+const launchBullet = (ship: Ship, headingOffset: number): Bullet => {
+  const bullet = new Bullet(muzzleOf(ship, headingOffset), shotLaunchVel(ship, headingOffset), 0);
+  if (ship.bombActive) {
+    // A bomb's life is counted in beat pulses (game/bombShot.ts), which detonate
+    // it. Its timer is only a backstop: a pulse always comes first, even fired
+    // just past a beat and armed a full beat later.
+    bullet.bomb = true;
+    bullet.bombPulsesLeft = BOMB_PULSES;
+    bullet.life = bullet.maxLife = (BOMB_PULSES + 2) * BEAT_GRID;
+    return bullet;
+  }
+  bullet.pierce = ship.pierceActive;
+  setShotLife(bullet, shotLife(ship, false));
   return bullet;
 };
 
 // single fire event yields prongCount+1 bullets; prong must share its on-beat flag across all.
 export const fireBullets = (ship: Ship, bullets: Bullet[]) => {
-  for (const offset of prongOffsets(ship.prongCount)) {
-    bullets.push(launchBullet(ship, offset, ship.pierceActive, ship.longshotActive));
-  }
+  for (const offset of prongOffsets(ship.prongCount)) bullets.push(launchBullet(ship, offset));
 };
 
 // powerup flags are simple bool latches; shield is one-shot, the rest persist for the run.

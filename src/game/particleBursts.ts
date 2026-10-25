@@ -382,3 +382,31 @@ export const emitLaserImpact = (particles: ParticleSystem, pos: Vec, dir: Vec, t
     });
   }
 };
+
+// A bomb's detonation: an even ring of sparks that coasts out to (about) the
+// blast radius and fades there, tracing the reach the player saw the mine's ring
+// promise, plus a hot scatter at the centre. Coasting under drag d for life t
+// covers v0·(1 − e^(−d·t))/d, so the ring speed is solved from the radius.
+const BOMB_BLAST_RING_DRAG = 6;
+const BOMB_BLAST_RING_LIFE = 0.45;
+export const emitBombBlast = (particles: ParticleSystem, pos: Vec, hue: number, radius: number) => {
+  const ringSpeed = (radius * BOMB_BLAST_RING_DRAG) / (1 - Math.exp(-BOMB_BLAST_RING_DRAG * BOMB_BLAST_RING_LIFE));
+  emitBurst(particles, {
+    pos, count: 48,
+    speedRange: [ringSpeed * 0.97, ringSpeed * 1.03],
+    lifeRange: [BOMB_BLAST_RING_LIFE * 0.9, BOMB_BLAST_RING_LIFE], maxLife: BOMB_BLAST_RING_LIFE,
+    sizeRange: [1.6, 2.6],
+    hue, hueSpread: [-8, 12],
+    drag: BOMB_BLAST_RING_DRAG,
+    angleMode: "uniform", angleJitter: 0.04,
+  });
+  emitBurst(particles, {
+    pos, count: 22,
+    speedRange: [60, ringSpeed * 0.5],
+    lifeRange: [0.15, 0.35], maxLife: 0.35,
+    sizeRange: [1.8, 3.2],
+    hue: hue + 20, hueSpread: [-10, 10],
+    drag: BOMB_BLAST_RING_DRAG,
+    angleMode: "random", angleJitter: 0,
+  });
+};
