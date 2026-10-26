@@ -114,7 +114,10 @@ const angleDelta = (a: number, b: number) => {
 // if a hovered target lies between this frame's heading and where rotVel*dt would carry it, snap the
 // heading exactly onto the target and report it. Snap-once: rotVel is left intact, so the next held
 // frame turns freely on past. Returns true if it snapped (caller skips the normal heading advance).
+// The frame after a snap never snaps: a target drifting in the turn direction would otherwise sit a
+// hair ahead of the heading every frame and re-snap forever, pinning the turn in place.
 const trySnapToTarget = (ship: Ship, dt: number): boolean => {
+  if (ship.rotSnappedLastFrame) return false;
   if (!DRIFT_AIM_SNAP || ship.rotVel === 0) return false;
   const center = deepestHoveredRing(ship).center;
   if (!center) return false;
@@ -154,7 +157,9 @@ const updateTurning = (ship: Ship, input: IInput, dt: number) => {
     if (!ship.rotInertia) ship.rotVel = 0;
   }
   ship.rotHeldDir = dir;
-  if (!trySnapToTarget(ship, dt)) ship.heading += ship.rotVel * dt;
+  const snapped = trySnapToTarget(ship, dt);
+  if (!snapped) ship.heading += ship.rotVel * dt;
+  ship.rotSnappedLastFrame = snapped;
 };
 
 // tap-to-nudge feel; thrust ramps in over ~0.15s so a tap barely budges and a hold accelerates fully.

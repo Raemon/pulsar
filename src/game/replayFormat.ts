@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 48;
+export const REPLAY_FORMAT_VERSION = 49;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -34,6 +34,8 @@ export const REPLAY_FORMAT_VERSION = 48;
 // v48 turns slow-mo from a canister pickup into a headline wave event (an
 //   extra seeded roll) and cuts the gem upgrade chance to a third, so v47
 //   recordings re-sim into different runs.
+// v49 stops the drift-aim turn snap from re-firing on consecutive frames (it
+//   could pin a turn against a drifting target), so v48 turns re-sim differently.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

@@ -31,6 +31,7 @@ export class Ship {
   rotVel = 0; // current angular velocity
   rotHoldTime = 0; // how long the turn key has been held
   rotHeldDir = 0; // turn direction last frame; reset ramp on flip
+  rotSnappedLastFrame = false; // drift-aim snap fired last frame; the next frame turns freely
   // Drift-aim: an input (turn / thrust / reverse / each side engine) that BEGINS while hovering a
   // Next Beat Target starts slowed, then ramps back to full speed as you keep holding it. Inputs
   // already in flight before the hover are untouched. Each input captures its own start-slow on the
