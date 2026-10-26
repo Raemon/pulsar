@@ -1,5 +1,31 @@
 [
   {
+    "id": "2026-10-26-677a8f4",
+    "date": "2026-10-26",
+    "title": "Prong fires triple volley; metal slab gets new crystal look",
+    "sections": [
+      {
+        "heading": "Changed",
+        "items": [
+          "Prong upgrade now fires a centre shot plus a ±15° pair, so the first upgrade gives three bullets instead of two.",
+          "Each additional Prong upgrade adds two more bullets at the next ±15° step outward.",
+          "The metal slab's inner crystal is now a pulsing black square instead of a magenta gem.",
+          "Square soundwave rings radiate outward from the crystal on each pulse beat.",
+          "Metal slab wedge pieces are resized to better match the slab they break from."
+        ]
+      }
+    ],
+    "commits": [
+      "677a8f4",
+      "d3c498a",
+      "9bf1362",
+      "3186fc2",
+      "b166255",
+      "5712e08",
+      "a89c2d8"
+    ]
+  },
+  {
     "id": "2026-10-25-1548633",
     "date": "2026-10-25",
     "title": "Act II Tuning: Bigger Threats, New Visuals",
