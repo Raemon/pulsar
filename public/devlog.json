@@ -1,5 +1,41 @@
 [
   {
+    "id": "2026-10-25-1548633",
+    "date": "2026-10-25",
+    "title": "Act II Tuning: Bigger Threats, New Visuals",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Act II aliens are now a dark purple breed with twice the HP and faster bullets.",
+          "Boss hemispheres now have a ragged molten underbelly with lodged rubble and loose debris instead of a clean seam.",
+          "The Act II tomb planet now grows gradually with act progress, and its moons are pitch black."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "Giant triple-bassteroids now roll on roughly 40% of Act II waves, up from ~13%.",
+          "Warbles are twice as large at every size tier; citadels are 1.2x larger with a bigger escape hole.",
+          "Act I boss hemispheres and eye core fly apart faster after the break."
+        ]
+      },
+      {
+        "heading": "Fixed",
+        "items": [
+          "Boss hemispheres no longer eject together as one blob — each half now flies off its own side.",
+          "Giant enemies no longer roll during Act II's opening wave, preserving the intended warble, prison, and torus introductions."
+        ]
+      }
+    ],
+    "commits": [
+      "1548633",
+      "b9d4564",
+      "cf4d4b4",
+      "bc0ee0b"
+    ]
+  },
+  {
     "id": "2026-10-24-eb3a59c",
     "date": "2026-10-24",
     "title": "Giant bassteroids, metal chunk splits, audio fixes",

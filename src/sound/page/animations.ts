@@ -380,7 +380,7 @@ export const ANIMATIONS: Record<ObjectId, () => Animator> = {
   "bullet-rhythm": () => drawBullet({ onBeat: true, boosted: false, count: 1 }),
   "bullet-bomb-weak": () => drawBullet({ onBeat: false, boosted: false, count: 1, bomb: true }),
   "bullet-bomb-rhythm": () => drawBullet({ onBeat: true, boosted: false, count: 1, bomb: true }),
-  "bullet-prong": () => drawBullet({ onBeat: true, boosted: true, count: 2 }),
+  "bullet-prong": () => drawBullet({ onBeat: true, boosted: true, count: 3 }),
   "asteroid-normal": () => drawAsteroid("normal", "chip"),
   "asteroid-bassA": () => drawAsteroid("bassA", "chip"),
   "asteroid-bassB": () => drawAsteroid("bassB", "chip"),

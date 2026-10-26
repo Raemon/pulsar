@@ -1,6 +1,6 @@
 import type { Ship } from "../../Ship";
 import type { Sound } from "../../Sound";
-import { Vec, add, mul, fromAngle, TAU } from "../../vec";
+import { Vec, add, mul, TAU } from "../../vec";
 import { computeConeFrame } from "./coneGeometry";
 import { paintConeBackground, paintRangeArcs } from "./radarCone";
 import { paintTrajectoryPreviews, ReticuleTarget, TrajectoryTrackMap, AimHintRender, computeBeatPulseBoost, expireHoverZoneHintIfHoverEnded, paintHoverZoneHint, nearestFirstBeatDot, wrapReticuleVec } from "./trajectoryPreview";
@@ -8,9 +8,9 @@ import {
   reticuleOverlapsAnyTarget,
   paintAimDiscs,
 } from "./aimDisc";
-import { prongOffsets, effectiveBulletSpeed } from "../shipWeapons";
+import { prongOffsets, shotLife, shotTravel, shotVelInherit, shotPositionAt, BOMB_SIGHT_SLOTS } from "../shipWeapons";
 import { BULLET_SIGHT_RADIUS_ON_BEAT } from "./trajectoryPreview";
-import { bulletCollisionRadius, bulletSizeScale } from "../../Bullet";
+import { bulletCollisionRadius, BOMB_BLAST_RADIUS } from "../../Bullet";
 import { toroidalDelta } from "./coneGeometry";
 
 // stationary hover probe — drives the same per-slot ring lock / hum stack as a moving target,
@@ -50,7 +50,7 @@ const ARROW_ENABLED = false;
 const ARROW_HSL_REST = "195, 100%, 75%";
 const ARROW_HSL_BEAT = "207, 100%, 78%";
 const ARROW_ORBIT_GAP = 13;
-const arrowOrbitRadius = (sightScale: number): number => (BULLET_SIGHT_RADIUS_ON_BEAT + ARROW_ORBIT_GAP) * sightScale;
+const ARROW_ORBIT_RADIUS = BULLET_SIGHT_RADIUS_ON_BEAT + ARROW_ORBIT_GAP;
 const ARROW_HALF_WIDTH = 4;
 const ARROW_LENGTH = 20;
 // resting → on-beat alpha. The beat boost rides the same square-decay envelope as the reticule
@@ -259,11 +259,11 @@ const paintDriftLockHint = (ctx: CanvasRenderingContext2D, beatTime: number) => 
   ctx.globalCompositeOperation = prevComposite;
 };
 
-// the aim circle = locus of bullet endpoints at t=beatGrid over all headings. Single source
+// the aim circle = locus of shot positions at t=beatGrid over all headings. Single source
 // of truth so the reticule painter and the gameRender red-tint check agree on geometry.
 export const computeAimCircle = (ship: Ship, beatGrid: number) => ({
-  center: add(ship.pos, mul(ship.vel, 0.4 * beatGrid)),
-  radius: ship.radius + 4 + effectiveBulletSpeed(ship) * beatGrid,
+  center: add(ship.pos, mul(ship.vel, shotVelInherit(ship) * beatGrid)),
+  radius: ship.radius + 4 + shotTravel(ship, beatGrid),
 });
 
 // Where a shot fired with the given heading offset lands after `beatFraction` of a
@@ -272,51 +272,38 @@ export const computeAimCircle = (ship: Ship, beatGrid: number) => ({
 // the Euclidean proximity/lock math only lines up if the reticule isn't
 // pre-wrapped — folding it here was the seam-crossing lock+visual dropout.
 // Draw-time folding is handled by wrapToCanvas (anchor-aware per camera).
-const computeReticulePosition = (
-  ship: Ship, beatGrid: number, _w: number, _h: number,
-  headingOffset: number, beatFraction: number,
-): Vec => {
-  const dir = fromAngle(ship.heading + headingOffset, 1);
-  const muzzle = add(ship.pos, mul(dir, ship.radius + 4));
-  const bulletVel = add(mul(dir, effectiveBulletSpeed(ship)), mul(ship.vel, 0.4));
-  return add(muzzle, mul(bulletVel, beatGrid * beatFraction));
-};
+const computeReticulePosition = (ship: Ship, beatGrid: number, headingOffset: number, beatFraction: number): Vec =>
+  shotPositionAt(ship, headingOffset, beatGrid * beatFraction);
 
-// effective bullet lifetime mirrors shipWeapons.launchBullet (and the post-fire superBoosted
-// stretch in handleOnBeatFire) so reticule range tracks what the actual shot does: pierce
-// doubles flight time; longshot and superBoosted (combo ≥ 12) each multiply by 1.5.
-const effectiveBulletLife = (ship: Ship, superBoosted: boolean): number => {
-  let life = ship.bulletLife;
-  if (ship.pierceActive) life *= 2;
-  if (ship.longshotActive) life *= 1.5;
-  if (superBoosted) life *= 1.5;
-  return life;
-};
+// One reticule per beat slot the shot reaches. A bomb gets BOMB_SIGHT_SLOTS — it
+// doesn't run out of range so much as come to rest.
+const reticuleSlotCount = (ship: Ship, beatGrid: number, superBoosted: boolean): number =>
+  ship.bombActive ? BOMB_SIGHT_SLOTS : Math.max(1, Math.floor(shotLife(ship, superBoosted) / beatGrid));
 
-// prong fans the aim into prongCount+1 angles; doubletime adds a half-beat preview at
-// half distance; integer-k reticules mark every beat-slot the bullet actually crosses
+// prong fans the aim into one angle per prongOffsets entry; doubletime adds a half-beat preview at
+// half distance (not for a bomb, which only pulses on whole beats); integer-k reticules
+// mark every beat-slot the bullet actually crosses
 // (t = beatGrid*k < life), so the count adapts to longshot/pierce/superBoosted range and to
 // the rhythm-gate tempo (eighth-grid at combo ≥ 12 or under rapid). slotPositionIndices[k-1]
 // lists every position index that anchors the k-beat slot — one entry per prong angle.
 // The slot's hover ring locks the moment the trajectory dot grazes ANY of them.
 type ReticulePositions = { positions: Vec[]; primaryIndex: number; slotPositionIndices: number[][] };
 const computeReticulePositions = (
-  ship: Ship, beatGrid: number, w: number, h: number, doubletime: boolean, superBoosted: boolean,
+  ship: Ship, beatGrid: number, doubletime: boolean, superBoosted: boolean,
 ): ReticulePositions => {
   const angleOffsets = prongOffsets(ship.prongCount);
   const primaryOffset = angleOffsets[0];
-  const bulletLife = effectiveBulletLife(ship, superBoosted);
-  const slotCount = Math.max(1, Math.floor(bulletLife / beatGrid));
+  const slotCount = reticuleSlotCount(ship, beatGrid, superBoosted);
   const integerFractions: number[] = [];
   for (let k = 1; k <= slotCount; k++) integerFractions.push(k);
-  const beatFractions = doubletime ? [HALF_BEAT_FRACTION, ...integerFractions] : integerFractions;
+  const beatFractions = doubletime && !ship.bombActive ? [HALF_BEAT_FRACTION, ...integerFractions] : integerFractions;
   const positions: Vec[] = [];
   let primaryIndex = -1;
   const slotPositionIndices: number[][] = Array.from({ length: slotCount }, () => []);
   for (const frac of beatFractions) {
     for (const off of angleOffsets) {
       const idx = positions.length;
-      positions.push(computeReticulePosition(ship, beatGrid, w, h, off, frac));
+      positions.push(computeReticulePosition(ship, beatGrid, off, frac));
       if (off === primaryOffset && frac === 1) primaryIndex = idx;
       if (Number.isInteger(frac) && frac >= 1 && frac <= slotCount) {
         slotPositionIndices[frac - 1].push(idx);
@@ -331,7 +318,7 @@ const computeReticulePositions = (
 export const primaryReticulePosition = (
   ship: Ship, beatGrid: number, w: number, h: number, doubletime: boolean, superBoosted: boolean,
 ): Vec => {
-  const { positions, primaryIndex } = computeReticulePositions(ship, beatGrid, w, h, doubletime, superBoosted);
+  const { positions, primaryIndex } = computeReticulePositions(ship, beatGrid, doubletime, superBoosted);
   const raw = primaryIndex >= 0 ? positions[primaryIndex]
     : positions.length > 0 ? positions[0] : ship.pos;
   return wrapReticuleVec(raw, w, h);
@@ -349,34 +336,44 @@ const hoverRingFullyBuilt = (elapsed: number): boolean =>
 // arcs fill across HOVER_RING_FILL_SEC, then a brief HOVER_FLARE_SEC arc-brightening marks
 // lock acquisition. While the ring is fully built, concentric soundwave rings radiate
 // outward in time with the beat for as long as the player holds hover. Returns whether the
-// The live weapon's sight geometry, and the ring radii that hang off it. Every ring
-// the sight paints is anchored on the aim disc, so one scale moves them together: a
-// bomb gets the same sight at twice the size, rather than the stock rings drawn over
-// a doubled hit area. collisionRadiusOnBeat is the exact reach the collision pass
-// will use for an on-beat shot — what the aim dots are pulled back by.
-const bulletSightGeometry = (ship: Ship, superBoosted: boolean) => ({
-  sightScale: bulletSizeScale(ship.bombActive),
-  collisionRadiusOnBeat: bulletCollisionRadius({ onBeat: true, bomb: ship.bombActive, superBoosted }),
-});
+// The exact reach the collision pass will use for an on-beat shot — what the aim
+// dots are pulled back by. A bomb shell is stock-sized, so it shares this: aimed
+// there, the shell meets the target on the beat instead of bouncing off it early.
+const onBeatCollisionRadius = (superBoosted: boolean): number =>
+  bulletCollisionRadius({ onBeat: true, superBoosted });
 
-const sightRadius = (sightScale: number): number => BULLET_SIGHT_RADIUS_ON_BEAT * sightScale;
+// A bomb's sight also previews the blast: a dashed ring at BOMB_BLAST_RADIUS around
+// the first-beat slot, the same ring the shell itself will carry — anything inside
+// it when the mine first pulses is caught. Only the first: the later slots sit
+// close enough that their rings would overlap into one blob, and by then the
+// thrown mine is showing its own live ring.
+const BOMB_PREVIEW_DASH = [6, 6];
+const paintBombBlastPreview = (ctx: CanvasRenderingContext2D, pos: Vec, alpha: number) => {
+  ctx.save();
+  ctx.setLineDash(BOMB_PREVIEW_DASH);
+  ctx.strokeStyle = `hsla(4, 100%, 72%, ${alpha})`;
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, BOMB_BLAST_RADIUS, 0, TAU);
+  ctx.stroke();
+  ctx.restore();
+};
 
 // The drift-lock flourish — dashed ring, soundwaves, lock flash, lock-on pulse — is a REWARD
-// cue, not a readout of the hit zone, so it doesn't have to shrink to the stock bullet's sight.
-// Floored so a normal-bullet lock reads nearly as large as the bomb's, which used to dwarf it.
-const LOCK_VISUAL_MIN_SCALE = 1.6;
-const lockVisualScale = (sightScale: number): number => Math.max(sightScale, LOCK_VISUAL_MIN_SCALE);
+// cue, not a readout of the hit zone, so it doesn't have to match the stock bullet's sight.
+// Scaled above the stock sight so the lock reads as a flourish around it, not a ring on it.
+const LOCK_VISUAL_SCALE = 1.6;
 
-const hoverDotRingRadius = (sightScale: number): number => HOVER_DOT_RING_RADIUS * lockVisualScale(sightScale);
-const hoverPulseStartR = (sightScale: number): number => sightRadius(lockVisualScale(sightScale));
-const hoverPulseEndR = (sightScale: number): number => (BULLET_SIGHT_RADIUS_ON_BEAT + HOVER_PULSE_SPAN) * lockVisualScale(sightScale);
-const hoverWaveStartR = (sightScale: number): number => sightRadius(lockVisualScale(sightScale));
-const hoverWaveEndR = (sightScale: number): number => (HOVER_DOT_RING_RADIUS + HOVER_WAVE_END_GAP) * lockVisualScale(sightScale);
+const LOCK_SIGHT_RADIUS = BULLET_SIGHT_RADIUS_ON_BEAT * LOCK_VISUAL_SCALE;
+const LOCK_DOT_RING_RADIUS = HOVER_DOT_RING_RADIUS * LOCK_VISUAL_SCALE;
+const HOVER_PULSE_START_R = LOCK_SIGHT_RADIUS;
+const HOVER_PULSE_END_R = (BULLET_SIGHT_RADIUS_ON_BEAT + HOVER_PULSE_SPAN) * LOCK_VISUAL_SCALE;
+const HOVER_WAVE_START_R = LOCK_SIGHT_RADIUS;
+const HOVER_WAVE_END_R = (HOVER_DOT_RING_RADIUS + HOVER_WAVE_END_GAP) * LOCK_VISUAL_SCALE;
 
 // ring just crossed into "filled" this frame (rising-edge signal for the audio companion).
 const paintHoverDotRing = (
   ctx: CanvasRenderingContext2D, center: Vec, elapsed: number, beatTime: number, beatGrid: number,
-  sightScale: number,
   fadeOutAlpha: number = 1,
 ): { fillJustCompleted: boolean } => {
   const slotDuration = HOVER_RING_SLOT_SEC;
@@ -421,7 +418,7 @@ const paintHoverDotRing = (
     // soundwaves track the arc colour: white while the hold hasn't yet armed a drift shot,
     // then the warm tier hue once it would trigger — so nothing reads gold before the lock.
     const waveHsl = fullyBuilt ? tierWarmHsl : HOVER_DOT_HSL_UNARMED;
-    paintSoundwaves(ctx, center, elapsed - wavesStartSec, beatTime, beatGrid, sightScale, fadeOutAlpha, waveHsl, tierWidth);
+    paintSoundwaves(ctx, center, elapsed - wavesStartSec, beatTime, beatGrid, fadeOutAlpha, waveHsl, tierWidth);
   }
   // white center flash on lock acquisition — anchored on the aim disc rather than the wider
   // dashed dot ring, at the shared lock-visual scale so a stock shot's lock still lands as an event.
@@ -433,13 +430,13 @@ const paintHoverDotRing = (
     ctx.save();
     ctx.fillStyle = `hsla(0, 0%, 100%, ${HOVER_CENTER_FLASH_PEAK_ALPHA * env * fadeOutAlpha})`;
     ctx.beginPath();
-    ctx.arc(center.x, center.y, sightRadius(lockVisualScale(sightScale)), 0, TAU);
+    ctx.arc(center.x, center.y, LOCK_SIGHT_RADIUS, 0, TAU);
     ctx.fill();
     ctx.strokeStyle = `hsla(0, 0%, 100%, ${0.6 * env * fadeOutAlpha})`;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.arc(center.x, center.y, sightRadius(lockVisualScale(sightScale)) * (1 + 0.4 * t), 0, TAU);
+    ctx.arc(center.x, center.y, LOCK_SIGHT_RADIUS * (1 + 0.4 * t), 0, TAU);
     ctx.stroke();
     ctx.restore();
   }
@@ -459,7 +456,7 @@ const paintHoverDotRing = (
     const ccwEnd = mid - HOVER_ARC_SWEEP / 2;
     const cwEnd = ccwEnd + HOVER_ARC_SWEEP * sweepEase;
     ctx.beginPath();
-    ctx.arc(center.x, center.y, hoverDotRingRadius(sightScale), ccwEnd, cwEnd);
+    ctx.arc(center.x, center.y, LOCK_DOT_RING_RADIUS, ccwEnd, cwEnd);
     ctx.stroke();
   }
   return { fillJustCompleted: fullyBuilt };
@@ -472,7 +469,6 @@ const paintHoverDotRing = (
 // `lockAge` is seconds since the ring filled (≥0 when fully built).
 const paintSoundwaves = (
   ctx: CanvasRenderingContext2D, center: Vec, lockAge: number, beatTime: number, beatGrid: number,
-  sightScale: number,
   fadeOutAlpha: number = 1, tierHsl: string = HOVER_FLARE_WARM_HSL, widthMult: number = 1,
 ) => {
   if (beatGrid <= 0) return;
@@ -495,7 +491,7 @@ const paintSoundwaves = (
     if (ageBeats > beatsSinceLock + 0.01) continue;
     const t = ageBeats / HOVER_WAVE_LIFETIME_BEATS;
     // higher tiers push the soundwaves out wider so the escalation reads at a glance.
-    const r = hoverWaveStartR(sightScale) + (hoverWaveEndR(sightScale) - hoverWaveStartR(sightScale)) * t * widthMult;
+    const r = HOVER_WAVE_START_R + (HOVER_WAVE_END_R - HOVER_WAVE_START_R) * t * widthMult;
     // fade-in over the first ~10% so a newly-emitted wave doesn't pop in too hard, then
     // fade out the rest of its life. Quadratic falloff feels like a soundwave dissipating.
     const fadeIn = Math.min(1, t / 0.1);
@@ -533,12 +529,12 @@ const cosineEnvelope = (beatTime: number, period: number, min: number, max: numb
 };
 
 // filled pointy triangle orbiting the reticule, pointing along `angle` toward the nearest rhythm
-// dot. The tip sits past arrowOrbitRadius(sightScale); the base spans ARROW_HALF_WIDTH on each side. On the
+// dot. The tip sits past ARROW_ORBIT_RADIUS; the base spans ARROW_HALF_WIDTH on each side. On the
 // downbeat it flashes brighter and shifts toward the Pulsar-logo blue, decaying fast over the
 // beat. Painted under the caller's additive composite so the flash glows without shadowBlur.
 const paintReticuleArrow = (
   ctx: CanvasRenderingContext2D, center: Vec, angle: number,
-  beatTime: number, beatGrid: number, fade01: number, sightScale: number,
+  beatTime: number, beatGrid: number, fade01: number,
 ) => {
   if (fade01 <= 0) return;
   // square-decay beat envelope: 1 on the downbeat, falling to 0 just before the next beat —
@@ -550,10 +546,10 @@ const paintReticuleArrow = (
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   // tip points outward along `angle`; the two base corners sit on the orbit circle either side.
-  const tipX = center.x + cos * (arrowOrbitRadius(sightScale) + ARROW_LENGTH);
-  const tipY = center.y + sin * (arrowOrbitRadius(sightScale) + ARROW_LENGTH);
-  const baseX = center.x + cos * arrowOrbitRadius(sightScale);
-  const baseY = center.y + sin * arrowOrbitRadius(sightScale);
+  const tipX = center.x + cos * (ARROW_ORBIT_RADIUS + ARROW_LENGTH);
+  const tipY = center.y + sin * (ARROW_ORBIT_RADIUS + ARROW_LENGTH);
+  const baseX = center.x + cos * ARROW_ORBIT_RADIUS;
+  const baseY = center.y + sin * ARROW_ORBIT_RADIUS;
   const px = -sin * ARROW_HALF_WIDTH;
   const py = cos * ARROW_HALF_WIDTH;
   ctx.fillStyle = `hsla(${hsl}, ${alpha})`;
@@ -576,10 +572,10 @@ const paintReticuleArrow = (
 // composite, so overlapping the three strokes sums into a glow (no shadowBlur — house rule).
 const paintFinalHoverPulse = (
   ctx: CanvasRenderingContext2D, center: Vec, phase: number, beatTime: number, beatGrid: number,
-  fade01: number, sightScale: number,
+  fade01: number,
 ) => {
-  const startR = hoverPulseStartR(sightScale);
-  const endR = startR + (hoverPulseEndR(sightScale) - startR) * driftTierWidthMult(DRIFT_TIER_MAX);
+  const startR = HOVER_PULSE_START_R;
+  const endR = startR + (HOVER_PULSE_END_R - startR) * driftTierWidthMult(DRIFT_TIER_MAX);
   // downbeat bloom: cosine swell peaking on the beat (1.0) and easing to a floor between beats,
   // so the radiance pulses with the song instead of sitting at a constant brightness.
   const bloom = cosineEnvelope(beatTime, beatGrid, 0.78, 1.0);
@@ -615,13 +611,12 @@ const paintFinalHoverPulse = (
 // is replaced by the layered radiant climax (paintFinalHoverPulse).
 const paintHoverPulse = (
   ctx: CanvasRenderingContext2D, center: Vec, beatTime: number, beatGrid: number, fade01: number,
-  sightScale: number,
   tier: number = 0,
 ) => {
   if (fade01 <= 0 || beatGrid <= 0) return;
   const phase = ((beatTime % beatGrid) + beatGrid) % beatGrid / beatGrid;
   if (tier >= DRIFT_TIER_MAX) {
-    paintFinalHoverPulse(ctx, center, phase, beatTime, beatGrid, fade01, sightScale);
+    paintFinalHoverPulse(ctx, center, phase, beatTime, beatGrid, fade01);
     return;
   }
   // white until the hold arms a drift shot (tier 0), then the tier hue tints the pulse gold →
@@ -629,8 +624,8 @@ const paintHoverPulse = (
   // would actually trigger, matching the dot-ring arcs and soundwaves.
   const hsl = tier > 0 ? driftTierPulseHsl(tier) : HOVER_DOT_HSL_UNARMED;
   const widthMult = tier > 0 ? driftTierWidthMult(tier) : 1;
-  const startR = hoverPulseStartR(sightScale);
-  const endR = startR + (hoverPulseEndR(sightScale) - startR) * widthMult;
+  const startR = HOVER_PULSE_START_R;
+  const endR = startR + (HOVER_PULSE_END_R - startR) * widthMult;
   const r = startR + (endR - startR) * phase;
   // ease in over the first sliver so a freshly-launched ring doesn't pop, then fade as it expands.
   const fadeIn = Math.min(1, phase / 0.12);
@@ -685,12 +680,12 @@ export const renderShipReticules = (
   // meaning under the laser, which fires a straight beam — gameRender draws the
   // laser's own dash-line reticule (renderLaserReticule) instead.
   if (ship.lasershotActive) return;
-  const { positions: reticulePositions, primaryIndex, slotPositionIndices } = computeReticulePositions(ship, beatGrid, w, h, doubletime, superBoosted);
+  const { positions: reticulePositions, primaryIndex, slotPositionIndices } = computeReticulePositions(ship, beatGrid, doubletime, superBoosted);
   // trajectory preview anchors on the "shoot now to hit next beat" spot. primaryIndex always
   // exists now (anchors on the first prong offset under prong), but keep the fallback for safety.
   const primaryReticule = primaryIndex >= 0
     ? reticulePositions[primaryIndex]
-    : computeReticulePosition(ship, beatGrid, w, h, 0, 1);
+    : computeReticulePosition(ship, beatGrid, 0, 1);
   // each reachable slot may have multiple reticules (prong = 2 angles, centred = 1). The slot's
   // hover ring locks if the trajectory dot grazes ANY of them, so the player can drift-lock off
   // either prong.
@@ -701,7 +696,7 @@ export const renderShipReticules = (
     state.hoverDotRings.push({ hoverStartBeatTime: null, completionBeatTime: null, zoneEnterBeatTime: null, fadeOutStartTime: null, lastRingCenter: null });
   }
   const apex = ship.pos;
-  const { sightScale, collisionRadiusOnBeat } = bulletSightGeometry(ship, superBoosted);
+  const collisionRadiusOnBeat = onBeatCollisionRadius(superBoosted);
   const { center: aimCircleCenter, radius: aimCircleRadius } = computeAimCircle(ship, beatGrid);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
@@ -718,7 +713,7 @@ export const renderShipReticules = (
     reticulesBySlot, aimCircleCenter, aimCircleRadius,
     trajectoryTracks: state.trajectoryTracks, doubletime, tutorialHighlight,
     hoverZoneEnterBySlot: state.hoverDotRings.map(r => r.zoneEnterBeatTime),
-    sightScale, collisionRadiusOnBeat, aimHint,
+    collisionRadiusOnBeat, aimHint,
   }, targets);
   const fromTrajectory = trajectoryResult.overlapsReticule;
   // reverse map: position-index → slot number (1-indexed). Every reticule that belongs to a slot
@@ -733,9 +728,10 @@ export const renderShipReticules = (
     // overlap test on the RAW position (toroidal-correct); only the draw folds.
     const overlaps = onFirstBeatDot
       ? true
-      : reticuleOverlapsAnyTarget(pos, targets, w, h, sightScale);
+      : reticuleOverlapsAnyTarget(pos, targets, w, h);
     const slot = slotByPosIndex[i];
-    paintAimDiscs(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha, overlaps, onFirstBeatDot, tutorialHighlight, slot, sightScale);
+    paintAimDiscs(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha, overlaps, onFirstBeatDot, tutorialHighlight, slot);
+    if (ship.bombActive && slot === 1) paintBombBlastPreview(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha);
   }
   // each slot's ring uses the softer proximity halo (>0 anywhere in the dot glow ramp) so the
   // player gets feedback the moment the reticule grazes the visible circle, not just on strict
@@ -749,7 +745,7 @@ export const renderShipReticules = (
   // probe pass: fold each stationary probe's reticule-proximity into the same per-slot
   // arrays the trajectory walk produced, so a parked gem drives the same lock + hum stack.
   const probeMerged = mergeProbeProximities(
-    trajectoryResult, hoverProbes, reticulesBySlot, w, h, sightScale,
+    trajectoryResult, hoverProbes, reticulesBySlot, w, h,
   );
   let zoneIntensity = 0;
   let anyHover = false;
@@ -777,7 +773,7 @@ export const renderShipReticules = (
     const hovering = proximity > 0 && ringPosIdx >= 0;
     // The hover-lock STATE MACHINE now runs in the sim (tickHoverLockState) so it's deterministic
     //   for replay; render only PAINTS the ring from the state the sim already set this frame.
-    paintHoverRingFromState(ringState, ctx, beatTime, beatGrid, w, h, sightScale);
+    paintHoverRingFromState(ringState, ctx, beatTime, beatGrid, w, h);
     if (hovering) anyHover = true;
     if (ringState.completionBeatTime !== null) {
       anyLocked = true;
@@ -828,9 +824,9 @@ export const renderShipReticules = (
   }
   const primaryReticuleDraw = wrapReticuleVec(primaryReticule, w, h);
   if (ARROW_ENABLED && arrowFade01 > 0) {
-    paintReticuleArrow(ctx, primaryReticuleDraw, lastArrowAngle, beatTime, beatGrid, arrowFade01, sightScale);
+    paintReticuleArrow(ctx, primaryReticuleDraw, lastArrowAngle, beatTime, beatGrid, arrowFade01);
   }
-  paintHoverPulse(ctx, primaryReticuleDraw, beatTime, beatGrid, hoverPulseFade01, sightScale, maxLiveTier);
+  paintHoverPulse(ctx, primaryReticuleDraw, beatTime, beatGrid, hoverPulseFade01, maxLiveTier);
   ctx.restore();
 };
 
@@ -850,12 +846,12 @@ export const tickHoverLockState = (
   sound: Sound | null, emit: boolean,
 ): void => {
   if (!ship.alive) return;
-  const { positions: reticulePositions, slotPositionIndices } = computeReticulePositions(ship, beatGrid, w, h, doubletime, superBoosted);
+  const { positions: reticulePositions, slotPositionIndices } = computeReticulePositions(ship, beatGrid, doubletime, superBoosted);
   while (state.hoverDotRings.length < slotPositionIndices.length) {
     state.hoverDotRings.push({ hoverStartBeatTime: null, completionBeatTime: null, zoneEnterBeatTime: null, fadeOutStartTime: null, lastRingCenter: null });
   }
   const apex = ship.pos;
-  const { sightScale, collisionRadiusOnBeat } = bulletSightGeometry(ship, superBoosted);
+  const collisionRadiusOnBeat = onBeatCollisionRadius(superBoosted);
   const primaryReticule = reticulePositions.length > 0 ? reticulePositions[0] : apex;
   const { center: aimCircleCenter, radius: aimCircleRadius } = computeAimCircle(ship, beatGrid);
   const frame = computeConeFrame(ship);
@@ -867,9 +863,9 @@ export const tickHoverLockState = (
     reticulesBySlot, aimCircleCenter, aimCircleRadius,
     trajectoryTracks: new Map(), doubletime, tutorialHighlight: false,
     hoverZoneEnterBySlot: state.hoverDotRings.map(r => r.zoneEnterBeatTime),
-    sightScale, collisionRadiusOnBeat,
+    collisionRadiusOnBeat,
   }, targets);
-  const probeMerged = mergeProbeProximities(trajectoryResult, hoverProbes, reticulesBySlot, w, h, sightScale);
+  const probeMerged = mergeProbeProximities(trajectoryResult, hoverProbes, reticulesBySlot, w, h);
   for (let slot = 0; slot < slotPositionIndices.length; slot++) {
     const proximity = probeMerged.slotProximities[slot] ?? 0;
     const winnerIdx = probeMerged.slotWinnerReticuleIdx[slot] ?? -1;
@@ -885,11 +881,11 @@ export const tickHoverLockState = (
 // smoothstep proximity ramp from "touching the probe" (1) out to PROBE_PROXIMITY_PAD past it (0).
 // Mirrors firstDotProximity01 in trajectoryPreview, but uses the probe's own radius so the lock
 // fires when the reticule grazes the visible gem rather than a fixed dot-size budget.
-const probeProximity01 = (retX: number, retY: number, px: number, py: number, probeRadius: number, sightScale: number): number => {
+const probeProximity01 = (retX: number, retY: number, px: number, py: number, probeRadius: number): number => {
   const dx = px - retX;
   const dy = py - retY;
   const dist = Math.hypot(dx, dy);
-  const overlapDist = sightRadius(sightScale) + probeRadius;
+  const overlapDist = BULLET_SIGHT_RADIUS_ON_BEAT + probeRadius;
   if (dist <= overlapDist) return 1;
   const outerDist = overlapDist + PROBE_PROXIMITY_PAD;
   if (dist >= outerDist) return 0;
@@ -904,7 +900,7 @@ const mergeProbeProximities = (
   base: { slotProximities: number[]; slotWithin75: boolean[]; slotWinnerReticuleIdx: number[] },
   probes: ReadonlyArray<ReticuleHoverProbe>,
   reticulesBySlot: Vec[][],
-  w: number, h: number, sightScale: number,
+  w: number, h: number,
 ): { slotProximities: number[]; slotWithin75: boolean[]; slotWinnerReticuleIdx: number[] } => {
   if (probes.length === 0) return base;
   const slotCount = reticulesBySlot.length;
@@ -920,7 +916,7 @@ const mergeProbeProximities = (
         const [dx, dy] = toroidalDelta(probe.pos.x - ret.x, probe.pos.y - ret.y, w, h);
         const px = ret.x + dx;
         const py = ret.y + dy;
-        const proximity = probeProximity01(ret.x, ret.y, px, py, probe.radius, sightScale);
+        const proximity = probeProximity01(ret.x, ret.y, px, py, probe.radius);
         if (proximity > slotProximities[slot]) {
           slotProximities[slot] = proximity;
           slotWinnerReticuleIdx[slot] = r;
@@ -1027,19 +1023,18 @@ const updateHoverRing = (
 const paintHoverRingFromState = (
   ring: { hoverStartBeatTime: number | null; completionBeatTime: number | null; fadeOutStartTime: number | null; lastRingCenter: Vec | null },
   ctx: CanvasRenderingContext2D, beatTime: number, beatGrid: number, w: number, h: number,
-  sightScale: number,
 ): void => {
   // lastRingCenter is stored in raw apex space (sim-owned); fold it for the draw.
   if (ring.fadeOutStartTime !== null) {
     if (ring.lastRingCenter !== null && ring.hoverStartBeatTime !== null) {
       const fadeT = Math.min(1, (beatTime - ring.fadeOutStartTime) / HOVER_DOT_FADEOUT_SEC);
       const elapsed = beatTime - ring.hoverStartBeatTime;
-      paintHoverDotRing(ctx, wrapReticuleVec(ring.lastRingCenter, w, h), elapsed, beatTime, beatGrid, sightScale, 1 - fadeT);
+      paintHoverDotRing(ctx, wrapReticuleVec(ring.lastRingCenter, w, h), elapsed, beatTime, beatGrid, 1 - fadeT);
     }
     return;
   }
   if (ring.hoverStartBeatTime !== null && ring.lastRingCenter !== null) {
     const elapsed = beatTime - ring.hoverStartBeatTime;
-    paintHoverDotRing(ctx, wrapReticuleVec(ring.lastRingCenter, w, h), elapsed, beatTime, beatGrid, sightScale);
+    paintHoverDotRing(ctx, wrapReticuleVec(ring.lastRingCenter, w, h), elapsed, beatTime, beatGrid);
   }
 };

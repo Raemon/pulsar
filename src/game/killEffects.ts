@@ -4,7 +4,7 @@ import { Alien } from "../Alien";
 import { AlienBullet } from "../AlienBullet";
 import { Comet } from "../Comet";
 import { Bullet } from "../Bullet";
-import { effectiveBulletSpeed } from "../ship/shipWeapons";
+import { shotRayDir } from "../ship/shipWeapons";
 import { Vec, nearestImageOf } from "../vec";
 import { ENTITY_CONFIG } from "./entityConfig";
 import { spawnGemFan, spawnBurstGemFan } from "../Gem";
@@ -311,13 +311,12 @@ const finishAsteroidKillCore = (
     combo: game.beatCombo,
     onBeat: isOnBeatHit,
     awayFrom: game.ship.pos,
-    // metalChunk lays two shards on the ship's actual prong-bullet rays (see
-    // split). Those rays bend with ship velocity (bullets inherit 0.4·vel), so
-    // it needs the live heading, velocity, and bullet speed to place the pair
-    // where a prong shot fired right now would truly thread both.
+    // metalChunk lays two shards on the ship's actual prong-shot rays (see
+    // split), which bend with ship velocity, so it takes the true ray a shot
+    // fired right now would fly to place the pair where a prong shot threads both.
     shipHeading: game.ship.heading,
     shipVel: game.ship.vel,
-    bulletSpeed: effectiveBulletSpeed(game.ship),
+    prongRayDir: (offset: number) => shotRayDir(game.ship, offset),
   });
   // sibling fragments share one beat-claim set so the two pieces target
   //   *different* beats — otherwise the player can only combo one of them

@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 43;
+export const REPLAY_FORMAT_VERSION = 44;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -19,6 +19,12 @@ export const REPLAY_FORMAT_VERSION = 43;
 //   citadels and the citadel's escape hole, enlarges the boss hemispheres and
 //   flings the boss's pieces faster, so a v42 recording re-sims differently
 //   from the level-10 boss on.
+// v44 rebuilds the bomb as a thrown mine: stock-sized shells at full muzzle
+//   speed with no inherited ship velocity, slowed by drag, bouncing off what
+//   they touch and blasting everything in range on a beat pulse. Laser and bomb
+//   strikes now share one pipeline, in which a blow too weak for an asteroid's
+//   armour glances off instead of counting as a crack. A v43 recording with
+//   the bomb, or a laser on armour, re-sims into a different run.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

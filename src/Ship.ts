@@ -96,7 +96,7 @@ export class Ship {
   bulletSpeed = 620;
   bulletLife = 0.85;
   // prong/rapid/pierce/radar/longshot persist for the run; shield is one-shot.
-  // prongCount stacks: each upgrade adds one more prong (and one more bullet).
+  // prongCount stacks: each upgrade adds one more prong (see prongOffsets for the fan).
   prongCount = 0;
   get prongActive() { return this.prongCount > 0; }
   rapidActive = false;
@@ -106,8 +106,8 @@ export class Ship {
   longshotActive = false;
   sideEnginesActive = false;
   lasershotActive = false;
-  // Bomb upgrade: bullets fly at half speed (so half range) but hit with twice
-  //   the radius, hitbox and damage. See BOMB_* in Bullet.ts / shipWeapons.ts.
+  // Bomb upgrade: shots become thrown mines that bounce, pulse on the beat and
+  //   blast everything in range. See game/bombShot.ts.
   bombActive = false;
   // Laser-shot charge state. Active while the player holds fire under the
   //   lasershot upgrade; release fires a beam dealing 1 + numChargedDots damage.

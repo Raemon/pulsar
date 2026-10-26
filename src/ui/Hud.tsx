@@ -44,7 +44,7 @@ export const Hud = () => (
       </div>
     </div>
     <div id="powerups">
-      <Powerup kind="prong" title="Prong — two-bullet spread">
+      <Powerup kind="prong" title="Prong — three-bullet spread">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 4 L7 11 L9 13 M17 4 L17 11 L15 13 M9 13 L15 13 M12 13 L12 21 M9 19 L15 19" />
         </svg>
@@ -87,7 +87,7 @@ export const Hud = () => (
           <path d="M2 12 L22 12 M19 9 L22 12 L19 15" />
         </svg>
       </Powerup>
-      <Powerup kind="bomb" title="Bomb — twice the size and damage, half the range">
+      <Powerup kind="bomb" title="Bomb — shots become mines that pulse on the beat and blast everything in range">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="14" r="7" />
           <path d="M15 8 L18 5 M18 5 L21 3 M18 5 L20 7" />

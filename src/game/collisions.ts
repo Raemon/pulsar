@@ -60,11 +60,15 @@ const isHitOnBeat = (game: Game, b: Bullet) => {
   return onBeat;
 };
 
+// A live shot that lands by touching its target. Bomb shells never do — they
+// bounce and detonate on the beat (bombShot.ts) — so every contact pass skips them.
+const hitsOnContact = (b: Bullet): boolean => b.life > 0 && !b.bomb;
+
 // single-hit targets (comets/canisters) share this shape; multi-hit targets bookkeep separately.
 type CollidableTarget = { collidesWith: (pos: { x: number; y: number }, r: number) => boolean };
 const findFirstHittingBullet = (bullets: Bullet[], target: CollidableTarget): Bullet | null => {
   for (const b of bullets) {
-    if (b.life <= 0) continue;
+    if (!hitsOnContact(b)) continue;
     if (target.collidesWith(b.pos, b.hitRadius())) return b;
   }
   return null;
@@ -161,7 +165,7 @@ const handleBulletAsteroidHits = (game: Game) => {
 // null|children lets the outer loop stay branchless about the survival/kill distinction.
 const hitAsteroidWithBullets = (game: Game, a: Asteroid): Asteroid[] | null => {
   for (const b of game.bullets) {
-    if (b.life <= 0) continue;
+    if (!hitsOnContact(b)) continue;
     // Citadel inner wall: a shot fired from within the escape hole lands even
     // while the shell is phased out, and bypasses the armour entirely — the
     // intended way to break the fortress open from inside.
@@ -252,7 +256,7 @@ export const handleAlienHits = (game: Game) => {
 // returns "should we drop this alien?" so the outer loop stays declarative.
 const tryKillAlienWithBullets = (game: Game, a: Alien): boolean => {
   for (const b of game.bullets) {
-    if (b.life <= 0) continue;
+    if (!hitsOnContact(b)) continue;
     if (!a.collidesWith(b.pos, b.hitRadius())) continue;
     consumeBullet(b);
     const onBeat = isHitOnBeat(game, b);
@@ -294,7 +298,7 @@ export const handleAlienBulletHits = (game: Game) => {
 const playerBulletShootsDownAlienBullet = (game: Game, ab: AlienBullet): boolean => {
   if (ab.isBoss) return false;
   for (const b of game.bullets) {
-    if (b.life <= 0) continue;
+    if (!hitsOnContact(b)) continue;
     const reach = b.hitRadius() + ab.radius;
     const [dx, dy] = toroidalDelta(b.pos.x - ab.pos.x, b.pos.y - ab.pos.y, game.w, game.h);
     if (Math.hypot(dx, dy) > reach) continue;
