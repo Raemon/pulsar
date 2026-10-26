@@ -25,7 +25,7 @@ export const REPLAY_FORMAT_VERSION = 45;
 //   strikes now share one pipeline, in which a blow too weak for an asteroid's
 //   armour glances off instead of counting as a crack. A v43 recording with
 //   the bomb, or a laser on armour, re-sims into a different run.
-// v45 resizes the metalChunk's wedges and squares off its superBassCrystal, so
+// v45 reshapes the metalChunk's wedges and squares off its superBassCrystal, so
 //   a v44 recording that broke a slab re-sims with different collisions.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
