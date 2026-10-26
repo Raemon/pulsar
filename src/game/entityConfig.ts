@@ -320,7 +320,7 @@ export const ENTITY_CONFIG = {
   // Metal chunk — a dense derelict slab of hull plate. Medium-sized but
   // extremely heavy (drifts in far slower than its band) and behind DR 8, so it
   // shrugs off everything short of a drift-tier-2+ shot or the super laser. The
-  // killing hit cleaves it into 2 slow triangular metalShard wedges and frees a
+  // killing hit cleaves it into 2 slow notched right-angle metalShard wedges and frees a
   // superBassCrystal (combat stats in ENTITY_STATS). Rare across display-levels 5-9, then a common obstacle after
   // the boss arc opens up.
   metalChunk: {
@@ -710,17 +710,16 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     damageReduction: 8,
     outlineSamples: 16,
   },
-  // Triangular wedge: each carries half the cube's area (an equilateral
-  // triangle of circumradius 37 ≈ half of the 60px-wide cube), so the pair reads
-  // as the block cleaved in two. 15 samples (a multiple of 3) so every corner
-  // lands on a sample.
+  // Half the cube, cut corner to corner, with a notch where the black square
+  // sat (see METAL_WEDGE_VERTS). Radius is the cube's 30px half-side × 1.4.
+  // The outline is ray-cast, so a dense sample count keeps the corners crisp.
   metalShard: {
     hp: 1,
     score: 250,
-    radius: 37,
+    radius: 42,
     hue: 210,
     damageReduction: 8,
-    outlineSamples: 15,
+    outlineSamples: 96,
   },
   // Unarmoured — it's the prize inside the slab, not another drift-shot wall.
   // Half the cube's width (cubeProfile's radius is the half-side). 16 samples

@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 45;
+export const REPLAY_FORMAT_VERSION = 46;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -27,6 +27,8 @@ export const REPLAY_FORMAT_VERSION = 45;
 //   the bomb, or a laser on armour, re-sims into a different run.
 // v45 resizes the metalChunk's wedges and squares off its superBassCrystal, so
 //   a v44 recording that broke a slab re-sims with different collisions.
+// v46 cuts the wedges as notched right-angle halves of the cube, so a v45
+//   recording that broke a slab re-sims with different collisions.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
