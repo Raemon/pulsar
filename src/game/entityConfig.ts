@@ -722,13 +722,14 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     outlineSamples: 96,
   },
   // Unarmoured — it's the prize inside the slab, not another drift-shot wall.
-  // Half the cube's width (cubeProfile's radius is the half-side). 16 samples
-  // (a multiple of 4) so the square corners stay sharp.
+  // 0.4 of the cube's width (cubeProfile's radius is the half-side); the
+  // metalShard notch is cut to match. 16 samples (a multiple of 4) so the
+  // square corners stay sharp.
   superBassCrystal: {
     hp: 3,
     score: 600,
-    radius: 15,
-    hue: 300,
+    radius: 12,
+    hue: 275,
     outlineSamples: 16,
   },
 

@@ -158,7 +158,7 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // wedges, each 1 HP but still behind the same DR 8 armour, and frees the
 // "superBassCrystal" that was sealed inside it.
 //
-// "superBassCrystal" is the slab's heart: a small solid-black square that pulses
+// "superBassCrystal" is the slab's heart: a small dark-purple square that pulses
 // square rings every 2 beats, alternating between two bass voices, and acts as a bass-echo
 // lightning source on those beats — an on-beat kill that lands on its pulse
 // arcs from it and pays its resonance bounty, exactly like a Bassteroid piece.
@@ -293,16 +293,18 @@ const traceRadialPolygon = (ctx: CanvasRenderingContext2D, radii: readonly numbe
 
 // A metalShard is the cube cleaved corner to corner, with half of the freed
 // square's footprint taken out of the middle of the cut face: two wedges and
-// the black square reassemble the cube. Vertices are in cube half-side units,
+// the purple square reassemble the cube. Vertices are in cube half-side units,
 // shifted so the origin sits inside the region that sees every edge, so the
-// radial outline / hitbox can ray-cast to the boundary without ambiguity.
+// radial outline / hitbox can ray-cast to the boundary without ambiguity
+// (holds while the notch stays under 0.75 half-sides).
+const METAL_WEDGE_NOTCH = entityStat("superBassCrystal", "small", "radius") / entityStat("metalChunk", "medium", "radius");
 const METAL_WEDGE_VERTS: ReadonlyArray<Vec> = [
   { x: -1.75, y: -0.25 },
   { x: 0.25, y: -0.25 },
   { x: 0.25, y: 1.75 },
-  { x: -0.25, y: 1.25 },
-  { x: -0.25, y: 0.25 },
-  { x: -1.25, y: 0.25 },
+  { x: METAL_WEDGE_NOTCH - 0.75, y: METAL_WEDGE_NOTCH + 0.75 },
+  { x: METAL_WEDGE_NOTCH - 0.75, y: 0.75 - METAL_WEDGE_NOTCH },
+  { x: -METAL_WEDGE_NOTCH - 0.75, y: 0.75 - METAL_WEDGE_NOTCH },
 ];
 // metalShard radius ÷ the cube half-side the wedge is cut from. Keeps the far
 // corners (1.77 half-sides out) inside hitTest's radius * 1.3 broad phase.
@@ -1800,7 +1802,7 @@ export class Asteroid {
     // down their own opaque body + rim, so skip the biolum halo / interior glow
     // / filament veins / nuclei cores that would otherwise make them "alive".
     // Metal hull is likewise inert plate: it paints its own opaque steel body,
-    // and the black square freed from it its own opaque void.
+    // and the purple square freed from it its own opaque body.
     const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
     // The fortress kinds lay down their own laminated armour body instead — the
     // soft membrane/filament pass would read organic under the plate bands, and
@@ -3393,15 +3395,15 @@ export class Asteroid {
     ctx.globalCompositeOperation = "source-over";
     this.traceOutline(ctx);
     const body = ctx.createLinearGradient(-R, -R, R, R);
-    body.addColorStop(0, `hsla(${H}, 8%, 4%, 1)`);
-    body.addColorStop(1, `hsla(${H}, 10%, 1%, 1)`);
+    body.addColorStop(0, `hsla(${H}, 45%, 17%, 1)`);
+    body.addColorStop(1, `hsla(${H + 8}, 50%, 7%, 1)`);
     ctx.fillStyle = body;
     ctx.fill();
     ctx.lineJoin = "miter";
     ctx.strokeStyle = `hsla(${H}, 10%, 0%, 1)`;
     ctx.lineWidth = 2.5;
     ctx.stroke();
-    ctx.strokeStyle = `hsla(${H}, 12%, 30%, 0.35)`;
+    ctx.strokeStyle = `hsla(${H}, 40%, 45%, 0.4)`;
     ctx.lineWidth = 0.8;
     this.traceOutline(ctx, 0.94);
     ctx.stroke();
@@ -5939,7 +5941,7 @@ export class Asteroid {
 
     // Cathedral pieces are dead derelict stone — blit opaque like a solid plate
     // so the rock sits against the starfield instead of glowing through it.
-    // Metal hull and its black square are the same: drawn opaque, not glowing through.
+    // Metal hull and its purple square are the same: drawn opaque, not glowing through.
     const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
     ctx.globalCompositeOperation = isArchitectural ? "source-over" : "lighter";
 
@@ -6035,7 +6037,7 @@ export class Asteroid {
     ctx.restore();
   }
 
-  // Live pulse over the baked black square, all in square shapes so the void
+  // Live pulse over the baked purple square, all in square shapes so the void
   // keeps its edges (additive). The rim brightens through the 2-beat interval
   // as beatPhase climbs — the pre-beat warm-up — then the pulse flares it and
   // throws square soundwave rings off the faces that ride haloEcho outward.
@@ -6050,7 +6052,7 @@ export class Asteroid {
     ctx.lineJoin = "miter";
     const square = (half: number) => ctx.strokeRect(-half, -half, half * 2, half * 2);
     ctx.lineWidth = 1 + 1.5 * flash;
-    ctx.strokeStyle = `hsla(${H}, 18%, ${40 + 45 * flash}%, ${0.15 + 0.35 * warm + 0.5 * flash})`;
+    ctx.strokeStyle = `hsla(${H}, 55%, ${45 + 40 * flash}%, ${0.15 + 0.35 * warm + 0.5 * flash})`;
     square(R);
     if (this.haloEcho > 0.001) {
       const age = 1 - this.haloEcho;
@@ -6059,7 +6061,7 @@ export class Asteroid {
         const a = Math.min(1, age + r * 0.18);
         const alpha = this.haloEcho * (1 - r * 0.45) * 0.7;
         if (alpha < 0.02) continue;
-        ctx.strokeStyle = `hsla(${H}, 15%, ${70 + 20 * flash}%, ${alpha})`;
+        ctx.strokeStyle = `hsla(${H}, 50%, ${70 + 20 * flash}%, ${alpha})`;
         square(R * (1.08 + 1.8 * a));
       }
     }
