@@ -1,5 +1,25 @@
 [
   {
+    "id": "2026-10-26-5ec47ea",
+    "date": "2026-10-26",
+    "title": "Metal shard wedges now have a notched right-angle shape",
+    "sections": [
+      {
+        "heading": "Changed",
+        "items": [
+          "Metal shards (fragments from destroyed metal cubes) now have a notched right-angle wedge shape instead of a triangular one.",
+          "Metal shards are slightly larger, making them a bit easier to see and hit.",
+          "Old replays that include metal shard collisions will re-simulate differently due to the shape change."
+        ]
+      }
+    ],
+    "commits": [
+      "5ec47ea",
+      "5547e32",
+      "f693541"
+    ]
+  },
+  {
     "id": "2026-10-26-677a8f4",
     "date": "2026-10-26",
     "title": "Prong fires triple volley; metal slab gets new crystal look",
