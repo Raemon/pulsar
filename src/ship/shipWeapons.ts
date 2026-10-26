@@ -10,8 +10,9 @@ import { BEAT_GRID } from "../game/rhythmConstants";
 // (±half a step off the heading) — see Asteroid.split.
 export const PRONG_ANGLE_STEP = Math.PI / 6;
 
-// prongCount n yields n+1 shots fanned symmetrically about the heading (centred on the front).
-// count 0 → [0]; 1 → ±15°; 2 → -30,0,+30; 3 → ±15,±45; 11 → full ring every 30°.
+// prongCount n yields n+1 shots fanned symmetrically about the heading (centred on the front),
+// plus a straight-ahead shot whenever that fan has no centre prong of its own.
+// count 0 → [0]; 1 → ±15,0; 2 → -30,0,+30; 3 → ±15,±45,0; 11 → full ring every 30°, plus 0.
 //
 // INVARIANT: a weapon's fire loop and its reticule must iterate the SAME fan —
 // every entry fires a shot AND draws an aim glyph. Don't compute a single aim
@@ -21,7 +22,8 @@ export const PRONG_ANGLE_STEP = Math.PI / 6;
 export const prongOffsets = (prongCount: number): number[] => {
   const shots = prongCount + 1;
   const start = -((shots - 1) / 2) * PRONG_ANGLE_STEP;
-  return Array.from({ length: shots }, (_, i) => start + i * PRONG_ANGLE_STEP);
+  const fan = Array.from({ length: shots }, (_, i) => start + i * PRONG_ANGLE_STEP);
+  return shots % 2 === 0 ? [...fan, 0] : fan;
 };
 
 // pierce extends bullet lifetime so the punch-through shot also reaches farther,
@@ -123,7 +125,7 @@ const launchBullet = (ship: Ship, headingOffset: number): Bullet => {
   return bullet;
 };
 
-// single fire event yields prongCount+1 bullets; prong must share its on-beat flag across all.
+// single fire event yields one bullet per prongOffsets entry; prong must share its on-beat flag across all.
 export const fireBullets = (ship: Ship, bullets: Bullet[]) => {
   for (const offset of prongOffsets(ship.prongCount)) bullets.push(launchBullet(ship, offset));
 };

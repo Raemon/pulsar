@@ -44,7 +44,7 @@ export const Hud = () => (
       </div>
     </div>
     <div id="powerups">
-      <Powerup kind="prong" title="Prong — two-bullet spread">
+      <Powerup kind="prong" title="Prong — three-bullet spread">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 4 L7 11 L9 13 M17 4 L17 11 L15 13 M9 13 L15 13 M12 13 L12 21 M9 19 L15 19" />
         </svg>

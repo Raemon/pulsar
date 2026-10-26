@@ -138,7 +138,7 @@ export const OBJECTS: GameObject[] = [
     actions: [
       // No unique sound — it's still fireBeat — but the visual difference
       // earns its own row so the page covers the prong variant explicitly.
-      { verb: "fires double volley", sound: "fireBeat", trigger: beat(1) },
+      { verb: "fires triple volley", sound: "fireBeat", trigger: beat(1) },
     ],
   },
 

@@ -280,7 +280,7 @@ const computeReticulePosition = (ship: Ship, beatGrid: number, headingOffset: nu
 const reticuleSlotCount = (ship: Ship, beatGrid: number, superBoosted: boolean): number =>
   ship.bombActive ? BOMB_SIGHT_SLOTS : Math.max(1, Math.floor(shotLife(ship, superBoosted) / beatGrid));
 
-// prong fans the aim into prongCount+1 angles; doubletime adds a half-beat preview at
+// prong fans the aim into one angle per prongOffsets entry; doubletime adds a half-beat preview at
 // half distance (not for a bomb, which only pulses on whole beats); integer-k reticules
 // mark every beat-slot the bullet actually crosses
 // (t = beatGrid*k < life), so the count adapts to longshot/pierce/superBoosted range and to
