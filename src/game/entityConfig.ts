@@ -710,24 +710,27 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     damageReduction: 8,
     outlineSamples: 16,
   },
-  // Triangular wedge: a triangle covers far less of its circumcircle than a
-  // cube, so it runs a larger radius to keep the parent's mass on screen. 15
-  // samples (a multiple of 3) so every corner lands on a sample.
+  // Triangular wedge: each carries half the cube's area (an equilateral
+  // triangle of circumradius 37 ≈ half of the 60px-wide cube), so the pair reads
+  // as the block cleaved in two. 15 samples (a multiple of 3) so every corner
+  // lands on a sample.
   metalShard: {
     hp: 1,
     score: 250,
-    radius: 22,
+    radius: 37,
     hue: 210,
     damageReduction: 8,
     outlineSamples: 15,
   },
   // Unarmoured — it's the prize inside the slab, not another drift-shot wall.
+  // Half the cube's width (cubeProfile's radius is the half-side). 16 samples
+  // (a multiple of 4) so the square corners stay sharp.
   superBassCrystal: {
     hp: 3,
     score: 600,
-    radius: 18,
+    radius: 15,
     hue: 300,
-    outlineSamples: 7,
+    outlineSamples: 16,
   },
 
   glassPrison: {
