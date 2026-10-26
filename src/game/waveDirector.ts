@@ -10,6 +10,7 @@ import { BEAT_GRID } from "./rhythmConstants";
 import { stageEntrance, audiblePos } from "./entrance";
 import { newWaveEventSchedule, maybeSchedule, scheduleAt } from "./waveEvents";
 import { startShockwave } from "./shockwave";
+import { startSlowMo } from "./slowMo";
 import { emitCrackParticles } from "./particleBursts";
 import { alignVelocityToRhythm, BeatClaimSet, newBeatClaimSet } from "./rhythmTrajectory";
 import { citadelCycleLen, citadelFadeLen, superBassInterval } from "./bassClock";
@@ -597,6 +598,14 @@ const rollHeadlineEvents = (game: Game) => {
       baseChance: CFG.shockwave.chancePerWave + bonus,
       fire: () => {
         maybeSchedule(game.waveEvents, 1, CFG.shockwave.spawnWindow, () => startShockwave(game));
+        return true;
+      },
+    },
+    {
+      gate: game.wave >= CFG.slowMo.firstWave,
+      baseChance: CFG.slowMo.chancePerWave + bonus,
+      fire: () => {
+        maybeSchedule(game.waveEvents, 1, CFG.slowMo.spawnWindow, () => startSlowMo(game));
         return true;
       },
     },

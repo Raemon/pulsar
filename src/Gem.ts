@@ -14,8 +14,8 @@ export const GEM_UPGRADE_CHANCE = ENTITY_CONFIG.asteroidWithGem.upgradeChance;
 export const GEM_REVEAL_SCORE = ENTITY_CONFIG.asteroidWithGem.revealScore;
 
 // A standalone target left behind by a "asteroidWithGem" asteroid's death — a
-// jagged gold gem: a faceted diamond-cut crystal, half brilliant shine and half
-// rough chipped/gritty stone, so it reads as valuable-but-hazardous rather than
+// jagged obsidian gem: a black faceted diamond-cut crystal, half glassy and
+// half rough chipped/gritty stone, with molten gold glowing through its cracks, so it reads as valuable-but-hazardous rather than
 // a clean pickup you'd obviously scoop up. It's a rhythm target (shoot on-beat
 // to crack it open), so the dangerous-looking rough edges sell "shoot me, don't
 // touch me". It drifts where the rock died, inheriting a fraction of the
@@ -145,7 +145,7 @@ export class Gem {
     // rather than the whole gem glowing — low-alpha so it never reads as a
     // pickup halo.
     ctx.globalCompositeOperation = "lighter";
-    ctx.globalAlpha = 0.3 * glint * fade;
+    ctx.globalAlpha = 0.45 * glint * fade;
     ctx.drawImage(this.veinSprite!, -this.spriteHalf, -this.spriteHalf);
     ctx.globalAlpha = 1;
 
@@ -244,9 +244,9 @@ export class Gem {
     for (const [x, y] of pts) { sx += x; sy += y; }
     const cx = sx / pts.length, cy = sy / pts.length;
     const lit = Math.max(0, Math.min(1, this.litAt(cx, cy, R) + bias));
-    // Deep amber floors on the shadow facets → near-white-gold on the lit ones.
-    const l0 = 12 + lit * 42, l1 = 22 + lit * 62;
-    const s = 94 - lit * 38; // rich gold in shadow, pale/bright where hit
+    // Near-black obsidian: lit facets only lift to a glassy charcoal sheen.
+    const l0 = 3 + lit * 9, l1 = 6 + lit * 18;
+    const s = 14;
     const g = c.createLinearGradient(-R * 0.5, -R * 0.6, R * 0.5, R * 0.6);
     g.addColorStop(0, `hsl(${H + 8}, ${s}%, ${l1}%)`);
     g.addColorStop(1, `hsl(${H - 8}, ${s}%, ${l0}%)`);
@@ -270,13 +270,12 @@ export class Gem {
     c.translate(half, half);
     const R = this.radius;
 
-    // Base gem fill: a rich gold radial with an offset upper-left hot-spot, so
-    // the whole crystal reads as a lit metallic body before the facets carve
-    // light and shadow into it.
+    // Base gem fill: black glass with a faint upper-left sheen, so the crystal
+    // reads as a lit solid before the facets carve light and shadow into it.
     const body = c.createRadialGradient(-R * 0.35, -R * 0.5, R * 0.1, 0, 0, R * 1.5);
-    body.addColorStop(0, `hsl(${H + 8}, 90%, 62%)`);
-    body.addColorStop(0.55, `hsl(${H - 2}, 82%, 40%)`);
-    body.addColorStop(1, `hsl(${H - 14}, 70%, 16%)`);
+    body.addColorStop(0, `hsl(${H}, 12%, 20%)`);
+    body.addColorStop(0.55, `hsl(${H}, 10%, 8%)`);
+    body.addColorStop(1, `hsl(${H}, 8%, 2%)`);
     c.fillStyle = body;
     rimPath(c);
     c.fill();
@@ -298,7 +297,7 @@ export class Gem {
     rimPath(c);
     c.stroke();
     c.lineWidth = 1;
-    c.strokeStyle = `hsla(${H + 12}, 90%, 82%, 0.85)`;
+    c.strokeStyle = `hsla(${H}, 18%, 48%, 0.6)`;
     rimPath(c);
     c.stroke();
     return cv;
@@ -351,8 +350,8 @@ export class Gem {
     // (a mirror flat surface reflecting the sky), edged crisply.
     const tl = this.litAt(0, -R * 0.5, R);
     const tg = c.createLinearGradient(tbl[0][0], tbl[0][1], tbl[2][0], tbl[2][1]);
-    tg.addColorStop(0, `hsl(${H + 14}, 95%, ${72 + tl * 22}%)`);
-    tg.addColorStop(1, `hsl(${H + 2}, 88%, ${52 + tl * 20}%)`);
+    tg.addColorStop(0, `hsl(${H}, 12%, ${16 + tl * 22}%)`);
+    tg.addColorStop(1, `hsl(${H}, 10%, ${6 + tl * 10}%)`);
     c.fillStyle = tg;
     c.beginPath();
     c.moveTo(tbl[0][0], tbl[0][1]);
@@ -366,7 +365,7 @@ export class Gem {
     c.lineWidth = 0.7;
     const seam = (a: [number, number], b: [number, number]) => {
       const lit = this.litAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, R);
-      c.strokeStyle = `hsla(${H + 12}, 95%, ${58 + lit * 34}%, ${0.28 + lit * 0.5})`;
+      c.strokeStyle = `hsla(${H}, 14%, ${30 + lit * 35}%, ${0.18 + lit * 0.4})`;
       c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
     };
     for (const pt of lower) seam(keel, pt);          // pavilion mains
@@ -384,8 +383,8 @@ export class Gem {
       if ((x * 0.6 + y) < R * 0.25 && i % 4 !== 0) continue; // bias to shadow side
       const gr = R * (0.04 + 0.06 * ((i * 0.37) % 1));
       c.fillStyle = i % 2 === 0
-        ? `hsla(${H - 18}, 45%, 12%, 0.5)`
-        : `hsla(${H + 12}, 65%, 70%, 0.35)`;
+        ? `hsla(${H}, 8%, 1%, 0.6)`
+        : `hsla(${H}, 10%, 40%, 0.25)`;
       c.beginPath(); c.arc(x, y, gr, 0, TAU); c.fill();
     }
     // Hard dark chip-gouges (sharp notches) on the rough side.
@@ -401,10 +400,12 @@ export class Gem {
       c.stroke();
     }
 
-    // Brilliant specular: a hard bright chip on the table's up-left corner + a
+    this.paintCracks(c, R, H, 1);
+
+    // Glassy specular: a hard bright chip on the table's up-left corner + a
     // couple of pinpoint sparkles at lit facet junctions — the shine that says
     // "gem", concentrated where the light hits.
-    c.fillStyle = "hsla(52, 100%, 97%, 0.95)";
+    c.fillStyle = "hsla(220, 30%, 92%, 0.7)";
     c.beginPath();
     c.moveTo(tbl[0][0], tbl[0][1]);
     c.lineTo(tbl[0][0] + R * 0.22, tbl[0][1] + R * 0.05);
@@ -416,10 +417,55 @@ export class Gem {
       [R * 0.15, -R * 0.05, R * 0.06],
     ] as Array<[number, number, number]>) {
       const g = c.createRadialGradient(sx, sy, 0, sx, sy, sr);
-      g.addColorStop(0, "hsla(52, 100%, 98%, 0.95)");
-      g.addColorStop(1, "hsla(50, 100%, 90%, 0)");
+      g.addColorStop(0, "hsla(220, 30%, 96%, 0.6)");
+      g.addColorStop(1, "hsla(220, 30%, 90%, 0)");
       c.fillStyle = g;
       c.beginPath(); c.arc(sx, sy, sr, 0, TAU); c.fill();
+    }
+  }
+
+  // Jagged fissures through the obsidian, generated once per gem so the bake
+  // and the glint overlay trace the same cracks.
+  private cracks: Array<Array<[number, number]>> = [];
+  private buildCracks(R: number) {
+    this.cracks = [];
+    const n = 3 + Math.floor(crand(0, 2));
+    for (let k = 0; k < n; k++) {
+      let ang = crand(0, TAU);
+      let x = Math.cos(ang) * R * crand(0, 0.35), y = Math.sin(ang) * R * crand(0, 0.35);
+      const pts: Array<[number, number]> = [[x, y]];
+      const steps = 4 + Math.floor(crand(0, 3));
+      for (let i = 0; i < steps; i++) {
+        ang += crand(-0.9, 0.9);
+        const step = R * crand(0.14, 0.28);
+        x += Math.cos(ang) * step; y += Math.sin(ang) * step;
+        pts.push([x, y]);
+      }
+      this.cracks.push(pts);
+    }
+  }
+
+  // Molten gold peeking through: a soft amber bleed hugging each fissure and a
+  // hairline hot core. `gain` scales it so the glint pass can re-trace brighter.
+  private paintCracks(c: CanvasRenderingContext2D, R: number, H: number, gain: number) {
+    if (this.cracks.length === 0) this.buildCracks(R);
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    const trace = (pts: Array<[number, number]>) => {
+      c.beginPath();
+      c.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
+    };
+    for (const pts of this.cracks) {
+      c.strokeStyle = `hsla(${H - 6}, 100%, 45%, ${0.3 * gain})`;
+      c.lineWidth = R * 0.18;
+      trace(pts); c.stroke();
+      c.strokeStyle = `hsla(${H}, 100%, 55%, ${0.75 * gain})`;
+      c.lineWidth = R * 0.07;
+      trace(pts); c.stroke();
+      c.strokeStyle = `hsla(${H + 8}, 100%, 82%, ${0.9 * gain})`;
+      c.lineWidth = R * 0.025;
+      trace(pts); c.stroke();
     }
   }
 
@@ -438,25 +484,17 @@ export class Gem {
     rimPath(c);
     c.clip();
     const R = this.radius, H = this.hue;
-    const culet = this.culet, tbl = this.tablePts, hull = this.hullPts;
-    // Bright seams along pavilion mains + table rim — the sparkle skeleton.
-    c.lineWidth = 0.9;
-    c.lineCap = "round";
-    const seam = (a: [number, number], b: [number, number]) => {
-      const lit = this.litAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, R);
-      c.strokeStyle = `hsla(${H + 12}, 95%, ${68 + lit * 28}%, ${0.15 + lit * 0.6})`;
-      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); c.stroke();
-    };
-    for (let i = 2; i <= 8; i++) seam(hull[i], culet);
-    for (let i = 0; i < tbl.length; i++) seam(tbl[i], tbl[(i + 1) % tbl.length]);
-    // Sparkle pinpoints on the lit table corner + up-left girdle.
+    const tbl = this.tablePts;
+    // The gold in the cracks breathes as the gem turns.
+    this.paintCracks(c, R, H, 1);
+    // Faint glassy sparkle pinpoints on the lit table corner + up-left girdle.
     for (const [sx, sy, sr] of [
       [tbl[0][0], tbl[0][1], R * 0.16],
       [-R * 0.5, -R * 0.2, R * 0.11],
     ] as Array<[number, number, number]>) {
       const g = c.createRadialGradient(sx, sy, 0, sx, sy, sr);
-      g.addColorStop(0, "hsla(52, 100%, 98%, 0.95)");
-      g.addColorStop(1, "hsla(50, 100%, 90%, 0)");
+      g.addColorStop(0, "hsla(220, 30%, 96%, 0.4)");
+      g.addColorStop(1, "hsla(220, 30%, 90%, 0)");
       c.fillStyle = g;
       c.beginPath(); c.arc(sx, sy, sr, 0, TAU); c.fill();
     }

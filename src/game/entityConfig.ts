@@ -243,6 +243,13 @@ export const ENTITY_CONFIG = {
     shipGrace: 0.6,
   },
 
+  // The pulsar's slow-mo event: rolled exactly like the shockwave.
+  slowMo: {
+    firstWave: 4,
+    chancePerWave: 1 / 15,
+    spawnWindow: [6, 22] as [number, number],
+  },
+
   // firstWave guarantees one gem; later waves roll per spawn.
   asteroidWithGem: {
     firstWave: 1,
@@ -256,7 +263,7 @@ export const ENTITY_CONFIG = {
     // probability that a cracked gem actually contains an upgrade. The rest of
     // the time it pays out revealScore — same structure as comet kills, so the
     // player reads it as a "consolation jackpot" rather than a miss.
-    upgradeChance: 0.4,
+    upgradeChance: 0.4 / 3,
     revealScore: 250,
   },
 

@@ -1,3 +1,5 @@
+import type { Game } from "../Game";
+
 // Slow-mo slows the whole world — asteroids, comets, aliens, bullets,
 // beatTime and bass audio all step at SLOW_MO_FACTOR speed. The player
 // ship and the slowMoTimer itself keep wall-clock dt so the player's
@@ -33,4 +35,12 @@ export const musicDtForFrame = (dt: number, slowMoTimer: number): number => {
   const slowness = Math.min(rampIn, rampOut);
   const factor = 1 + (SLOW_MO_FACTOR - 1) * slowness;
   return dt * factor;
+};
+
+// Natural slow-mo event: the pulsar sends out a ripple on each beat of the
+// ramp-in so the player sees (and hears) the beats stretch out before the
+// world settles into the slow tempo.
+export const startSlowMo = (game: Game) => {
+  game.slowMoTimer = SLOW_MO_DURATION;
+  game.pulsar.startSlowMoRipples();
 };

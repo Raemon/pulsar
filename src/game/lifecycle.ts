@@ -179,6 +179,7 @@ export const showTitle = (game: Game) => {
   game.bossBeams = [];
   game.waveEvents = newWaveEventSchedule();
   game.slowMoTimer = 0;
+  game.pulsar.clearSlowMoRipples();
   game.sound.bgBeatIntensity = 0;
   game.pulsar.setBossPlanetState("idle");
   spawnTitleDecorativeAsteroids(game);
@@ -560,6 +561,7 @@ const resetRunTimers = (game: Game) => {
   game.streakLastBeatCenter = -1;
   game.bestStreakThisWave = 0;
   game.slowMoTimer = 0;
+  game.pulsar.clearSlowMoRipples();
   game.hasLostComboEver = false;
   game.pilotLog1Unlocked = false;
   game.pilotLog3Unlocked = false;

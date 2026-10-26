@@ -20,7 +20,7 @@ import {
 } from "./waveDirector";
 import { startShockwave } from "./shockwave";
 import { FIRST_BONUS_LIFE_SCORE } from "./bonusLife";
-import { SLOW_MO_DURATION } from "./slowMo";
+import { startSlowMo } from "./slowMo";
 
 // beta panel exposes every spawnable + powerup so a tester can dial in any combination
 //   for a one-off wave, bypassing the normal random wave director.
@@ -53,7 +53,7 @@ const applyPowerup = (game: Game, kind: PowerupKind) => {
   else if (kind === "sideEngines") game.ship.sideEnginesActive = true;
   else if (kind === "lasershot") game.ship.lasershotActive = true;
   else if (kind === "bomb") game.ship.bombActive = true;
-  else if (kind === "slow") game.slowMoTimer = SLOW_MO_DURATION;
+  else if (kind === "slow") startSlowMo(game);
 };
 
 // Each registry below is keyed by the canonical union type, so adding a new

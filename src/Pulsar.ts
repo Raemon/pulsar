@@ -187,6 +187,10 @@ export class Pulsar {
   // transition — the game keys the charge sound off it so audio starts with
   // the rumble, not when the event was scheduled.
   shockVibrateJustStarted = false;
+  // Slow-mo heralds: one subtle distortion ripple per beat while the tempo
+  // eases down, so successive rings visibly space out as the beat slows.
+  private slowRippleBeatsLeft = 0;
+  private slowRipples: Array<{ age: number; x: number; y: number }> = [];
   // Tuning constants. The long vibrate-then-flash beat is the tension build —
   // the bass-drop white-flash detonation is the payoff.
   static readonly SHOCK_VIBRATE_DURATION = 12.0;
@@ -313,6 +317,15 @@ export class Pulsar {
     this.shockSpinExtra = 0;
   }
 
+  startSlowMoRipples() {
+    this.slowRippleBeatsLeft = Pulsar.SLOW_RIPPLE_BEATS;
+  }
+
+  clearSlowMoRipples() {
+    this.slowRippleBeatsLeft = 0;
+    this.slowRipples = [];
+  }
+
   // True iff the shockwave has reached its flash apex — game uses this to
   // gate other behaviours (e.g. additive screen brightness).
   shockwaveActive(): boolean {
@@ -342,6 +355,8 @@ export class Pulsar {
 
     this.shockJustFired = false;
     this.shockVibrateJustStarted = false;
+    for (const r of this.slowRipples) r.age += dt;
+    this.slowRipples = this.slowRipples.filter((r) => r.age < Pulsar.SLOW_RIPPLE_LIFE);
     if (this.shockPhase !== "idle" && this.shockPhase !== "pending") {
       this.shockTimer += dt;
       // Spin-up: integrate an accelerating angular velocity so the pulsar
@@ -408,6 +423,11 @@ export class Pulsar {
     if (idx > this.lastBeatIndex) {
       this.lastBeatIndex = idx;
       this.beat();
+      if (this.slowRippleBeatsLeft > 0) {
+        this.slowRippleBeatsLeft--;
+        const { x, y } = this.pulsarPos();
+        this.slowRipples.push({ age: 0, x, y });
+      }
       if (this.shockPhase === "pending") {
         this.shockPhase = "vibrating";
         this.shockTimer = 0;
@@ -870,6 +890,7 @@ export class Pulsar {
     if (tombRingProgress > 0 && !this.hiddenBossActs.has(2)) this.renderNearSatellites(ctx, tombRingProgress);
 
     this.renderShockwave(ctx);
+    this.renderSlowMoRipples(ctx);
   }
 
   // Draw a single background planet on top of the pulsar. The disc itself is
@@ -1219,6 +1240,51 @@ export class Pulsar {
       ctx.stroke();
     }
 
+    ctx.restore();
+  }
+
+  // Covers the ~3.5s slow-mo ramp-in at 0.5s→0.67s beats.
+  private static readonly SLOW_RIPPLE_BEATS = 6;
+  private static readonly SLOW_RIPPLE_LIFE = 2.2;
+
+  // Heat-haze ripples, deliberately quieter than the shockwave: no flash, a
+  // thin pale-violet crest wobbling around its radius with a dark trough
+  // just inside it, so it reads as space bending rather than a blast.
+  private renderSlowMoRipples(ctx: CanvasRenderingContext2D) {
+    if (this.slowRipples.length === 0) return;
+    const maxR = Math.hypot(this.w, this.h) * 0.6;
+    const SEGS = 72;
+    const trace = (x: number, y: number, r: number, phase: number) => {
+      ctx.beginPath();
+      for (let i = 0; i <= SEGS; i++) {
+        const a = (i / SEGS) * TAU;
+        const rr = r * (1 + 0.012 * Math.sin(a * 9 + phase) + 0.008 * Math.sin(a * 5 - phase * 1.3));
+        const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+    };
+    ctx.save();
+    for (const rip of this.slowRipples) {
+      const t = rip.age / Pulsar.SLOW_RIPPLE_LIFE;
+      const r = (1 - Math.pow(1 - t, 1.6)) * maxR + 8;
+      const alpha = Math.sin(Math.min(1, t * 4) * Math.PI * 0.5) * (1 - t);
+      const phase = rip.age * 4;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = `rgba(4, 0, 18, ${0.22 * alpha})`;
+      ctx.lineWidth = 7;
+      trace(rip.x, rip.y, Math.max(1, r - 6), phase);
+      ctx.stroke();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `hsla(265, 70%, 78%, ${0.16 * alpha})`;
+      ctx.lineWidth = 4;
+      trace(rip.x, rip.y, r, phase);
+      ctx.stroke();
+      ctx.strokeStyle = `hsla(255, 60%, 92%, ${0.3 * alpha})`;
+      ctx.lineWidth = 1;
+      trace(rip.x, rip.y, r + 1.5, phase);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
