@@ -5416,7 +5416,7 @@ export class Asteroid {
     // that barely drift and keep the parent's DR 8, and frees the
     // superBassCrystal sealed at its heart. The slab's job is to teach the drift
     // shot, so the wedges land on the ship's ACTUAL prong-bullet rays: the
-    // first prong pair fans ±half a prong step off the heading, but a bullet
+    // first prong pair fans ±one prong step off the heading, but a bullet
     // also inherits some ship velocity, so at speed the rays bend off the pure
     // heading; the caller hands us the true rays (shipWeapons.shotRayDir) and
     // we drop a wedge on each at the slab's distance. A player who owns prong and fires right
@@ -5442,7 +5442,7 @@ export class Asteroid {
         return c;
       };
       const fragmentList: Asteroid[] = [];
-      const half = PRONG_ANGLE_STEP / 2; // first prong pair sits at heading ± this
+      const pairOffset = PRONG_ANGLE_STEP; // first prong pair sits at heading ± this
       // Ship→slab direction + distance, torus-correct. When we don't have the
       // ship pose (shockwave-driven split), fall back to a plain radial burst.
       const ship = opts?.awayFrom;
@@ -5454,7 +5454,7 @@ export class Asteroid {
         // Two wedges, one on each true prong ray, at the slab's distance — the
         // pair sits right where the slab was, so the prong shot threads both.
         for (const sign of [-1, 1] as const) {
-          const d = prongRayDir(sign * half);
+          const d = prongRayDir(sign * pairOffset);
           const pos = { x: ship.x + d.x * dist, y: ship.y + d.y * dist };
           wrapMut(pos, WORLD_W, WORLD_H);
           // Drift roughly outward along the ray so alignment nudges them little.

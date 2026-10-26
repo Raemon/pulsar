@@ -4,15 +4,13 @@ import { Bullet, BOMB_DRAG } from "../Bullet";
 import { PowerupKind } from "../Canister";
 import { BEAT_GRID } from "../game/rhythmConstants";
 
-// each prong upgrade adds one more bullet, every prong 30° from its neighbour, wrapping
-// into a full ring at 12 shots (12 × 30° = 360°) and continuing to overlap beyond that.
-// Exported so metalChunk can lay two shards on the first-tier prong pair's rays
-// (±half a step off the heading) — see Asteroid.split.
-export const PRONG_ANGLE_STEP = Math.PI / 6;
+// every prong sits 15° from its neighbour. Exported so metalChunk can lay two shards
+// on the first-tier prong pair's rays (±one step off the heading) — see Asteroid.split.
+export const PRONG_ANGLE_STEP = Math.PI / 12;
 
-// prongCount n yields n+1 shots fanned symmetrically about the heading (centred on the front),
-// plus a straight-ahead shot whenever that fan has no centre prong of its own.
-// count 0 → [0]; 1 → ±15,0; 2 → -30,0,+30; 3 → ±15,±45,0; 11 → full ring every 30°, plus 0.
+// prongCount n yields a straight-ahead shot plus n pairs, pair k at ±k steps:
+// count 0 → [0]; 1 → 0,±15; 2 → 0,±15,±30; 3 → 0,±15,±30,±45. The fan closes
+// into a full ring at 12 pairs and overlaps beyond that.
 //
 // INVARIANT: a weapon's fire loop and its reticule must iterate the SAME fan —
 // every entry fires a shot AND draws an aim glyph. Don't compute a single aim
@@ -20,10 +18,8 @@ export const PRONG_ANGLE_STEP = Math.PI / 6;
 // the fire code and have both consume it (see laserAimFan in laserShot.ts;
 // the bullet path fans inside computeReticulePositions).
 export const prongOffsets = (prongCount: number): number[] => {
-  const shots = prongCount + 1;
-  const start = -((shots - 1) / 2) * PRONG_ANGLE_STEP;
-  const fan = Array.from({ length: shots }, (_, i) => start + i * PRONG_ANGLE_STEP);
-  return shots % 2 === 0 ? [...fan, 0] : fan;
+  const shots = 2 * prongCount + 1;
+  return Array.from({ length: shots }, (_, i) => (i - prongCount) * PRONG_ANGLE_STEP);
 };
 
 // pierce extends bullet lifetime so the punch-through shot also reaches farther,
