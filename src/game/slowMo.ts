@@ -41,6 +41,8 @@ export const musicDtForFrame = (dt: number, slowMoTimer: number): number => {
 // ramp-in so the player sees (and hears) the beats stretch out before the
 // world settles into the slow tempo.
 export const startSlowMo = (game: Game) => {
+  // restarting mid-effect would snap the tempo back to 1.0 and re-ramp.
+  if (game.slowMoTimer > 0) return;
   game.slowMoTimer = SLOW_MO_DURATION;
   game.pulsar.startSlowMoRipples();
 };

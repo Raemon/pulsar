@@ -345,6 +345,7 @@ const startBetaWave = (game: Game) => {
   game.maxComboThisWave = 0;
   game.firedOffBeatSinceLastBeat = false;
   game.slowMoTimer = 0;
+  game.pulsar.clearSlowMoRipples();
   game.hasLostComboEver = false;
   game.rhythmLossHintPending = false;
   resetAimHint(game);
