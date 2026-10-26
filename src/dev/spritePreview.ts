@@ -115,6 +115,13 @@ const makeAsteroid = (group: string, kind: AsteroidKind, size: AsteroidSize): Su
         a.warbleOpacity = 0.35 + 0.65 * cycle;
         a.warbleSolid = a.warbleOpacity > 0.6;
       }
+      // The black square's pulse, on a fake 2-beat clock.
+      if (a.kind === "superBassCrystal" && opts.phase) {
+        const cycle = (performance.now() / 1000) % 1;
+        a.beatPhase = cycle;
+        a.beatFlash = Math.max(0, 1 - cycle * 2.6);
+        a.haloEcho = Math.max(0, 1 - cycle * 0.85);
+      }
     },
   };
 };
