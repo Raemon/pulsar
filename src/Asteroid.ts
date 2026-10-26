@@ -154,7 +154,7 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 //
 // "metalChunk" is a dense tungsten ingot — a medium-sized, extremely heavy cube
 // behind damageReduction 8 (only a drift-tier-2+ shot or the super laser bites
-// through). Its 8 HP cleaves it diagonally into 2 slow triangular "metalShard"
+// through). Its 8 HP cleaves it diagonally into 2 slow notched right-angle "metalShard"
 // wedges, each 1 HP but still behind the same DR 8 armour, and frees the
 // "superBassCrystal" that was sealed inside it.
 //
@@ -289,6 +289,39 @@ const traceRadialPolygon = (ctx: CanvasRenderingContext2D, radii: readonly numbe
     else ctx.lineTo(x, y);
   }
   ctx.closePath();
+};
+
+// A metalShard is the cube cleaved corner to corner, with half of the freed
+// square's footprint taken out of the middle of the cut face: two wedges and
+// the black square reassemble the cube. Vertices are in cube half-side units,
+// shifted so the origin sits inside the region that sees every edge, so the
+// radial outline / hitbox can ray-cast to the boundary without ambiguity.
+const METAL_WEDGE_VERTS: ReadonlyArray<Vec> = [
+  { x: -1.75, y: -0.25 },
+  { x: 0.25, y: -0.25 },
+  { x: 0.25, y: 1.75 },
+  { x: -0.25, y: 1.25 },
+  { x: -0.25, y: 0.25 },
+  { x: -1.25, y: 0.25 },
+];
+// metalShard radius ÷ the cube half-side the wedge is cut from. Keeps the far
+// corners (1.77 half-sides out) inside hitTest's radius * 1.3 broad phase.
+const METAL_WEDGE_RADIUS_PER_HALF_SIDE = 1.4;
+
+// Distance from the origin to the polygon's edge along `angle` (first hit).
+const polygonRadiusAt = (verts: ReadonlyArray<Vec>, angle: number): number => {
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  let best = Infinity;
+  for (let i = 0; i < verts.length; i++) {
+    const p0 = verts[i], p1 = verts[(i + 1) % verts.length];
+    const ex = p1.x - p0.x, ey = p1.y - p0.y;
+    const denom = dx * ey - dy * ex;
+    if (Math.abs(denom) < 1e-9) continue;
+    const t = (p0.x * ey - p0.y * ex) / denom;
+    const u = (p0.x * dy - p0.y * dx) / denom;
+    if (t > 0 && u >= 0 && u <= 1) best = Math.min(best, t);
+  }
+  return best;
 };
 
 // Same-side sign test against each edge; works for either winding.
@@ -1703,12 +1736,6 @@ export class Asteroid {
       // the 8 samples.
       freqs = [3, 5];
       ampScale = 0.5;
-    } else if (kind === "metalShard") {
-      // Triangular wedge: triangleProfile carries the silhouette; a faint
-      // chipped wobble keeps the pair from being identical. 15 samples, so
-      // stay off 3 and 5.
-      freqs = [1, 2, 4];
-      ampScale = 0.3;
     } else if (kind === "superBassCrystal") {
       // cubeProfile carries a clean square; the harmonics only pick its tilt,
       // so the amplitude is near zero to keep the faces dead flat.
@@ -2713,6 +2740,11 @@ export class Asteroid {
   // the cathedral painters for clip + rim work.
   private traceOutline(ctx: CanvasRenderingContext2D, scale = 1) {
     ctx.beginPath();
+    if (this.kind === "metalShard") {
+      this.metalWedgeVerts(scale).forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.closePath();
+      return;
+    }
     traceRadialPolygon(ctx, this.outline, scale);
   }
 
@@ -3218,7 +3250,7 @@ export class Asteroid {
   // painted panel. A hard specular on the lit shoulder + a pinpoint corner glint
   // sell the dense-metal sheen; a two-stroke rim seats it against the starfield.
   // No rivets, seams, or gouges — this is a solid ingot, not riveted plate. Both
-  // tiers share this; the shard is a triangular wedge cleaved off the block. Pre-baked, clipped to
+  // tiers share this; the shard is a notched wedge cleaved off the block. Pre-baked, clipped to
   // the silhouette. Deterministic seed off the harmonics so each block is stably
   // distinct across the bake.
   private paintMetalChunkBody(ctx: CanvasRenderingContext2D) {
@@ -3246,18 +3278,28 @@ export class Asteroid {
     // upper-left light. lit faces catch a cold pewter, away faces sink toward
     // black — the abrupt lightness step between neighbours is the cube read.
     const lightX = -0.7, lightY = -0.72; // upper-left
-    const n = this.outlineSamples;
+    // The wedge paints from its exact corners and lights each face by its true
+    // normal; the cube fans its outline samples, lit by midpoint direction.
+    const isWedge = this.kind === "metalShard";
+    const wedgeVerts = isWedge ? this.metalWedgeVerts() : [];
+    const n = isWedge ? wedgeVerts.length : this.outlineSamples;
     const vert = (i: number): { x: number; y: number } => {
+      if (isWedge) return wedgeVerts[(i % n + n) % n];
       const a = (i / n) * TAU;
       const r = this.outline[(i % n + n) % n];
       return { x: Math.cos(a) * r, y: Math.sin(a) * r };
     };
     for (let i = 0; i < n; i++) {
       const p0 = vert(i), p1 = vert(i + 1);
-      // Outward normal of this edge = its midpoint direction from center.
       const mx = (p0.x + p1.x) * 0.5, my = (p0.y + p1.y) * 0.5;
-      const ml = Math.hypot(mx, my) || 1;
-      const facing = (mx / ml) * lightX + (my / ml) * lightY; // -1..1
+      let nx = mx, ny = my;
+      if (isWedge) {
+        nx = p1.y - p0.y;
+        ny = p0.x - p1.x;
+        if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+      }
+      const nl = Math.hypot(nx, ny) || 1;
+      const facing = (nx / nl) * lightX + (ny / nl) * lightY; // -1..1
       // Flat plane lightness: bright pewter facing the light, near-black away.
       const L = 8 + Math.max(0, facing) * 34 + (facing < 0 ? facing * 8 : 0);
       const S = 12 + Math.max(0, facing) * 6;
@@ -4175,18 +4217,15 @@ export class Asteroid {
     return Math.round(rawTilt / step) * step;
   }
 
-  // Equilateral-triangle radius at `angle` for a wedge cleaved off the cube,
-  // unit circumradius (corners reach 1, flat faces sit at the 0.5 inradius).
-  // The tilt snaps to the sample grid, and outlineSamples is a multiple of 3,
-  // so all three corners land exactly on samples and stay sharp.
-  private triangleProfile(angle: number): number {
-    const step = TAU / this.outlineSamples;
-    const rawTilt = this.harmonics.reduce((s, h) => s + h.phase * h.freq, 0);
-    const tilt = Math.round(rawTilt / step) * step;
-    const sector = TAU / 3;
-    const a = ((((angle - tilt) % sector) + sector) % sector) - sector / 2;
-    return 0.5 / Math.cos(a);
+  private metalWedgeVerts(scale = 1): Vec[] {
+    const k = (this.radius / METAL_WEDGE_RADIUS_PER_HALF_SIDE) * scale;
+    return METAL_WEDGE_VERTS.map((p) => ({ x: p.x * k, y: p.y * k }));
   }
+
+  private metalWedgeRadiusAt(angle: number): number {
+    return polygonRadiusAt(METAL_WEDGE_VERTS, angle) * (this.radius / METAL_WEDGE_RADIUS_PER_HALF_SIDE);
+  }
+
 
   // Wedge geometry for a citadel fragment, in world px and cached (the outline
   // sampler and every collision test ask for it). The shape is the sector of a
@@ -4237,7 +4276,6 @@ export class Asteroid {
     const isClamped = this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
     const isDiamond = isDiamondCut(this.kind) || this.isPrisonShard;
     const isCube = isSquareKind(this.kind);
-    const isTriangle = this.kind === "metalShard";
     const isWedge = this.kind === "warble";
     const samples: number[] = [];
     for (let i = 0; i < this.outlineSamples; i++) {
@@ -4252,8 +4290,8 @@ export class Asteroid {
       if (isClamped) r = Math.max(0.45, Math.min(1.55, r));
       if (isDiamond) r *= this.diamondProfile(angle);
       if (isCube) r *= this.cubeProfile(angle);
-      if (isTriangle) r *= this.triangleProfile(angle);
       if (isWedge) r *= this.wedgeProfile(angle);
+      if (this.kind === "metalShard") r = this.metalWedgeRadiusAt(angle) / this.radius;
       samples.push(r * this.radius);
     }
     return samples;
@@ -4271,8 +4309,8 @@ export class Asteroid {
     }
     if (isDiamondCut(this.kind) || this.isPrisonShard) r *= this.diamondProfile(angle);
     if (isSquareKind(this.kind)) r *= this.cubeProfile(angle);
-    if (this.kind === "metalShard") r *= this.triangleProfile(angle);
     if (this.kind === "warble") r *= this.wedgeProfile(angle);
+    if (this.kind === "metalShard") return this.metalWedgeRadiusAt(angle);
     return r * this.radius;
   }
 
@@ -5443,7 +5481,7 @@ export class Asteroid {
       }
       return fragmentList;
     }
-    // Metal chunk: the slab cleaves diagonally into 2 slow triangular wedges
+    // Metal chunk: the slab cleaves diagonally into 2 slow notched right-angle wedges
     // that barely drift and keep the parent's DR 8, and frees the
     // superBassCrystal sealed at its heart. The slab's job is to teach the drift
     // shot, so the wedges land on the ship's ACTUAL prong-bullet rays: the
