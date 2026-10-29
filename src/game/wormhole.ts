@@ -726,6 +726,7 @@ export const renderWormholes = (
 const MAX_WARP_PX = 400;
 let warpSrc: HTMLCanvasElement | null = null;
 let warpDst: HTMLCanvasElement | null = null;
+let warpBloom: HTMLCanvasElement | null = null;
 let warpPremul = new Float32Array(0);
 let warpDefl = new Float32Array(0);
 let warpCos = new Float32Array(0);
@@ -841,11 +842,14 @@ export const renderThroughPortal = (
   const dir = flowDir(wh);
   const twist = TWIST + flowSpin(wh, tSec);
   const ca = 0.06 * depth; // chromatic split: red bends more than blue
-  const lens = Math.min(1, depth * 1.6);
+  // The lens takes hold a beat after the tidal stretch, so the ship still
+  // reads as itself for the first part of the fall.
+  const lens = smoothstep(0.08, 0.7, depth);
   const behind = smoothstep(0.15, 0.45, depth);
   const fade = 1 - smoothstep(0.85, 1, depth);
-  const redG = 1 - 0.3 * depth * depth;
-  const redB = 1 - 0.55 * depth * depth;
+  // Light concentrated onto the ring washes toward white rather than keeping
+  // the hull's hue (a literal redshift turns the teal hull a muddy green).
+  const wash = 0.55 * lens;
   const limbPx = SPHERE * L;
   const radialN = Math.ceil(half * Math.SQRT2 * RADIAL_STEPS_PER_PX) + 2;
   if (warpDefl.length < radialN) {
@@ -892,14 +896,52 @@ export const renderThroughPortal = (
       const bb = sample((ux * sB + half) * S - 0.5, (uy * sB + half) * S - 0.5, 2);
       const inv = 255 / a;
       const o = (j * D + i) * 4;
-      out[o] = rr * inv;
-      out[o + 1] = gg * inv * redG;
-      out[o + 2] = bb * inv * redB;
+      const lum = (rr + gg + bb) * inv * 0.4;
+      out[o] = rr * inv + (lum - rr * inv) * wash;
+      out[o + 1] = gg * inv + (lum - gg * inv) * wash;
+      out[o + 2] = bb * inv + (lum * 1.1 - bb * inv) * wash;
       out[o + 3] = a * vis;
     }
   }
   dg.putImageData(outImg, 0, 0);
   ctx.drawImage(warpDst, cx - half, cy - half, half * 2, half * 2);
+
+  // 3) Polish: the smeared light blooms — a quarter-res copy stretched back up
+  //    and added on top, a cheap blur that also hides the arcs' aliasing —
+  //    and the Einstein ring flares in the ship's light as it crosses.
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const bloom = 0.9 * lens * fade;
+  if (bloom > 0.02) {
+    const bd = Math.max(8, Math.ceil(D / 4));
+    warpBloom = scratch(warpBloom, bd);
+    const bg = warpBloom.getContext("2d")!;
+    bg.clearRect(0, 0, bd, bd);
+    bg.imageSmoothingQuality = "high";
+    bg.drawImage(warpDst, 0, 0, bd, bd);
+    ctx.globalAlpha = bloom;
+    ctx.drawImage(warpBloom, cx - half, cy - half, half * 2, half * 2);
+    ctx.globalAlpha = bloom * 0.6;
+    const spread = half * 0.06;
+    ctx.drawImage(warpBloom, cx - half - spread, cy - half - spread, (half + spread) * 2, (half + spread) * 2);
+    ctx.globalAlpha = 1;
+  }
+  const flare = smoothstep(0.35, 0.7, depth) * (1 - smoothstep(0.8, 1, depth));
+  if (flare > 0.01) {
+    const rIn = SPHERE * L;
+    const rOut = (RING + 0.1) * L;
+    const at = (r: number) => (r - rIn) / (rOut - rIn);
+    const ring = ctx.createRadialGradient(cx, cy, rIn, cx, cy, rOut);
+    ring.addColorStop(0, "hsla(190, 90%, 92%, 0)");
+    ring.addColorStop(at(rIn + 1.5), `hsla(190, 90%, 94%, ${0.6 * flare})`);
+    ring.addColorStop(at(RING * L), `hsla(195, 85%, 75%, ${0.1 * flare})`);
+    ring.addColorStop(1, "hsla(200, 80%, 60%, 0)");
+    ctx.fillStyle = ring;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rOut, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
 };
 
 // How long a body takes to fall all the way through the mouth (warpT 0→1). It
