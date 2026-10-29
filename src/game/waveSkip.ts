@@ -53,8 +53,8 @@ export type WaveSkipState = {
   diveFrom: { x: number; y: number };
   diveTo: { x: number; y: number };
   // The portal the ship is riding — the dive portal on the way in, swapped to
-  // the emerge portal on the way out. The renderer clips the diving hull behind
-  // this hole's far lip so it reads as sinking down the throat. null while the
+  // the emerge portal on the way out. The renderer draws the hull through this
+  // portal's lens so it smears and fades as it passes through. null while the
   // ship is fully hidden between the two.
   cropPortal: Wormhole | null;
   // One announce per skipped-past wave (internal numbering), ascending. The
