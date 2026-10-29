@@ -215,18 +215,19 @@ const handleShipAsteroidCollisions = (game: Game) => {
 // Does any part of the ship's visible outline touch `target`? `reach` bounds
 // the target's own extent for the broad-phase cull; `pad` grows the outline
 // (collision padding for hazards, none for pickups).
-const shipTouchesTarget = (game: Game, target: ContactTarget, reach: number, pad: number): boolean => {
+// `pad` may depend on the target's offset from the ship.
+const shipTouchesTarget = (
+  game: Game, target: ContactTarget, reach: number, pad: number | ((dx: number, dy: number) => number),
+): boolean => {
   const [dx, dy] = toroidalDelta(target.pos.x - game.ship.pos.x, target.pos.y - game.ship.pos.y, game.w, game.h);
   if (Math.hypot(dx, dy) > reach + game.ship.hitBound) return false;
-  return shipTouches(game.ship, target, dx, dy, pad);
+  return shipTouches(game.ship, target, dx, dy, typeof pad === "number" ? pad : pad(dx, dy));
 };
 
 // Ship contact with a hazard: the whole visible outline counts, plus the
 // collision padding toward it.
-const shipTouchesHazard = (game: Game, target: ContactTarget, reach: number): boolean => {
-  const [dx, dy] = toroidalDelta(target.pos.x - game.ship.pos.x, target.pos.y - game.ship.pos.y, game.w, game.h);
-  return shipTouchesTarget(game, target, reach, game.ship.hazardPad(dx, dy));
-};
+const shipTouchesHazard = (game: Game, target: ContactTarget, reach: number): boolean =>
+  shipTouchesTarget(game, target, reach, (dx, dy) => game.ship.hazardPad(dx, dy));
 
 // polygon-accurate test against the visible halo means the outline IS the hitbox.
 export const shipAsteroidHit = (game: Game, a: Asteroid): boolean => {

@@ -73,7 +73,15 @@ export class Ship {
   get hitRadius() { return this.radius * 1.4 + this.haloOffset + this.hitPad + this.hitFrontBonus; }
   // True circumscribing radius of the collision outline (halo + pads), for
   // broad-phase culls: the halo's mitred nose tip reaches well past hitRadius.
-  get hitBound() { return haloReach(this.radius, this.haloOffset) + this.hitPad + this.hitFrontBonus; }
+  get hitBound() {
+    if (this.haloReachFor !== this.radius * 1000 + this.haloOffset) {
+      this.haloReachFor = this.radius * 1000 + this.haloOffset;
+      this.haloReachCache = haloReach(this.radius, this.haloOffset);
+    }
+    return this.haloReachCache + this.hitPad + this.hitFrontBonus;
+  }
+  private haloReachFor = NaN;
+  private haloReachCache = 0;
   // Collision-only padding toward a target at offset (dx, dy): uniform plus a
   // forward bonus, so a nose-on hazard registers a touch early.
   hazardPad(dx: number, dy: number): number {

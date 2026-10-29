@@ -172,14 +172,14 @@ const buildCatalogue = (): Subject[] => {
   out.push({
     group: "Ship",
     label: "ship",
-    radius: ship.hitRadius,
+    radius: ship.hitBound,
     draw: (ctx, t) => renderShipBody(ctx, ship, t, 0),
     surfaceAt: (angle) => ship.hitDistanceToward(angle),
   });
   out.push({
     group: "Ship",
     label: "ship · thrusting",
-    radius: ship.hitRadius,
+    radius: ship.hitBound,
     draw: (ctx, t) => {
       ship.thrustOn = true;
       renderShipBody(ctx, ship, t, 1);

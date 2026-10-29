@@ -248,6 +248,8 @@ const getBodySprite = (): HTMLCanvasElement => {
 // the local starfield's so the far side always reads as further away.
 const SKY_PX = 512; // power of two: samples wrap with a bitmask
 const SKY_MASK = SKY_PX - 1;
+// `col` is a ready-made rgb() style; brightness goes through globalAlpha so
+// the per-frame dotting builds no strings.
 type SkyStar = { x: number; y: number; col: string; a: number; glow: number };
 type SkyLayer = {
   // Pixels for the deep layer; stars for the others.
@@ -334,8 +336,8 @@ const bakeFarSky = (): SkyLayer[] => {
     }
   }
   // Stars, clustered toward the main band and coloured by temperature, sorted
-  // into depth layers by brightness: the faint haze stays deep, the brightest
-  // few ride nearest. Each is a 2×2 soft dot so the sphere's filtered reads
+  // into depth layers by brightness: the faint haze stays deep, the brighter
+  // ones ride the nearer layers. Each is a 2×2 soft dot so the sphere's filtered reads
   // never alias it away.
   const temps = ["255, 190, 150", "255, 225, 200", "255, 245, 235", "210, 225, 255", "170, 195, 255"];
   for (let i = 0; i < 2600; i++) {
@@ -350,7 +352,7 @@ const bakeFarSky = (): SkyLayer[] => {
     const li = m > 0.3 ? 2 : m > 0.03 ? 1 : 0;
     const col = temps[Math.floor(hash(i + 57) * temps.length)];
     if (li > 0) {
-      stars[li].push({ x, y, col, a: 0.25 + 0.75 * m, glow: m > 0.4 ? m : 0 });
+      stars[li].push({ x, y, col: `rgb(${col})`, a: 0.25 + 0.75 * m, glow: m > 0.4 ? m : 0 });
       continue;
     }
     const g = deep;
@@ -477,8 +479,8 @@ const renderSphere = (
   map.canvas.getContext("2d")!.putImageData(map.img, 0, 0);
   ctx.drawImage(map.canvas, -r, -r, r * 2, r * 2);
   // Star layers: each star mapped forward through the fish-eye (the inverse
-  // of getSphereMap's R(ρ)) and dotted onto the ball, fading toward the limb. Only the nearest wrap image within
-  // reach of the view is drawn; anything further sits in the limb's rim.
+  // of getSphereMap's R(ρ)) and dotted onto the ball. Only each star's nearest
+  // tile image is drawn; the fade toward the limb hides where that fold lands.
   const g = ctx;
   g.save();
   g.globalCompositeOperation = "lighter";
@@ -510,11 +512,12 @@ const renderSphere = (
       const a = st.a * (li === 1 ? 0.7 : 1) * (1 - limb);
       if (a < 0.02) continue;
       const size = dotPx * (1 - 0.6 * limb);
+      g.fillStyle = st.col;
       if (st.glow > 0) {
-        g.fillStyle = `rgba(${st.col}, ${0.25 * st.glow})`;
+        g.globalAlpha = 0.25 * st.glow * (1 - limb);
         g.fillRect(sx - size * 2, sy - size * 2, size * 4, size * 4);
       }
-      g.fillStyle = `rgba(${st.col}, ${a})`;
+      g.globalAlpha = a;
       g.fillRect(sx - size / 2, sy - size / 2, size, size);
     }
   }
