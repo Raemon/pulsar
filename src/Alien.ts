@@ -405,8 +405,8 @@ export class Alien {
   }
 
   // Begin diving through a departure portal. Freezes the dive path: the body
-  // travels from here to warpAnchor (the portal's vanishing point, offset up the
-  // heading's tilt axis — matching wormhole.ts's throat spark). Called once when
+  // travels from here to warpAnchor (the portal's throat — the centre of its
+  // spherical mouth). Called once when
   // the alien reaches maxTravel.
   private beginWarpOut() {
     this.warpT = 0;

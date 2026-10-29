@@ -331,7 +331,7 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
   // without advancing game.time).
   if (!warping) renderShipTrajectoryPreview(ctx, game.ship, BEAT_GRID, game.time / 1000, game.w, game.h);
   // During a skip warp the ship dives into (and later climbs out of) a portal —
-  // pass that portal so its far lip crops the hull as it sinks down the throat.
+  // pass that portal so the hull is drawn through its lens as it falls in.
   const cropPortal = game.waveSkip?.cropPortal ?? null;
   // Ink blackout dims the ship rather than swallowing it outright — a soft
   // dark disc UNDER the hull so it still reads as "there, but hard to see",
