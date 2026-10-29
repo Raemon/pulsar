@@ -103,7 +103,8 @@ export type ContactTarget = {
 // asked about the actual outline: the point on it closest to the target's
 // centre (exact for round targets), plus its corners and points along each
 // edge (so a jagged rock poking at a flank still registers), and a target
-// whose centre lies inside the outline always touches.
+// whose centre lies inside the outline touches if the target itself agrees
+// (its own rules — phased out, dormant, warping — still apply).
 export const shipTouches = (
   ship: Ship, target: ContactTarget, dx: number, dy: number, pad: number,
 ): boolean => {
@@ -111,7 +112,7 @@ export const shipTouches = (
   // The ship's image nearest the target, in world coords.
   const ox = target.pos.x - dx;
   const oy = target.pos.y - dy;
-  if (pointInTriangle(halo, dx, dy)) return true;
+  if (pointInTriangle(halo, dx, dy) && target.collidesWith(target.pos, pad)) return true;
   const c = closestOnOutline(halo, dx, dy);
   if (target.collidesWith({ x: ox + c[0], y: oy + c[1] }, pad)) return true;
   for (let k = 0; k < 3; k++) {
