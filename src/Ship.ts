@@ -249,7 +249,7 @@ export class Ship {
     if (cropPortal) {
       const [dx, dy] = toroidalDelta(cropPortal.x - this.pos.x, cropPortal.y - this.pos.y, screenW, screenH);
       renderThroughPortal(
-        ctx, cropPortal, k, t * 0.001, { x: this.pos.x, y: this.pos.y, reach: this.radius * 3 }, dx, dy,
+        ctx, cropPortal, k, { x: this.pos.x, y: this.pos.y, reach: this.radius * 3 }, dx, dy,
         (g) => renderShipBody(g, this, t, beatPulse),
       );
       return;
