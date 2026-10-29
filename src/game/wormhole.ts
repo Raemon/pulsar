@@ -123,6 +123,11 @@ export const WORMHOLE_CLOSE = CLOSE;
 export const wormholeEnterable = (wh: Wormhole): boolean =>
   wh.maxLife - wh.life >= OPEN && wh.life > CLOSE;
 
+// Radius (px) of the sphere — the mouth's visible edge — right now. Touching it
+// with any part of the ship drops the ship in.
+export const wormholeMouthRadius = (wh: Wormhole): number =>
+  SPHERE * wh.radius * mouthOpen(wh.maxLife - wh.life, wh.life);
+
 // Absolute position of the portal's throat — the point a diving body eases
 // toward (mirrors warpAnchorOffset for a live portal): the sphere's centre.
 export const throatPointOf = (wh: Wormhole): { x: number; y: number } => ({ x: wh.x, y: wh.y });
@@ -233,22 +238,45 @@ const getBodySprite = (): HTMLCanvasElement => {
 
 // ── The far sky ───────────────────────────────────────────────────────────────
 // What lies on the other side: a tileable patch of a different universe — a
-// warm galactic band with dark dust lanes and red emission knots across a
-// dense field of stars of every temperature. Baked once into a pixel buffer
-// the sphere samples directly.
+// warm galactic band (and a fainter second one) with dark dust lanes and red
+// emission knots, behind a field of stars of every temperature, in three depth
+// layers: the deep layer (the galaxies and their haze of faint stars) baked to
+// pixels the sphere samples, then a mid layer of ordinary stars and a sparse
+// near layer of the brightest, kept as star lists that are mapped through the
+// fish-eye one by one (cheap, and crisp). Each pans at its own parallax rate,
+// so the view through the mouth has depth to it, and every rate is slower than
+// the local starfield's so the far side always reads as further away.
 const SKY_PX = 512; // power of two: samples wrap with a bitmask
 const SKY_MASK = SKY_PX - 1;
-let skyPixels: Uint8ClampedArray | null = null;
+type SkyStar = { x: number; y: number; col: string; a: number; glow: number };
+type SkyLayer = {
+  // Pixels for the deep layer; stars for the others.
+  px: Uint8ClampedArray | null;
+  stars: SkyStar[];
+  // Screen-space parallax rate (fraction of camera motion), as the local
+  // starfield's STARFIELD_PARALLAX: deep 0.01 vs the local nebula's 0.06.
+  parallax: number;
+  // Sky px per sphere px relative to the deep layer: nearer layers are
+  // magnified a little more.
+  scale: number;
+};
+const SKY_LAYERS = [
+  { parallax: 0.01, scale: 1 },
+  { parallax: 0.04, scale: 0.8 },
+  { parallax: 0.09, scale: 0.62 },
+];
+let skyLayers: SkyLayer[] | null = null;
 
-const bakeFarSky = (): Uint8ClampedArray => {
+const bakeFarSky = (): SkyLayer[] => {
+  const stars: SkyStar[][] = SKY_LAYERS.map(() => []);
   const c = document.createElement("canvas");
   c.width = SKY_PX;
   c.height = SKY_PX;
-  const g = c.getContext("2d", { willReadFrequently: true })!;
-  g.fillStyle = "rgb(3, 2, 6)";
-  g.fillRect(0, 0, SKY_PX, SKY_PX);
-  // Every element is stamped at the eight wrap neighbours too, so the patch
-  // tiles seamlessly however the sphere pans across it.
+  const deep = c.getContext("2d", { willReadFrequently: true })!;
+  deep.fillStyle = "rgb(3, 2, 6)";
+  deep.fillRect(0, 0, SKY_PX, SKY_PX);
+  // Every element is stamped at the eight wrap neighbours too, so the deep
+  // layer tiles seamlessly however the sphere pans across it.
   const tiled = (x: number, y: number, r: number, paint: (x: number, y: number) => void) => {
     for (let ox = -1; ox <= 1; ox++) {
       for (let oy = -1; oy <= 1; oy++) {
@@ -259,7 +287,9 @@ const bakeFarSky = (): Uint8ClampedArray => {
       }
     }
   };
-  const blob = (x: number, y: number, r: number, color: string, op: GlobalCompositeOperation) => {
+  const blob = (
+    g: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, op: GlobalCompositeOperation,
+  ) => {
     tiled(x, y, r, (px, py) => {
       const grad = g.createRadialGradient(px, py, 0, px, py, r);
       grad.addColorStop(0, color);
@@ -271,54 +301,73 @@ const bakeFarSky = (): Uint8ClampedArray => {
       g.fill();
     });
   };
-  // The galactic band runs diagonally (a 1:1 slope tiles cleanly): a diffuse
-  // glow, a brighter clumped core of old yellow-white starlight along its
-  // spine, dust lanes eating dark channels into it, and red emission knots
-  // and blue young-star clouds strung along its edges.
-  const band = (t: number, off: number) => ({ x: t * SKY_PX + off, y: t * SKY_PX - off });
-  for (let i = 0; i < 120; i++) {
-    const p = band(i / 120, (hash(i + 1) - 0.5) * 60);
-    blob(p.x, p.y, 40 + 40 * hash(i + 2), `rgba(120, 105, 120, ${0.035 + 0.03 * hash(i + 3)})`, "lighter");
+  // The galactic bands: the main one runs diagonally, a fainter one
+  // horizontally (both tile cleanly). Each is a diffuse glow, a brighter
+  // clumped core of old yellow-white starlight along its spine, dust lanes
+  // eating dark channels into it, and red emission knots and blue young-star
+  // clouds strung along its edges.
+  const bands = [
+    { at: (t: number, off: number) => ({ x: t * SKY_PX + off, y: t * SKY_PX - off }), gain: 1, salt: 0 },
+    { at: (t: number, off: number) => ({ x: t * SKY_PX, y: SKY_PX * 0.3 + off }), gain: 0.55, salt: 500 },
+  ];
+  for (const { at: band, gain, salt } of bands) {
+    const h = (n: number) => hash(n + salt);
+    for (let i = 0; i < 120; i++) {
+      const p = band(i / 120, (h(i + 1) - 0.5) * 60);
+      blob(deep, p.x, p.y, 40 + 40 * h(i + 2), `rgba(120, 105, 120, ${(0.035 + 0.03 * h(i + 3)) * gain})`, "lighter");
+    }
+    for (let i = 0; i < 220; i++) {
+      const p = band(h(i + 10), (h(i + 11) - 0.5) * 34 * h(i + 14));
+      blob(deep, p.x, p.y, 6 + 16 * h(i + 12), `rgba(255, 230, 200, ${(0.05 + 0.09 * h(i + 13)) * gain})`, "lighter");
+    }
+    for (let i = 0; i < 110; i++) {
+      const p = band(h(i + 20), (h(i + 21) - 0.5) * 30);
+      blob(deep, p.x, p.y, 4 + 12 * h(i + 22), `rgba(4, 2, 6, ${(0.5 + 0.4 * h(i + 23)) * gain})`, "source-over");
+    }
+    for (let i = 0; i < 34 * gain; i++) {
+      const side = h(i + 30) < 0.5 ? -1 : 1;
+      const p = band(h(i + 31), side * (14 + 28 * h(i + 32)));
+      const red = h(i + 37) < 0.6;
+      const col = red ? "255, 70, 70" : "120, 160, 255";
+      blob(deep, p.x, p.y, 4 + 9 * h(i + 33), `rgba(${col}, ${0.2 + 0.25 * h(i + 34)})`, "lighter");
+      blob(deep, p.x, p.y, 1.5 + 2.5 * h(i + 35), `rgba(${red ? "255, 170, 160" : "200, 220, 255"}, ${0.35 + 0.3 * h(i + 36)})`, "lighter");
+    }
   }
-  for (let i = 0; i < 220; i++) {
-    const p = band(hash(i + 10), (hash(i + 11) - 0.5) * 34 * hash(i + 14));
-    blob(p.x, p.y, 6 + 16 * hash(i + 12), `rgba(255, 230, 200, ${0.05 + 0.09 * hash(i + 13)})`, "lighter");
-  }
-  for (let i = 0; i < 110; i++) {
-    const p = band(hash(i + 20), (hash(i + 21) - 0.5) * 30);
-    blob(p.x, p.y, 4 + 12 * hash(i + 22), `rgba(4, 2, 6, ${0.5 + 0.4 * hash(i + 23)})`, "source-over");
-  }
-  for (let i = 0; i < 34; i++) {
-    const side = hash(i + 30) < 0.5 ? -1 : 1;
-    const p = band(hash(i + 31), side * (14 + 28 * hash(i + 32)));
-    const red = hash(i + 37) < 0.6;
-    const col = red ? "255, 70, 70" : "120, 160, 255";
-    blob(p.x, p.y, 4 + 9 * hash(i + 33), `rgba(${col}, ${0.2 + 0.25 * hash(i + 34)})`, "lighter");
-    blob(p.x, p.y, 1.5 + 2.5 * hash(i + 35), `rgba(${red ? "255, 170, 160" : "200, 220, 255"}, ${0.35 + 0.3 * hash(i + 36)})`, "lighter");
-  }
-  // Stars: dense, clustered toward the band, coloured by temperature. Each is
-  // a 2×2 soft dot so the sphere's filtered reads never alias it away.
-  g.globalCompositeOperation = "lighter";
+  // Stars, clustered toward the main band and coloured by temperature, sorted
+  // into depth layers by brightness: the faint haze stays deep, the brightest
+  // few ride nearest. Each is a 2×2 soft dot so the sphere's filtered reads
+  // never alias it away.
   const temps = ["255, 190, 150", "255, 225, 200", "255, 245, 235", "210, 225, 255", "170, 195, 255"];
-  for (let i = 0; i < 2200; i++) {
+  for (let i = 0; i < 2600; i++) {
     let x = hash(i * 1.37 + 50) * SKY_PX;
     let y = hash(i * 1.37 + 51) * SKY_PX;
     if (hash(i + 52) < 0.5) {
-      const p = band(hash(i + 53), (hash(i + 54) - 0.5) * (hash(i + 55) * 90));
+      const p = bands[0].at(hash(i + 53), (hash(i + 54) - 0.5) * (hash(i + 55) * 90));
       x = p.x;
       y = p.y;
     }
     const m = Math.pow(hash(i + 56), 5);
+    const li = m > 0.3 ? 2 : m > 0.03 ? 1 : 0;
     const col = temps[Math.floor(hash(i + 57) * temps.length)];
+    if (li > 0) {
+      stars[li].push({ x, y, col, a: 0.25 + 0.75 * m, glow: m > 0.4 ? m : 0 });
+      continue;
+    }
+    const g = deep;
+    g.globalCompositeOperation = "lighter";
     tiled(x, y, 3, (px, py) => {
       g.fillStyle = `rgba(${col}, ${0.12 + 0.6 * m})`;
       g.fillRect(px - 1, py - 1, 2, 2);
       g.fillStyle = `rgba(${col}, ${0.15 + 0.85 * m})`;
       g.fillRect(px - 0.5, py - 0.5, 1, 1);
     });
-    if (m > 0.4) blob(x, y, 3 + 6 * m, `rgba(${col}, ${0.4 * m})`, "lighter");
+    if (m > 0.4) blob(g, x, y, 3 + 6 * m, `rgba(${col}, ${0.4 * m})`, "lighter");
   }
-  return g.getImageData(0, 0, SKY_PX, SKY_PX).data;
+  return SKY_LAYERS.map((cfg, i) => ({
+    px: i === 0 ? deep.getImageData(0, 0, SKY_PX, SKY_PX).data : null,
+    stars: stars[i],
+    ...cfg,
+  }));
 };
 
 // Fish-eye map for the ball at a given sprite resolution: for each pixel, the
@@ -373,50 +422,103 @@ const getSphereMap = (n: number): SphereMap => {
   return map;
 };
 
-// Paint the ball: read the far sky through the fish-eye map, panned by the
-// mouth's screen position (parallax — the view through shifts as it scrolls).
+// Paint the ball: read each far-sky layer through the fish-eye map and sum
+// them. `scrollX/Y` is the camera scroll and (cx, cy) the mouth's screen
+// position; `skyPerPx` converts screen px to deep-layer sky px at the centre.
+// A layer at parallax p moves across the screen at p of the camera's speed,
+// so relative to the mouth (which moves with the world) it slides by the rest:
+// the deeper the layer, the faster the window sweeps across it.
 const renderSphere = (
   ctx: CanvasRenderingContext2D, L: number, pxScale: number,
-  panX: number, panY: number,
+  cx: number, cy: number, scrollX: number, scrollY: number, skyPerPx: number, seed: number,
 ): void => {
-  const sky = skyPixels ?? (skyPixels = bakeFarSky());
+  const layers = skyLayers ?? (skyLayers = bakeFarSky());
   const r = SPHERE * L;
   // Power-of-two map sizes, so an opening/closing mouth reuses a handful of
-  // cached maps instead of building one per pixel of radius.
-  const n = Math.min(256, Math.max(32, 2 ** Math.ceil(Math.log2(r * 2 * pxScale))));
+  // cached maps instead of building one per pixel of radius. Capped at 128:
+  // the deep sky is soft and coarser than that across the ball, so a larger
+  // buffer only costs time — drawImage smooths it up. The stars, which need
+  // the resolution, are dotted straight onto the screen below.
+  const n = Math.min(128, Math.max(32, 2 ** Math.ceil(Math.log2(r * 2 * pxScale))));
   const map = getSphereMap(n);
   const out = map.img.data;
   const { dx, dy, gain, cover } = map;
-  for (let k = 0; k < n * n; k++) {
-    const c = cover[k];
-    const o = k * 4;
-    if (c <= 0) {
-      out[o + 3] = 0;
-      continue;
+  // Deep layer: per pixel through the fish-eye.
+  {
+    const { px: sky, parallax, scale } = layers[0];
+    const k = skyPerPx * scale;
+    const panX = (cx - parallax * scrollX) * k + seed * 80;
+    const panY = (cy - parallax * scrollY) * k + seed * 80;
+    for (let p = 0; p < n * n; p++) {
+      const o = p * 4;
+      out[o + 3] = 255 * cover[p];
+      if (cover[p] <= 0) continue;
+      // Bilinear read, wrapping on the tile.
+      const fx = dx[p] * scale + panX;
+      const fy = dy[p] * scale + panY;
+      const ix = Math.floor(fx);
+      const iy = Math.floor(fy);
+      const tx = fx - ix;
+      const ty = fy - iy;
+      const r0 = (iy & SKY_MASK) * SKY_PX;
+      const r1 = ((iy + 1) & SKY_MASK) * SKY_PX;
+      const a = (r0 + (ix & SKY_MASK)) * 4;
+      const b = (r0 + ((ix + 1) & SKY_MASK)) * 4;
+      const c = (r1 + (ix & SKY_MASK)) * 4;
+      const d = (r1 + ((ix + 1) & SKY_MASK)) * 4;
+      const gk = gain[p];
+      for (let ch = 0; ch < 3; ch++) {
+        const top = sky![a + ch] + (sky![b + ch] - sky![a + ch]) * tx;
+        const bot = sky![c + ch] + (sky![d + ch] - sky![c + ch]) * tx;
+        out[o + ch] = (top + (bot - top) * ty) * gk;
+      }
     }
-    // Bilinear read, wrapping on the tile.
-    const fx = dx[k] + panX;
-    const fy = dy[k] + panY;
-    const ix = Math.floor(fx);
-    const iy = Math.floor(fy);
-    const tx = fx - ix;
-    const ty = fy - iy;
-    const r0 = (iy & SKY_MASK) * SKY_PX;
-    const r1 = ((iy + 1) & SKY_MASK) * SKY_PX;
-    const a = (r0 + (ix & SKY_MASK)) * 4;
-    const b = (r0 + ((ix + 1) & SKY_MASK)) * 4;
-    const cc = (r1 + (ix & SKY_MASK)) * 4;
-    const d = (r1 + ((ix + 1) & SKY_MASK)) * 4;
-    const gk = gain[k];
-    for (let ch = 0; ch < 3; ch++) {
-      const top = sky[a + ch] + (sky[b + ch] - sky[a + ch]) * tx;
-      const bot = sky[cc + ch] + (sky[d + ch] - sky[cc + ch]) * tx;
-      out[o + ch] = (top + (bot - top) * ty) * gk;
-    }
-    out[o + 3] = 255 * c;
   }
   map.canvas.getContext("2d")!.putImageData(map.img, 0, 0);
   ctx.drawImage(map.canvas, -r, -r, r * 2, r * 2);
+  // Star layers: each star mapped forward through the fish-eye (the inverse
+  // of getSphereMap's R(ρ)) and dotted onto the ball, fading toward the limb. Only the nearest wrap image within
+  // reach of the view is drawn; anything further sits in the limb's rim.
+  const g = ctx;
+  g.save();
+  g.globalCompositeOperation = "lighter";
+  const dotPx = Math.max(0.6, 1.2 / pxScale) * Math.min(1.6, Math.max(0.8, r / 40));
+  for (let li = 1; li < layers.length; li++) {
+    const { stars, parallax, scale } = layers[li];
+    const k = skyPerPx * scale;
+    const off = seed * 80 * (li + 1) + li * 173;
+    const panX = (cx - parallax * scrollX) * k + off;
+    const panY = (cy - parallax * scrollY) * k + off;
+    for (const st of stars) {
+      // Sky offset from the view's centre, folded to the nearest tile image,
+      // then back to deep-layer units for the fish-eye.
+      let ox = (st.x - panX) % SKY_PX;
+      let oy = (st.y - panY) % SKY_PX;
+      if (ox < -SKY_PX / 2) ox += SKY_PX;
+      else if (ox >= SKY_PX / 2) ox -= SKY_PX;
+      if (oy < -SKY_PX / 2) oy += SKY_PX;
+      else if (oy >= SKY_PX / 2) oy -= SKY_PX;
+      const R2 = (ox * ox + oy * oy) / (scale * scale);
+      const rho = Math.sqrt(R2 / (SKY_SCALE * SKY_SCALE + 0.995 * R2));
+      if (rho > 0.985) continue;
+      const R = Math.sqrt(R2) || 1;
+      const sx = (ox / scale / R) * rho * r;
+      const sy = (oy / scale / R) * rho * r;
+      // Toward the limb individual stars crowd into the deep layer's rim
+      // glow, so the dots shrink and fade out rather than piling up.
+      const limb = smoothstep(0.6, 0.97, rho);
+      const a = st.a * (li === 1 ? 0.7 : 1) * (1 - limb);
+      if (a < 0.02) continue;
+      const size = dotPx * (1 - 0.6 * limb);
+      if (st.glow > 0) {
+        g.fillStyle = `rgba(${st.col}, ${0.25 * st.glow})`;
+        g.fillRect(sx - size * 2, sy - size * 2, size * 4, size * 4);
+      }
+      g.fillStyle = `rgba(${st.col}, ${a})`;
+      g.fillRect(sx - size / 2, sy - size / 2, size, size);
+    }
+  }
+  g.restore();
 };
 
 // ── Lensed stars ──────────────────────────────────────────────────────────────
@@ -675,14 +777,10 @@ export const renderWormholes = (
     // 3) The ball itself: the far sky. Its pan follows the mouth's screen
     //    position so the view through it shifts with parallax.
     ctx.globalCompositeOperation = "source-over";
-    const sw = backdrop ? backdrop.starfield.w : 0;
-    const sh = backdrop ? backdrop.starfield.h : 0;
-    // The pan rides the far galaxy's band (it runs along x = y in the sky
-    // patch), so every portal looks out across it.
-    const along = wh.seed * 80;
-    const panX = along - (cx - sw / 2) * 0.12;
-    const panY = along - (cy - sh / 2) * 0.12 + wh.hueShift * 1.5;
-    renderSphere(ctx, L, pxScale, panX, panY);
+    renderSphere(
+      ctx, L, pxScale, cx, cy, backdrop?.scrollX ?? 0, backdrop?.scrollY ?? 0,
+      SKY_SCALE / (SPHERE * wh.radius), wh.seed + wh.hueShift * 0.01,
+    );
 
     ctx.restore();
   }
@@ -960,4 +1058,4 @@ export const WARP_OUT_DURATION = OPEN + HOLD * 0.8;
 
 // Bake the far sky at module load, like the bassteroid halo outlines, so the
 // first portal of a run doesn't stall a frame on the ~60ms bake.
-if (typeof document !== "undefined") skyPixels = bakeFarSky();
+if (typeof document !== "undefined") skyLayers = bakeFarSky();

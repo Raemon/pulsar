@@ -6,7 +6,7 @@ import { Sound } from "./Sound";
 import { PowerupKind } from "./Canister";
 import { FUEL_MAX } from "./game/fuel";
 import { BEAT_GRID } from "./game/rhythmConstants";
-import { haloVertices, hitDistanceToward, SHIP_BODY_RADIUS, SHIP_HALO_OFFSET } from "./ship/shipHitbox";
+import { haloVertices, haloReach, hitDistanceToward, SHIP_BODY_RADIUS, SHIP_HALO_OFFSET } from "./ship/shipHitbox";
 import { tickShip } from "./ship/shipPhysics";
 import { fireBullets, applyPowerup } from "./ship/shipWeapons";
 import { setComboFromValue } from "./ship/shipComboHalo";
@@ -69,8 +69,18 @@ export class Ship {
   // small uniform pad + forward bonus makes head-on collisions slightly more generous than rear hits.
   hitPad = 4;
   hitFrontBonus = 6;
-  // conservative bounding radius circumscribes the forward halo tip — use for broad-phase only.
+  // a round touch zone about the hull's size (nose vertex + halo + pads) — NOT a
+  // bound on the halo, whose mitred tip reaches further; see hitBound.
   get hitRadius() { return this.radius * 1.4 + this.haloOffset + this.hitPad + this.hitFrontBonus; }
+  // True circumscribing radius of the collision outline (halo + pads), for
+  // broad-phase culls: the halo's mitred nose tip reaches well past hitRadius.
+  get hitBound() { return haloReach(this.radius, this.haloOffset) + this.hitPad + this.hitFrontBonus; }
+  // Collision-only padding toward a target at offset (dx, dy): uniform plus a
+  // forward bonus, so a nose-on hazard registers a touch early.
+  hazardPad(dx: number, dy: number): number {
+    const forward = Math.max(0, Math.cos(Math.atan2(dy, dx) - this.heading));
+    return this.hitPad + this.hitFrontBonus * forward;
+  }
   alive = true;
   invuln = 2.0;
   // Wave-skip warp progress for the render transform (0 = full size, 1 = gone
