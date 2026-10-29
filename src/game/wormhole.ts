@@ -366,12 +366,14 @@ const getSphereMap = (n: number): SphereMap => {
       const rho = Math.hypot(x, y);
       const k = j * n + i;
       cover[k] = Math.max(0, Math.min(1, (1 - rho) * half + 0.5));
-      if (rho >= 1) continue;
-      const R = (SKY_SCALE * rho) / Math.sqrt(1 - rho * rho * 0.995);
+      if (cover[k] <= 0) continue;
+      // Antialiased edge pixels just past the limb read the rim, not black.
+      const rr = Math.min(rho, 0.999);
+      const R = (SKY_SCALE * rr) / Math.sqrt(1 - rr * rr * 0.995);
       const a = Math.atan2(y, x);
       dx[k] = Math.cos(a) * R;
       dy[k] = Math.sin(a) * R;
-      const limb = smoothstep(0.86, 1, rho);
+      const limb = smoothstep(0.86, 1, rr);
       gain[k] = 1 + 1.6 * limb * limb;
     }
   }
@@ -393,7 +395,9 @@ const renderSphere = (
 ): void => {
   const sky = skyPixels ?? (skyPixels = bakeFarSky());
   const r = SPHERE * L;
-  const n = Math.max(24, Math.min(256, Math.ceil(r * 2 * pxScale)));
+  // Power-of-two map sizes, so an opening/closing mouth reuses a handful of
+  // cached maps instead of building one per pixel of radius.
+  const n = Math.min(256, Math.max(32, 2 ** Math.ceil(Math.log2(r * 2 * pxScale))));
   const map = getSphereMap(n);
   const out = map.img.data;
   const { dx, dy, gain, cover } = map;
@@ -549,7 +553,7 @@ const addStarArc = (
 };
 
 // Bend every star under the mouth into its lensed arc(s) and paint them. `L`
-// is the live iris long axis, (cx, cy) the portal's screen position, `spin`
+// is the live lens scale, (cx, cy) the portal's screen position, `spin`
 // the ring's current wheel angle. Each source star gets its outer image on or
 // beyond the ring, and — when it isn't swallowed by the shadow — a fainter
 // mirrored inner image between the ring and the horizon, the way a real lens
@@ -715,7 +719,8 @@ export const renderWormholes = (
 // stretched toward the throat, its image is bent by the same lens map the
 // stars use (so it smears into an arc along the Einstein ring and throws a
 // mirrored inner image), the ball occludes whatever of it lies behind the
-// limb, its light splits chromatically and reddens, and it fades out as it
+// limb, its light splits chromatically and washes toward white, and it fades
+// out as it
 // passes through.
 //
 // The body is painted by `draw` into an offscreen buffer around the portal and
@@ -733,6 +738,9 @@ let warpCos = new Float32Array(0);
 let warpSin = new Float32Array(0);
 let warpVis = new Float32Array(0);
 const RADIAL_STEPS_PER_PX = 4;
+// Depth at which the lens starts bending the falling body.
+const LENS_ONSET = 0.08;
+let warpOut: ImageData | null = null;
 
 const scratch = (c: HTMLCanvasElement | null, d: number): HTMLCanvasElement => {
   const canvas = c ?? document.createElement("canvas");
@@ -751,13 +759,26 @@ export const renderThroughPortal = (
 ): void => {
   const open = mouthOpen(wh.maxLife - wh.life, wh.life);
   const L = wh.radius * open;
-  if (L < 4) {
-    draw(ctx);
-    return;
-  }
   // Portal centre in the body's frame (the caller resolves the toroidal wrap).
   const cx = body.x + portalDx;
   const cy = body.y + portalDy;
+  // Before the lens takes hold (and for a mouth too small to matter) the body
+  // only stretches — draw it straight, at full resolution.
+  if (L < 4 || depth < LENS_ONSET) {
+    const rc = 1 - 0.3 * depth;
+    const st = (1 + 2.2 * depth * depth) * rc;
+    const sq = rc / (1 + 0.8 * depth * depth);
+    const radial = Math.atan2(cy - body.y, cx - body.x);
+    ctx.save();
+    ctx.translate(body.x, body.y);
+    ctx.rotate(radial);
+    ctx.scale(st, sq);
+    ctx.rotate(-radial);
+    ctx.translate(-body.x, -body.y);
+    draw(ctx);
+    ctx.restore();
+    return;
+  }
   const dist = Math.hypot(portalDx, portalDy);
   const stretch = 1 + 2.2 * depth * depth;
   const squeeze = 1 / (1 + 0.8 * depth * depth);
@@ -837,21 +858,24 @@ export const renderThroughPortal = (
   //    tabulated once per frame along a fine radial grid.
   warpDst = scratch(warpDst, D);
   const dg = warpDst.getContext("2d")!;
-  const outImg = dg.createImageData(D, D);
+  if (!warpOut || warpOut.width !== D) warpOut = dg.createImageData(D, D);
+  const outImg = warpOut;
   const out = outImg.data;
+  out.fill(0);
   const dir = flowDir(wh);
   const twist = TWIST + flowSpin(wh, tSec);
   const ca = 0.06 * depth; // chromatic split: red bends more than blue
   // The lens takes hold a beat after the tidal stretch, so the ship still
   // reads as itself for the first part of the fall.
-  const lens = smoothstep(0.08, 0.7, depth);
+  const lens = smoothstep(LENS_ONSET, 0.7, depth);
   const behind = smoothstep(0.15, 0.45, depth);
   const fade = 1 - smoothstep(0.85, 1, depth);
   // Light concentrated onto the ring washes toward white rather than keeping
   // the hull's hue (a literal redshift turns the teal hull a muddy green).
   const wash = 0.55 * lens;
   const limbPx = SPHERE * L;
-  const radialN = Math.ceil(half * Math.SQRT2 * RADIAL_STEPS_PER_PX) + 2;
+  // Covers the buffer's corners: output pixels reach √2·(half + 0.5/S).
+  const radialN = Math.ceil((half + 1 / S) * Math.SQRT2 * RADIAL_STEPS_PER_PX) + 2;
   if (warpDefl.length < radialN) {
     warpDefl = new Float32Array(radialN);
     warpCos = new Float32Array(radialN);
@@ -933,7 +957,7 @@ export const renderThroughPortal = (
     const at = (r: number) => (r - rIn) / (rOut - rIn);
     const ring = ctx.createRadialGradient(cx, cy, rIn, cx, cy, rOut);
     ring.addColorStop(0, "hsla(190, 90%, 92%, 0)");
-    ring.addColorStop(at(rIn + 1.5), `hsla(190, 90%, 94%, ${0.6 * flare})`);
+    ring.addColorStop(Math.min(at(rIn + 1.5), at(RING * L) - 0.01), `hsla(190, 90%, 94%, ${0.6 * flare})`);
     ring.addColorStop(at(RING * L), `hsla(195, 85%, 75%, ${0.1 * flare})`);
     ring.addColorStop(1, "hsla(200, 80%, 60%, 0)");
     ctx.fillStyle = ring;
