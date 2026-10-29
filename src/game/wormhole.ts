@@ -1,124 +1,92 @@
 import type { Vec } from "../vec";
 import type { Starfield } from "../Starfield";
-// Seeds only — cosmetic stream so the portal's swirl/jitter never perturbs the
-// gameplay RNG draw count and desyncs replays.
+// Seeds only — cosmetic stream so the portal's sky offset/flow never perturbs
+// the gameplay RNG draw count and desyncs replays.
 import { cosmeticRng as rng } from "./rng";
 
 // A departure portal: aliens that fly past the far edge leave THROUGH this
 // instead of popping off, and a kill tears a longer-lived skip portal the ship
 // can dive into. Distinct from the canister upgrade's flat radial-streak vortex
 // (Canister.renderWarp) — that one is a head-on swirl of spokes collapsing to a
-// point. This is a gravitational lens torn in space: the portal is read almost
-// entirely through what it does to the STARS BEHIND IT. Its slight tilt is
-// fixed to the SCREEN, not to the body's line of flight, so it reads the same
-// from every approach.
+// point.
 //
-// Aesthetic: a swirling distortion of the starfield with faint red energy. The
-// stars behind the mouth are dragged into tangential arcs that pile up on a
-// bright ring around a lightless shadow, spiral in toward it, and slowly wheel
-// around it — the whole disc reads as space itself being wound up and drawn
-// down a drain. The red is a whisper on top: a thin horizon glow on the
-// shadow's edge, a few hot filaments riding the ring, and long wisps of energy
-// that peel off the horizon and spiral outward, thinning and fading to nothing.
+// Aesthetic: a traversable wormhole drawn the way the physics says it looks — a
+// hole in 3-space is a SPHERE, so from any direction the mouth is a perfect
+// circle. Through it you see another sky: a whole distant universe squeezed
+// into the ball, nearly undistorted at the centre and wound ever tighter toward
+// the limb, where the far sky piles up into a thin bright rim. Around the ball
+// our own starfield is gravitationally lensed: stars behind the mouth are
+// pushed outward into arcs that crowd onto an Einstein ring, each paired with a
+// faint mirrored inner image between the ring and the limb. A slight frame-drag
+// wheels the lensed field so the mouth reads as alive, but there are no painted
+// wisps or flames — every bit of light is lensed starlight from one side or the
+// other.
 //
-// How the lensing is drawn (and why it isn't a baked pixel warp): the camera
-// scrolls the star layers under their own parallax, so a snapshot of the pixels
-// behind the mouth freezes the moment it's taken while the real stars keep
-// streaming past — a skip portal lives for beats, and the seam would show. So
-// the distortion is applied per STAR, not per pixel: the starfield yields the
-// handful of stars under the mouth each frame (the same wrapped, parallaxed
-// positions it paints), and each becomes a short lensed arc — a few dozen
-// tiny tapered strokes, batched by brightness. Everything that doesn't depend
-// on which stars are behind the mouth is prebaked: the shaded lens body, the
-// wound-up haze of the swirl (three concentric bands that wheel at their own
-// rates so it churns), and the lens map (image radius for each source radius)
-// as a lookup table built once.
+// How the lensing is drawn (and why it isn't a baked pixel warp of the
+// screen): the camera scrolls the star layers under their own parallax, so a
+// snapshot of the pixels behind the mouth freezes the moment it's taken while
+// the real stars keep streaming past. So the local lensing is applied per STAR:
+// the starfield yields the handful of stars under the mouth each frame and each
+// becomes a short lensed arc, batched by brightness. The far sky inside the
+// ball is a prebaked tileable texture read through a cached fish-eye lookup
+// table, panned by where the mouth sits on screen so the view through it shifts
+// with parallax as it scrolls past. A body falling in (the ship) is drawn
+// offscreen and pushed through the same lens map per pixel — see
+// renderThroughPortal.
 //
 // The effect is purely cosmetic and self-contained (same lifecycle shape as
-// DriftBurst): spawn → update(dt) prunes by life → render() draws additively.
-// The body's suck-in (scale-down + slide toward the anchor + spin) lives on the
-// entity itself in its warp-out phase; the wormhole only owns the portal so the
-// two can be sequenced (open → swallow → collapse) and the body always draws
-// in front of the mouth.
+// DriftBurst): spawn → update(dt) prunes by life → render() draws. The body's
+// suck-in lives on the entity itself in its warp-out phase; the wormhole only
+// owns the portal so the two can be sequenced (open → swallow → collapse) and
+// the body always draws in front of the mouth.
 
 const TAU = Math.PI * 2;
 
-// Lifecycle (seconds): the mouth irises open, holds while the body is swallowed,
+// Lifecycle (seconds): the mouth opens, holds while the body is swallowed,
 // then collapses. WARP_OUT_DURATION on the entity is tuned to land mid-hold.
 const OPEN = 0.34;
 const HOLD = 0.42;
 const CLOSE = 0.4;
 export const WORMHOLE_LIFE = OPEN + HOLD + CLOSE;
 
-// Screen-fixed tilt: the hole is an ellipse squashed on the vertical so it reads
-// as a round mouth seen from slightly above rather than a flat disc — but the
-// squash is ALWAYS along the screen's y-axis, never rotated to the body's
-// heading, so the portal looks identical no matter which way a body approached.
-const TILT = 0.6; // vertical squash of the ellipse (1 = head-on circle)
-
-// The inner iris (the actual hole) sits inside the outer lens. This is the
-// inner iris's fraction of the full long axis; the ship's far-lip crop and the
-// throat point are built from it.
-const INNER_FRAC = 0.74;
-
-// Long axis (px) of a portal torn by a body of this radius. The floor keeps a
-// tiny body from punching an invisibly small hole. spawnWormhole and the
-// entity's dive-anchor both go through this so the body always falls toward the
-// portal's actual throat.
+// Lens scale (px) of a portal torn by a body of this radius — the unit every
+// radius below is measured in. The floor keeps a tiny body from punching an
+// invisibly small hole.
 export const portalLongAxis = (bodyRadius: number): number => Math.max(40, bodyRadius * 2.0);
 
-// Screen offset from the portal centre to its vanishing-point throat. Because
-// the tilt is screen-fixed the throat always sits straight up-screen from the
-// centre (up the minor axis), independent of the body's heading — every body
-// dives "up and back" into the far side of the shadow. The entity eases its
-// dive toward this point; it lies well inside the lightless core so the body
-// is swallowed by black, never by starlight.
+// The mouth is a sphere, so the throat a body falls toward is its centre.
 export const warpAnchorOffset = (
-  bodyRadius: number, _heading: number,
-): { dx: number; dy: number } => {
-  const d = portalLongAxis(bodyRadius) * INNER_FRAC * 0.55 * TILT;
-  return { dx: 0, dy: -d };
-};
+  _bodyRadius: number, _heading: number,
+): { dx: number; dy: number } => ({ dx: 0, dy: 0 });
 
-// ── Lens geometry, in units of the iris long axis (u = r / long) ────────────
-// SHADOW: the lightless core — nothing behind it is seen. RING: the Einstein
-// radius, where lensed starlight piles up into the bright ring; every source
-// star's main image lands at or outside it. DEFLECT_END: where the bending has
-// faded to nothing. COVER: how far the dark lens body reaches before feathering
-// back into the untouched field (a touch past the bending so the last, barely
+// ── Lens geometry, in units of the portal's lens scale (u = r / L) ──────────
+// SPHERE: the mouth itself — the ball showing the far sky. RING: the Einstein
+// radius, where lensed local starlight piles up; every source star's main
+// image lands at or outside it. DEFLECT_END: where the bending has faded to
+// nothing. COVER: how far the dark lens body reaches before feathering back
+// into the untouched field (a touch past the bending so the last, barely
 // displaced images sit on their own hidden originals rather than beside them).
-const SHADOW = 0.5;
+const SPHERE = 0.5;
 const RING = 0.62;
 const DEFLECT_END = 1.25;
 const COVER = 1.4;
 
-// Static spiral twist of the lensed images at the ring (radians), and how fast
-// the ring wheels: both fade to zero at DEFLECT_END so the outer field stays
-// still and only the throat churns. PITCH tilts each streak off the tangent so
-// its downstream end leans in toward the throat — the arcs read as a spiral
-// draining inward, not concentric rings.
-const TWIST = 1.3;
-const SPIN = 1.1; // rad/s
-const PITCH = 0.55; // radians off the tangent at the ring
-
-// Hue band for the portal's own light. The rim/wisp highlight runs a touch
-// toward orange (hotter) and the horizon a touch toward oxblood (deeper), so the
-// wisps and the shadow's edge read as different temperatures of one ember.
-const MEMBRANE_HUE = 8; // wisps + ring filaments — hot orange-red
-const THROAT_HUE = 352; // horizon glow — deep oxblood red
+// Frame-dragging: the lensed field is twisted a little around the mouth and
+// slowly wheels, strongest at the ring and gone by DEFLECT_END, so the outer
+// field stays still. PITCH leans each arc a hair in toward the throat.
+const TWIST = 0.35;
+const SPIN = 0.16; // rad/s
+const PITCH = 0.12; // radians off the tangent at the ring
 
 export type Wormhole = {
   x: number;
   y: number;
-  // Long axis of the ellipse (px) at full open — scaled from the body's radius
-  // so a big alien tears a bigger hole than a comet.
+  // Lens scale (px) at full open — scaled from the body's radius so a big
+  // alien tears a bigger hole than a comet.
   radius: number;
-  // Vestigial as a frame rotation (the portal's tilt is screen-fixed), but used
-  // as a per-portal phase so the wisps and swirl of simultaneous portals don't
-  // line up. spawnWormhole seeds it from the heading so replays stay
-  // deterministic.
+  // Per-portal phase, seeded from the heading so replays stay deterministic.
   angle: number;
-  hueShift: number; // small per-portal hue jitter so they don't all match
+  hueShift: number; // per-portal jitter — picks which patch of far sky shows
   seed: number;
   life: number;
   maxLife: number;
@@ -157,60 +125,18 @@ export const updateWormholes = (list: Wormhole[], dt: number): Wormhole[] => {
 export const WORMHOLE_CLOSE = CLOSE;
 
 // A portal can swallow the ship only while the mouth is properly gaping —
-// not during the iris-open and not once the collapse has begun.
+// not during the opening and not once the collapse has begun.
 export const wormholeEnterable = (wh: Wormhole): boolean =>
   wh.maxLife - wh.life >= OPEN && wh.life > CLOSE;
 
-// Absolute position of the portal's vanishing-point throat — the point a
-// diving body eases toward (mirrors warpAnchorOffset for a live portal). The
-// tilt is screen-fixed, so the throat sits straight up-screen from the centre.
-export const throatPointOf = (wh: Wormhole): { x: number; y: number } => {
-  const d = wh.radius * INNER_FRAC * 0.55 * TILT;
-  return { x: wh.x, y: wh.y - d };
-};
-
-// Clip the current context so that anything drawn afterward is HIDDEN where it
-// crosses behind the far (upper) lip of the portal's inner iris — the ship
-// sinking into the hole vanishes down the throat instead of floating over it.
-//
-// The mask is the whole viewport MINUS the far half of the inner iris: the top
-// half of the tilted iris ellipse, from its horizontal centre-line up. A hull
-// pixel up-screen of that centre-line and inside the iris falls in the hole and
-// is masked away; the near (lower) lip never hides anything, so the ship reads
-// as tucking under the far rim while its near side still overlaps the mouth.
-//
-// Coords are world-space — call it inside the same camera-translated frame the
-// ship draws in. `screenW/H` bound the "keep everything" outer rect (generous
-// padding covers shake); `open` mirrors renderWormholes so the iris the crop
-// uses matches the one on screen exactly.
-export const clipBehindPortalFarLip = (
-  ctx: CanvasRenderingContext2D, wh: Wormhole, screenW: number, screenH: number,
-): void => {
-  const elapsed = wh.maxLife - wh.life;
-  const open = mouthOpen(elapsed, wh.life);
-  if (open < 0.02) return;
-  const inner = wh.radius * INNER_FRAC * open;
-  const ry = inner * TILT;
-  // Outer rect spans well past the viewport in every direction (the frame is
-  // camera-translated, so 0,0 isn't the screen origin) — it's the "show this".
-  const pad = Math.max(screenW, screenH);
-  ctx.beginPath();
-  ctx.rect(wh.x - screenW - pad, wh.y - screenH - pad, (screenW + pad) * 2, (screenH + pad) * 2);
-  // Far-half of the iris as its own closed sub-path: the upper semicircle of the
-  // tilted ellipse (canvas −y is up-screen, so π→2π sweeps the top edge), closed
-  // along its diameter. moveTo starts it fresh so no stray chord links it to the
-  // rect. evenodd punches this hole out of the rect → everything but the far lip
-  // survives.
-  ctx.moveTo(wh.x - inner, wh.y);
-  ctx.ellipse(wh.x, wh.y, inner, ry, 0, Math.PI, TAU);
-  ctx.closePath();
-  ctx.clip("evenodd");
-};
+// Absolute position of the portal's throat — the point a diving body eases
+// toward (mirrors warpAnchorOffset for a live portal): the sphere's centre.
+export const throatPointOf = (wh: Wormhole): { x: number; y: number } => ({ x: wh.x, y: wh.y });
 
 // Mouth-open factor 0→1→0. Opens over the first OPEN seconds, collapses over
 // the final CLOSE seconds of remaining life, holds at 1 between — expressed
 // off both ends of the lifetime so a portal whose life is cut short (skip
-// portals collapse early at wave end) still irises shut instead of popping.
+// portals collapse early at wave end) still shrinks shut instead of popping.
 const mouthOpen = (elapsed: number, life: number): number => {
   let open = 1;
   if (elapsed < OPEN) {
@@ -218,28 +144,19 @@ const mouthOpen = (elapsed: number, life: number): number => {
     open = 1 - (1 - p) * (1 - p);
   }
   if (life < CLOSE) {
-    const p = 1 - life / CLOSE; // ease-in collapse to a slit
+    const p = 1 - life / CLOSE; // ease-in collapse to a point
     open = Math.min(open, 1 - p * p);
   }
   return open;
 };
-
-// A cheap deterministic value-noise: a sum of a few sines the caller can sample
-// smoothly by angle so an outline wobbles organically instead of running a clean
-// curve. `phase` decorrelates portals; `t` drifts it so the wobble crawls and
-// writhes over time rather than sitting still.
-const wobble = (a: number, phase: number, t: number): number =>
-  Math.sin(a * 3 + phase + t) * 0.55
-  + Math.sin(a * 5 - phase * 1.7 - t * 0.8) * 0.3
-  + Math.sin(a * 8 + phase * 0.5 + t * 1.6) * 0.15;
 
 const smoothstep = (e0: number, e1: number, x: number): number => {
   const k = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
   return k * k * (3 - 2 * k);
 };
 
-// How much of the twist/spin a point at lens radius u feels: full at the ring,
-// gone at DEFLECT_END.
+// How much of the frame-drag twist a point at lens radius u feels: full at the
+// ring, gone at DEFLECT_END.
 const swirlWeight = (u: number): number => {
   const k = Math.max(0, Math.min(1, (DEFLECT_END - u) / (DEFLECT_END - RING)));
   return k * k;
@@ -250,6 +167,7 @@ const swirlWeight = (u: number): number => {
 // radius s appears at the (outer) image radius u where s = u − RING²/u — pushed
 // outward, and stretched along the ring by u/s. The bending is tapered to zero
 // by DEFLECT_END so the lens has an edge instead of tugging on the whole field.
+// A negative s is the inner image: a source on the far side of the centre.
 const deflection = (u: number): number =>
   ((RING * RING) / u) * (1 - smoothstep(0.8, DEFLECT_END, u));
 
@@ -294,14 +212,18 @@ const lensImage = (s: number): { u: number; mr: number } => {
   return { u: fwdU[i] + (fwdU[i2] - fwdU[i]) * k, mr: fwdMr[i] + (fwdMr[i2] - fwdMr[i]) * k };
 };
 
+// Deterministic 0…1 hash so every bake is identical run to run.
+const hash = (n: number): number => {
+  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
+
 // ── Cached lens body ──────────────────────────────────────────────────────────
-// The dark disc everything is drawn over: the shadow (baked a touch small — the
-// live, breathing horizon fill defines its true edge), a whisper of oxblood
-// past it, then the opaque backdrop colour out to COVER where it feathers back
-// into the live field. Shaded darker on the far (upper) side and faintly lit on
-// the near lip so the mouth reads as a bowl seen from above, not a flat plate.
-// One bake at a fixed resolution, scaled to any portal (never upscaled past it).
-const BODY_SPRITE_PX = 512;
+// The dark disc the lensed field is drawn over: it hides the undistorted stars
+// behind the mouth (their lensed images replace them) and feathers back into
+// the live field at COVER. Plain backdrop black — the lens bends light, it
+// doesn't tint it. One bake, scaled to any portal.
+const BODY_SPRITE_PX = 256;
 let bodySprite: HTMLCanvasElement | null = null;
 const getBodySprite = (): HTMLCanvasElement => {
   if (bodySprite) return bodySprite;
@@ -312,184 +234,199 @@ const getBodySprite = (): HTMLCanvasElement => {
   const half = BODY_SPRITE_PX / 2;
   const at = (u: number) => u / COVER;
   const grad = g.createRadialGradient(half, half, 0, half, half, half);
-  grad.addColorStop(0, "rgba(0, 0, 3, 1)");
-  grad.addColorStop(at(SHADOW - 0.06), "rgba(0, 0, 3, 1)");
-  grad.addColorStop(at(SHADOW - 0.02), "rgba(18, 4, 12, 1)");
-  grad.addColorStop(at(RING + 0.1), "rgba(12, 11, 26, 1)");
-  grad.addColorStop(at(0.95), "rgba(5, 3, 12, 1)");
-  grad.addColorStop(at(1.12), "rgba(2, 3, 10, 1)");
+  grad.addColorStop(0, "rgba(2, 3, 10, 1)");
+  grad.addColorStop(at(0.95), "rgba(2, 3, 10, 1)");
+  grad.addColorStop(at(1.2), "rgba(2, 3, 10, 0.55)");
   grad.addColorStop(1, "rgba(2, 3, 10, 0)");
   g.fillStyle = grad;
-  g.fillRect(0, 0, BODY_SPRITE_PX, BODY_SPRITE_PX);
-  // Bowl shading, only where the disc already is (source-atop keeps the feather).
-  g.globalCompositeOperation = "source-atop";
-  const shade = g.createLinearGradient(0, 0, 0, BODY_SPRITE_PX);
-  shade.addColorStop(0, "rgba(0, 0, 0, 0.45)");
-  shade.addColorStop(0.5, "rgba(0, 0, 0, 0)");
-  shade.addColorStop(1, "rgba(60, 70, 120, 0.12)");
-  g.fillStyle = shade;
   g.fillRect(0, 0, BODY_SPRITE_PX, BODY_SPRITE_PX);
   bodySprite = c;
   return c;
 };
 
-// ── Cached swirl ──────────────────────────────────────────────────────────────
-// The lensed haze: the nebula light behind the mouth wound into spiral arms,
-// piling into a luminous Einstein ring and thinning to a faint halo past the
-// disc. Baked once as one sprite, then cut into two feathered concentric
-// bands whose alphas sum to one, so the ring zone can wheel faster than the
-// outer arms and the spiral visibly winds up over time — the differential
-// rotation is what makes a static texture read as churning. Two bands, not
-// more: each is a full rotated blit of the disc, the priciest thing here on a
-// software-rasterised canvas. Baked with the flow's handedness for dir = +1; a
-// mirrored draw flips it.
-const SWIRL_PX = 512;
-const SWIRL_REACH = 1.5; // u at the sprite's edge
-const SWIRL_BAND_EDGES = [0.85]; // u where the inner band hands over to the outer
-const SWIRL_FEATHER = 0.1;
-const SWIRL_RATES = [0.5, 0.14]; // rad/s, inner → outer
-let swirlBands: HTMLCanvasElement[] | null = null;
+// ── The far sky ───────────────────────────────────────────────────────────────
+// What lies on the other side: a tileable patch of a different universe — a
+// warm galactic band with dark dust lanes and red emission knots across a
+// dense field of stars of every temperature. Baked once into a pixel buffer
+// the sphere samples directly.
+const SKY_PX = 512; // power of two: samples wrap with a bitmask
+const SKY_MASK = SKY_PX - 1;
+let skyPixels: Uint8ClampedArray | null = null;
 
-// Deterministic 0…1 hash so the bake is identical every run.
-const hash = (n: number): number => {
-  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
-  return x - Math.floor(x);
-};
-
-const bakeSwirl = (): HTMLCanvasElement => {
+const bakeFarSky = (): Uint8ClampedArray => {
   const c = document.createElement("canvas");
-  c.width = SWIRL_PX;
-  c.height = SWIRL_PX;
-  const g = c.getContext("2d")!;
-  const half = SWIRL_PX / 2;
-  const U = half / SWIRL_REACH; // px per u
-  g.globalCompositeOperation = "lighter";
-  const blob = (x: number, y: number, r: number, color: string) => {
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, color);
-    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
-    g.fillStyle = grad;
-    g.beginPath();
-    g.arc(x, y, r, 0, TAU);
-    g.fill();
+  c.width = SKY_PX;
+  c.height = SKY_PX;
+  const g = c.getContext("2d", { willReadFrequently: true })!;
+  g.fillStyle = "rgb(3, 2, 6)";
+  g.fillRect(0, 0, SKY_PX, SKY_PX);
+  // Every element is stamped at the eight wrap neighbours too, so the patch
+  // tiles seamlessly however the sphere pans across it.
+  const tiled = (x: number, y: number, r: number, paint: (x: number, y: number) => void) => {
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const px = x + ox * SKY_PX;
+        const py = y + oy * SKY_PX;
+        if (px + r < 0 || px - r > SKY_PX || py + r < 0 || py - r > SKY_PX) continue;
+        paint(px, py);
+      }
+    }
   };
-  const polar = (u: number, th: number) =>
-    ({ x: half + Math.cos(th) * u * U, y: half + Math.sin(th) * u * U });
-
-  // 1) Einstein-ring glow and the faint halo past the disc, one annular
-  //    gradient: a warm lip right at the horizon, cool starlight piled on the
-  //    ring, thinning outward.
-  const at = (u: number) => u / SWIRL_REACH;
-  const ring = g.createRadialGradient(half, half, 0, half, half, half);
-  ring.addColorStop(at(SHADOW - 0.02), "hsla(350, 80%, 45%, 0)");
-  ring.addColorStop(at(SHADOW + 0.01), "hsla(350, 85%, 48%, 0.10)");
-  ring.addColorStop(at(RING - 0.03), "hsla(215, 65%, 80%, 0.28)");
-  ring.addColorStop(at(RING + 0.05), "hsla(215, 65%, 80%, 0.2)");
-  ring.addColorStop(at(0.9), "hsla(220, 60%, 72%, 0.05)");
-  ring.addColorStop(at(1.1), "hsla(215, 60%, 75%, 0.075)"); // faint secondary caustic
-  ring.addColorStop(at(1.3), "hsla(220, 60%, 62%, 0.02)");
-  ring.addColorStop(1, "hsla(220, 60%, 60%, 0)");
-  g.fillStyle = ring;
-  g.fillRect(0, 0, SWIRL_PX, SWIRL_PX);
-
-  // 2) Three spiral arms of wound haze: soft blobs marched down log spirals
-  //    (inward ⇒ +θ, the flow's handedness), clumped, jittered, broadening and
-  //    dimming outward.
-  const ARMS = 3;
-  const U0 = 0.52;
-  let n = 0;
-  for (let arm = 0; arm < ARMS; arm++) {
-    const th0 = (arm / ARMS) * TAU;
-    for (let u = U0; u < 1.45; u += 0.012) {
-      n++;
-      const along = Math.min(1, (u - U0) / 0.93);
-      const th = th0 - 2.4 * Math.log(u / U0) + 0.22 * Math.sin(u * 9 + arm * 1.3);
-      const clump = 0.55 + 0.45 * Math.sin(u * 23 + arm * 2.1) * Math.sin(u * 7.3 + arm);
-      const alpha = (0.13 * Math.pow(1 - along, 1.1) + 0.02) * clump;
-      const rad = (0.045 + 0.1 * along) * U;
-      const p = polar(u + (hash(n) - 0.5) * 0.05, th + (hash(n + 0.5) - 0.5) * 0.14);
-      const hue = 205 + 30 * hash(n + 0.25);
-      blob(p.x, p.y, rad, `hsla(${hue}, 55%, 84%, ${alpha})`);
+  const blob = (x: number, y: number, r: number, color: string, op: GlobalCompositeOperation) => {
+    tiled(x, y, r, (px, py) => {
+      const grad = g.createRadialGradient(px, py, 0, px, py, r);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+      g.globalCompositeOperation = op;
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(px, py, r, 0, TAU);
+      g.fill();
+    });
+  };
+  // The galactic band runs diagonally (a 1:1 slope tiles cleanly): a diffuse
+  // glow, a brighter clumped core of old yellow-white starlight along its
+  // spine, dust lanes eating dark channels into it, and red emission knots
+  // and blue young-star clouds strung along its edges.
+  const band = (t: number, off: number) => ({ x: t * SKY_PX + off, y: t * SKY_PX - off });
+  for (let i = 0; i < 120; i++) {
+    const p = band(i / 120, (hash(i + 1) - 0.5) * 60);
+    blob(p.x, p.y, 40 + 40 * hash(i + 2), `rgba(120, 105, 120, ${0.035 + 0.03 * hash(i + 3)})`, "lighter");
+  }
+  for (let i = 0; i < 220; i++) {
+    const p = band(hash(i + 10), (hash(i + 11) - 0.5) * 34 * hash(i + 14));
+    blob(p.x, p.y, 6 + 16 * hash(i + 12), `rgba(255, 230, 200, ${0.05 + 0.09 * hash(i + 13)})`, "lighter");
+  }
+  for (let i = 0; i < 110; i++) {
+    const p = band(hash(i + 20), (hash(i + 21) - 0.5) * 30);
+    blob(p.x, p.y, 4 + 12 * hash(i + 22), `rgba(4, 2, 6, ${0.5 + 0.4 * hash(i + 23)})`, "source-over");
+  }
+  for (let i = 0; i < 34; i++) {
+    const side = hash(i + 30) < 0.5 ? -1 : 1;
+    const p = band(hash(i + 31), side * (14 + 28 * hash(i + 32)));
+    const red = hash(i + 37) < 0.6;
+    const col = red ? "255, 70, 70" : "120, 160, 255";
+    blob(p.x, p.y, 4 + 9 * hash(i + 33), `rgba(${col}, ${0.2 + 0.25 * hash(i + 34)})`, "lighter");
+    blob(p.x, p.y, 1.5 + 2.5 * hash(i + 35), `rgba(${red ? "255, 170, 160" : "200, 220, 255"}, ${0.35 + 0.3 * hash(i + 36)})`, "lighter");
+  }
+  // Stars: dense, clustered toward the band, coloured by temperature. Each is
+  // a 2×2 soft dot so the sphere's filtered reads never alias it away.
+  g.globalCompositeOperation = "lighter";
+  const temps = ["255, 190, 150", "255, 225, 200", "255, 245, 235", "210, 225, 255", "170, 195, 255"];
+  for (let i = 0; i < 2200; i++) {
+    let x = hash(i * 1.37 + 50) * SKY_PX;
+    let y = hash(i * 1.37 + 51) * SKY_PX;
+    if (hash(i + 52) < 0.5) {
+      const p = band(hash(i + 53), (hash(i + 54) - 0.5) * (hash(i + 55) * 90));
+      x = p.x;
+      y = p.y;
     }
+    const m = Math.pow(hash(i + 56), 5);
+    const col = temps[Math.floor(hash(i + 57) * temps.length)];
+    tiled(x, y, 3, (px, py) => {
+      g.fillStyle = `rgba(${col}, ${0.12 + 0.6 * m})`;
+      g.fillRect(px - 1, py - 1, 2, 2);
+      g.fillStyle = `rgba(${col}, ${0.15 + 0.85 * m})`;
+      g.fillRect(px - 0.5, py - 0.5, 1, 1);
+    });
+    if (m > 0.4) blob(x, y, 3 + 6 * m, `rgba(${col}, ${0.4 * m})`, "lighter");
   }
-  // 3) Two fine filaments between the arms — thin bright threads on the same
-  //    spiral, so the haze has structure at more than one scale.
-  g.lineCap = "round";
-  for (let f = 0; f < 2; f++) {
-    const th0 = ((f + 0.5) / 2) * TAU + 0.4;
-    g.beginPath();
-    for (let u = 0.56, first = true; u < 1.4; u += 0.01, first = false) {
-      const th = th0 - 2.4 * Math.log(u / U0) + 0.12 * Math.sin(u * 14 + f);
-      const p = polar(u, th);
-      if (first) g.moveTo(p.x, p.y);
-      else g.lineTo(p.x, p.y);
-    }
-    g.lineWidth = 1.3;
-    g.strokeStyle = "hsla(210, 70%, 88%, 0.12)";
-    g.stroke();
-  }
-  // 4) Nebulosity: faint speckle so the dark between arms isn't dead flat.
-  for (let i = 0; i < 140; i++) {
-    const u = 0.56 + hash(i * 3.1 + 100) * 0.8;
-    const th = hash(i * 3.1 + 200) * TAU;
-    const p = polar(u, th);
-    const rad = (0.02 + 0.05 * hash(i * 3.1 + 300)) * U;
-    blob(p.x, p.y, rad, `hsla(${215 + 40 * hash(i + 400)}, 60%, 80%, ${0.03 + 0.05 * hash(i + 500)})`);
-  }
-  return c;
+  return g.getImageData(0, 0, SKY_PX, SKY_PX).data;
 };
 
-// Cut the baked swirl into concentric bands with complementary linear
-// feathers (their alphas sum to one), each its own sprite.
-const getSwirlBands = (): HTMLCanvasElement[] => {
-  if (swirlBands) return swirlBands;
-  const swirl = bakeSwirl();
-  const half = SWIRL_PX / 2;
-  const at = (u: number) => Math.max(0, Math.min(1, u / SWIRL_REACH));
-  const edges = [0, ...SWIRL_BAND_EDGES, SWIRL_REACH + 1];
-  const bands: HTMLCanvasElement[] = [];
-  for (let i = 0; i < SWIRL_RATES.length; i++) {
-    const c = document.createElement("canvas");
-    c.width = SWIRL_PX;
-    c.height = SWIRL_PX;
-    const g = c.getContext("2d")!;
-    g.drawImage(swirl, 0, 0);
-    g.globalCompositeOperation = "destination-in";
-    const mask = g.createRadialGradient(half, half, 0, half, half, half);
-    const lo = edges[i];
-    const hi = edges[i + 1];
-    const f = SWIRL_FEATHER;
-    if (i === 0) mask.addColorStop(0, "rgba(0, 0, 0, 1)");
-    else {
-      mask.addColorStop(at(lo - f), "rgba(0, 0, 0, 0)");
-      mask.addColorStop(at(lo + f), "rgba(0, 0, 0, 1)");
+// Fish-eye map for the ball at a given sprite resolution: for each pixel, the
+// offset into the far sky it sees, plus a gain and coverage. Near the centre
+// the view is close to straight through; toward the limb the deflection
+// diverges so the whole far sky is wound into an ever-thinner rim, where the
+// piled-up images brighten into a fine ring. Cached per size.
+type SphereMap = {
+  n: number;
+  dx: Float32Array;
+  dy: Float32Array;
+  gain: Float32Array;
+  cover: Float32Array;
+  img: ImageData;
+  canvas: HTMLCanvasElement;
+};
+const sphereMaps = new Map<number, SphereMap>();
+const SKY_SCALE = 70; // far-sky px across the ball's radius at the centre
+
+const getSphereMap = (n: number): SphereMap => {
+  const hit = sphereMaps.get(n);
+  if (hit) return hit;
+  const dx = new Float32Array(n * n);
+  const dy = new Float32Array(n * n);
+  const gain = new Float32Array(n * n);
+  const cover = new Float32Array(n * n);
+  const half = n / 2;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const x = (i + 0.5 - half) / half;
+      const y = (j + 0.5 - half) / half;
+      const rho = Math.hypot(x, y);
+      const k = j * n + i;
+      cover[k] = Math.max(0, Math.min(1, (1 - rho) * half + 0.5));
+      if (rho >= 1) continue;
+      const R = (SKY_SCALE * rho) / Math.sqrt(1 - rho * rho * 0.995);
+      const a = Math.atan2(y, x);
+      dx[k] = Math.cos(a) * R;
+      dy[k] = Math.sin(a) * R;
+      const limb = smoothstep(0.86, 1, rho);
+      gain[k] = 1 + 1.6 * limb * limb;
     }
-    if (i === SWIRL_RATES.length - 1) mask.addColorStop(1, "rgba(0, 0, 0, 1)");
-    else {
-      mask.addColorStop(at(hi - f), "rgba(0, 0, 0, 1)");
-      mask.addColorStop(at(hi + f), "rgba(0, 0, 0, 0)");
-    }
-    g.fillStyle = mask;
-    g.fillRect(0, 0, SWIRL_PX, SWIRL_PX);
-    bands.push(c);
   }
-  swirlBands = bands;
-  return bands;
+  const canvas = document.createElement("canvas");
+  canvas.width = n;
+  canvas.height = n;
+  const img = canvas.getContext("2d")!.createImageData(n, n);
+  const map = { n, dx, dy, gain, cover, img, canvas };
+  sphereMaps.set(n, map);
+  return map;
 };
 
-// Wheel the swirl bands, inner fastest, in the portal's flow direction.
-const renderSwirl = (
-  ctx: CanvasRenderingContext2D, L: number, t: number, dir: number, seed: number,
+// Paint the ball: read the far sky through the fish-eye map, panned by the
+// mouth's screen position (parallax — the view through shifts as it scrolls)
+// and drifting slowly with time.
+const renderSphere = (
+  ctx: CanvasRenderingContext2D, L: number, pxScale: number,
+  panX: number, panY: number,
 ): void => {
-  const bands = getSwirlBands();
-  const R = SWIRL_REACH * L;
-  for (let i = 0; i < bands.length; i++) {
-    ctx.save();
-    ctx.scale(dir, TILT);
-    ctx.rotate(SWIRL_RATES[i] * t + seed * (1 + i * 0.7));
-    ctx.drawImage(bands[i], -R, -R, R * 2, R * 2);
-    ctx.restore();
+  const sky = skyPixels ?? (skyPixels = bakeFarSky());
+  const r = SPHERE * L;
+  const n = Math.max(24, Math.min(256, Math.ceil(r * 2 * pxScale)));
+  const map = getSphereMap(n);
+  const out = map.img.data;
+  const { dx, dy, gain, cover } = map;
+  for (let k = 0; k < n * n; k++) {
+    const c = cover[k];
+    const o = k * 4;
+    if (c <= 0) {
+      out[o + 3] = 0;
+      continue;
+    }
+    // Bilinear read, wrapping on the tile.
+    const fx = dx[k] + panX;
+    const fy = dy[k] + panY;
+    const ix = Math.floor(fx);
+    const iy = Math.floor(fy);
+    const tx = fx - ix;
+    const ty = fy - iy;
+    const r0 = (iy & SKY_MASK) * SKY_PX;
+    const r1 = ((iy + 1) & SKY_MASK) * SKY_PX;
+    const a = (r0 + (ix & SKY_MASK)) * 4;
+    const b = (r0 + ((ix + 1) & SKY_MASK)) * 4;
+    const cc = (r1 + (ix & SKY_MASK)) * 4;
+    const d = (r1 + ((ix + 1) & SKY_MASK)) * 4;
+    const gk = gain[k];
+    for (let ch = 0; ch < 3; ch++) {
+      const top = sky[a + ch] + (sky[b + ch] - sky[a + ch]) * tx;
+      const bot = sky[cc + ch] + (sky[d + ch] - sky[cc + ch]) * tx;
+      out[o + ch] = (top + (bot - top) * ty) * gk;
+    }
+    out[o + 3] = 255 * c;
   }
+  map.canvas.getContext("2d")!.putImageData(map.img, 0, 0);
+  ctx.drawImage(map.canvas, -r, -r, r * 2, r * 2);
 };
 
 // ── Lensed stars ──────────────────────────────────────────────────────────────
@@ -508,8 +445,8 @@ export type LensBackdrop = {
 // but from a visible floor, capped so they never wrap far around the ring.
 // Pin-pricks stretch harder than the bright twinklers, whose halos would
 // otherwise smear into bands.
-const DUST_STREAK_GAIN = 5;
-const STAR_STREAK_GAIN = 2.5;
+const DUST_STREAK_GAIN = 1.6;
+const STAR_STREAK_GAIN = 1;
 const MAX_MAG = 8;
 
 // Pin-prick arcs are batched into one path per brightness bucket, split again
@@ -531,7 +468,7 @@ const streakPoint = (
 ): { x: number; y: number } => {
   const rk = r - k * halfLen * Math.sin(pitch);
   const ak = th + (dir * k * halfLen * Math.cos(pitch)) / r;
-  return { x: Math.cos(ak) * rk, y: Math.sin(ak) * rk * TILT };
+  return { x: Math.cos(ak) * rk, y: Math.sin(ak) * rk };
 };
 
 // Add a tapered, leaf-shaped streak through three points to a path: a kite
@@ -635,10 +572,10 @@ const renderLensedStars = (
   // Bigger mouths get proportionally longer streaks so the swirl reads at any size.
   const sizeScale = Math.sqrt(L / 60);
   backdrop.starfield.forEachStarNear(
-    backdrop.timeMs, backdrop.scrollX, backdrop.scrollY, cx, cy, reach, reach * TILT,
+    backdrop.timeMs, backdrop.scrollX, backdrop.scrollY, cx, cy, reach, reach,
     (x, y, size, _hue, alpha, halo) => {
       const X = (x - cx) / L;
-      const Y = (y - cy) / (L * TILT);
+      const Y = (y - cy) / L;
       const s = Math.hypot(X, Y);
       if (s >= COVER) return;
       const thS = Math.atan2(Y, X);
@@ -649,7 +586,7 @@ const renderLensedStars = (
       const pitch = PITCH * sw;
       const bright = halo || size > 1.0;
       const gain = (bright ? STAR_STREAK_GAIN : DUST_STREAK_GAIN) * sizeScale;
-      const halfLen = Math.min(0.45 * u * L, sizeScale + size * mt * gain);
+      const halfLen = Math.min(0.45 * u * L, sizeScale * (0.4 + size * (mt - 1) * gain));
       if (bright) {
         const halfW = Math.max(0.4, size * 0.8 * (0.6 + 0.4 * mr));
         addStarArc(alpha, u, thD, halfLen, L, pitch, dir, halfW, halo);
@@ -658,11 +595,11 @@ const renderLensedStars = (
       }
       // Inner image: mirrored through the centre, squeezed toward the shadow.
       const uIn = (RING * RING) / u;
-      if (uIn > SHADOW + 0.02 && s > 1e-4) {
+      if (uIn > SPHERE + 0.02 && s > 1e-4) {
         const mtIn = Math.min(MAX_MAG, uIn / s);
         const swIn = swirlWeight(uIn);
         const thIn = thS + Math.PI + dir * swIn * (TWIST + spin);
-        const halfIn = Math.min(0.3 * uIn * L, sizeScale * 0.7 + size * mtIn * gain * 0.7);
+        const halfIn = Math.min(0.3 * uIn * L, sizeScale * (0.3 + size * mtIn * gain * 0.7));
         addDustArc(alpha * 0.55, uIn, thIn, halfIn, L, PITCH * swIn, dir);
       }
     },
@@ -686,211 +623,30 @@ const renderLensedStars = (
   }
 };
 
-// ── Horizon ───────────────────────────────────────────────────────────────────
-// The shadow's edge breathes: a slow, shallow wobble on the horizon so the
-// throat reads as something alive rather than a stamped ellipse. Traced in the
-// squashed frame; `scale` insets the path for the lines that ride just inside.
-const HORIZON_SAMPLES = 56;
-const traceHorizon = (
-  ctx: CanvasRenderingContext2D, r: number, phase: number, t: number, scale = 1,
-): void => {
+// ── Einstein ring ─────────────────────────────────────────────────────────────
+// Lensed starlight from the whole field behind the mouth crowds onto the ring:
+// a faint diffuse annulus of cool light, densest at the ring and thinning out,
+// with a fine bright thread hugging the limb where the inner images pile up.
+const renderRingGlow = (ctx: CanvasRenderingContext2D, L: number, open: number): void => {
+  const at = (u: number) => u / DEFLECT_END;
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, DEFLECT_END * L);
+  glow.addColorStop(at(SPHERE), "hsla(215, 60%, 85%, 0)");
+  glow.addColorStop(at(SPHERE + 0.015), "hsla(210, 70%, 92%, 0.22)");
+  glow.addColorStop(at(SPHERE + 0.05), "hsla(215, 60%, 80%, 0.05)");
+  glow.addColorStop(at(RING - 0.02), "hsla(215, 60%, 82%, 0.11)");
+  glow.addColorStop(at(RING + 0.04), "hsla(218, 60%, 78%, 0.07)");
+  glow.addColorStop(at(0.95), "hsla(220, 60%, 70%, 0.015)");
+  glow.addColorStop(1, "hsla(220, 60%, 70%, 0)");
+  ctx.globalAlpha = open;
+  ctx.fillStyle = glow;
   ctx.beginPath();
-  for (let i = 0; i <= HORIZON_SAMPLES; i++) {
-    const a = (i / HORIZON_SAMPLES) * TAU;
-    const rr = r * scale * (1 + wobble(a, phase, t * 0.6) * 0.025);
-    const x = Math.cos(a) * rr;
-    const y = Math.sin(a) * rr;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-};
-
-// The lightless core, filled live so its edge is the breathing horizon.
-const renderShadow = (
-  ctx: CanvasRenderingContext2D, L: number, phase: number, t: number,
-): void => {
-  traceHorizon(ctx, SHADOW * L, phase, t);
-  ctx.fillStyle = "rgb(0, 0, 3)";
+  ctx.arc(0, 0, DEFLECT_END * L, 0, TAU);
   ctx.fill();
-};
-
-// Photon ring on the horizon — a crisp bright thread, Doppler-lit (brighter and
-// warmer on the near, lower lip; cool and dim on the far side) under a soft
-// warm bloom, with a faint oxblood line just inside — plus glints where the
-// lensed light piles up, wheeling with the flow, and three hot filaments riding
-// the ring. The ring flares while the mouth is still irising open.
-const renderHorizon = (
-  ctx: CanvasRenderingContext2D,
-  L: number, membraneHue: number, throatHue: number,
-  open: number, t: number, dir: number, phase: number, shimmer: number, spin: number,
-): void => {
-  const r = SHADOW * L;
-  const flare = Math.min(1.6, 1 + 1.5 * (1 - open));
-  traceHorizon(ctx, r, phase, t);
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = `hsla(${membraneHue + 14}, 90%, 62%, ${0.07 * open * shimmer * flare})`;
-  ctx.stroke();
-  const lip = ctx.createLinearGradient(0, -r, 0, r);
-  lip.addColorStop(0, `hsla(210, 70%, 85%, ${Math.min(1, 0.2 * open * flare)})`);
-  lip.addColorStop(0.55, `hsla(200, 60%, 90%, ${Math.min(1, 0.42 * open * flare)})`);
-  lip.addColorStop(1, `hsla(${membraneHue + 26}, 95%, 82%, ${Math.min(1, 0.62 * open * shimmer * flare)})`);
-  ctx.lineWidth = 1.05;
-  ctx.strokeStyle = lip;
-  ctx.stroke();
-  traceHorizon(ctx, r, phase, t, 0.965);
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = `hsla(${throatHue}, 100%, 42%, ${0.16 * open})`;
-  ctx.stroke();
-
-  for (let g = 0; g < 5; g++) {
-    const a = phase + g * 1.2566 + dir * spin * 0.55;
-    const pulse = Math.pow(Math.max(0, Math.sin(t * 2.3 + g * 1.9)), 3) * open;
-    if (pulse < 0.02) continue;
-    const rr = r * (1 + wobble(a, phase, t * 0.6) * 0.025);
-    const x = Math.cos(a) * rr;
-    const y = Math.sin(a) * rr;
-    ctx.fillStyle = `hsla(${membraneHue + 20}, 100%, 70%, ${0.18 * pulse})`;
-    ctx.beginPath();
-    ctx.arc(x, y, 4.5, 0, TAU);
-    ctx.fill();
-    ctx.fillStyle = `hsla(40, 100%, 92%, ${0.75 * pulse})`;
-    ctx.beginPath();
-    ctx.arc(x, y, 1.2, 0, TAU);
-    ctx.fill();
-  }
-
-  for (let i = 0; i < 3; i++) {
-    const fr = (RING + 0.03 + 0.05 * i) * L;
-    const start = phase + i * 2.1 + dir * t * (0.9 + 0.25 * i);
-    const span = 0.8 + 0.3 * Math.sin(t * 1.3 + i);
-    ctx.beginPath();
-    const N = 12;
-    for (let k = 0; k <= N; k++) {
-      const a = start + (dir * span * k) / N;
-      const rr = fr * (1 + 0.02 * Math.sin(a * 4 + t * 2 + i));
-      const x = Math.cos(a) * rr;
-      const y = Math.sin(a) * rr;
-      if (k === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.lineWidth = 2.6;
-    ctx.strokeStyle = `hsla(${membraneHue}, 100%, 55%, ${0.05 * open})`;
-    ctx.stroke();
-    ctx.lineWidth = 0.8;
-    ctx.strokeStyle = `hsla(${membraneHue + 6}, 100%, 66%, ${0.16 * open * shimmer})`;
-    ctx.stroke();
-  }
-};
-
-// ── Red energy ────────────────────────────────────────────────────────────────
-// Wisps: long filaments of energy that peel off the horizon and spiral outward
-// with the flow, tapering from a fine thread at the root to nothing at the tip,
-// their light falling off with distance so each one dissolves into the dark
-// rather than ending. Each throws a shorter branch partway along, and a spark
-// slides out along it and dies at the tip. Drawn as filled ribbons in the
-// squashed frame.
-const WISP_COUNT = 8;
-const WISP_SAMPLES = 14;
-const BRANCH_SAMPLES = 8;
-const wispX = new Float32Array(WISP_SAMPLES + 1);
-const wispY = new Float32Array(WISP_SAMPLES + 1);
-const branchX = new Float32Array(BRANCH_SAMPLES + 1);
-const branchY = new Float32Array(BRANCH_SAMPLES + 1);
-
-const fillRibbon = (
-  ctx: CanvasRenderingContext2D,
-  xs: Float32Array, ys: Float32Array, n: number, rootHalfWidth: number,
-): void => {
-  ctx.beginPath();
-  // Left edge root→tip, then right edge tip→root, offsetting each spine sample
-  // along its normal by a width that thins toward the tip.
-  for (let pass = 0; pass < 2; pass++) {
-    for (let k = 0; k <= n; k++) {
-      const i = pass === 0 ? k : n - k;
-      const i0 = Math.max(0, i - 1);
-      const i1 = Math.min(n, i + 1);
-      const tx = xs[i1] - xs[i0];
-      const ty = ys[i1] - ys[i0];
-      const len = Math.hypot(tx, ty) || 1;
-      const s = i / n;
-      const hw = (rootHalfWidth * Math.pow(1 - s, 2) + 0.05) * (pass === 0 ? 1 : -1);
-      const px = xs[i] - (ty / len) * hw;
-      const py = ys[i] + (tx / len) * hw;
-      if (pass === 0 && k === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-  }
-  ctx.closePath();
-  ctx.fill();
-};
-
-const renderWisps = (
-  ctx: CanvasRenderingContext2D,
-  L: number, hue: number, open: number, t: number, dir: number, phase: number,
-): void => {
-  // Light falls off with distance from the horizon — shared by every wisp so
-  // the whole nest fades out at the same radius.
-  const glow = ctx.createRadialGradient(0, 0, SHADOW * L, 0, 0, 1.9 * L);
-  glow.addColorStop(0, `hsla(${hue}, 100%, 62%, 0.42)`);
-  glow.addColorStop(0.3, `hsla(${hue}, 100%, 56%, 0.16)`);
-  glow.addColorStop(1, `hsla(${hue - 10}, 100%, 45%, 0)`);
-  const rootWidth = 0.65 * Math.sqrt(L / 60);
-  for (let i = 0; i < WISP_COUNT; i++) {
-    // Root angle drifts with the flow; reach and curl breathe per wisp so the
-    // nest never reads as a fixed rosette.
-    const a0 = phase * 1.3 + i * (TAU / WISP_COUNT) + dir * t * 0.25 + 0.3 * Math.sin(t * 0.7 + i * 1.9);
-    const reach = 1.05 + 0.75 * (0.5 + 0.5 * Math.sin(t * 0.9 + i * 1.7));
-    const curl = 2.0 + 0.5 * Math.sin(t * 0.5 + i * 2.3);
-    const u0 = SHADOW + 0.04;
-    for (let k = 0; k <= WISP_SAMPLES; k++) {
-      const s = k / WISP_SAMPLES;
-      const u = u0 + (reach - u0) * s;
-      const th = a0 + dir * curl * Math.pow(s, 1.3) + wobble(s * 5, phase + i, t * 1.5) * 0.18 * s;
-      wispX[k] = Math.cos(th) * u * L;
-      wispY[k] = Math.sin(th) * u * L;
-    }
-    // Branch: splits off partway, curls away shorter and thinner, alternating
-    // sides so the nest reads as tangled rather than combed.
-    const sb = 0.35 + 0.25 * ((i * 0.618) % 1);
-    const ub = u0 + (reach - u0) * sb;
-    const thb = a0 + dir * curl * Math.pow(sb, 1.3) + wobble(sb * 5, phase + i, t * 1.5) * 0.18 * sb;
-    const side = i % 2 === 0 ? 1 : -1;
-    for (let k = 0; k <= BRANCH_SAMPLES; k++) {
-      const s = k / BRANCH_SAMPLES;
-      const u = ub + (reach - ub) * 0.55 * s;
-      const th = thb + dir * curl * 0.45 * Math.pow(s, 1.2) + side * 0.5 * s;
-      branchX[k] = Math.cos(th) * u * L;
-      branchY[k] = Math.sin(th) * u * L;
-    }
-    const flicker = 0.75 + 0.25 * Math.sin(t * 3 + i * 2.4);
-    ctx.fillStyle = glow;
-    ctx.globalAlpha = open * flicker * 0.12;
-    fillRibbon(ctx, wispX, wispY, WISP_SAMPLES, rootWidth * 4); // soft bloom under the thread
-    ctx.globalAlpha = open * flicker * 0.85;
-    fillRibbon(ctx, wispX, wispY, WISP_SAMPLES, rootWidth);
-    ctx.globalAlpha = open * flicker * 0.6;
-    fillRibbon(ctx, branchX, branchY, BRANCH_SAMPLES, rootWidth * 0.6);
-    // Spark: slides out along the wisp and gutters as it reaches the tip.
-    const sg = (t * 0.3 + i * 0.173) % 1;
-    const f = sg * WISP_SAMPLES;
-    const k0 = Math.min(WISP_SAMPLES - 1, Math.floor(f));
-    const fr = f - k0;
-    const gx = wispX[k0] + (wispX[k0 + 1] - wispX[k0]) * fr;
-    const gy = wispY[k0] + (wispY[k0 + 1] - wispY[k0]) * fr;
-    const ga = Math.pow(1 - sg, 1.5) * open;
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = `hsla(${hue + 20}, 100%, 70%, ${0.22 * ga})`;
-    ctx.beginPath();
-    ctx.arc(gx, gy, 3.5, 0, TAU);
-    ctx.fill();
-    ctx.fillStyle = `hsla(40, 100%, 90%, ${0.8 * ga})`;
-    ctx.beginPath();
-    ctx.arc(gx, gy, 1.1, 0, TAU);
-    ctx.fill();
-  }
   ctx.globalAlpha = 1;
 };
+
+const flowDir = (wh: Wormhole): number => (wh.seed > Math.PI ? 1 : -1);
+const flowSpin = (wh: Wormhole, tSec: number): number => tSec * SPIN + wh.seed;
 
 export const renderWormholes = (
   ctx: CanvasRenderingContext2D, list: Wormhole[], tSec: number,
@@ -903,9 +659,8 @@ export const renderWormholes = (
   const m = ctx.getTransform();
   const offX = m.e / m.a;
   const offY = m.f / m.d;
+  const pxScale = Math.abs(m.a);
   ctx.save();
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
   for (const wh of list) {
     const elapsed = wh.maxLife - wh.life;
     const open = mouthOpen(elapsed, wh.life);
@@ -916,61 +671,244 @@ export const renderWormholes = (
     // Cull the wrap copies that land entirely off-screen — the lens is the
     // costliest thing in the layer to paint for nothing.
     if (backdrop) {
-      const reach = SWIRL_REACH * L;
+      const reach = COVER * L;
       const { w, h } = backdrop.starfield;
-      if (cx + reach < 0 || cx - reach > w || cy + reach * TILT < 0 || cy - reach * TILT > h) continue;
+      if (cx + reach < 0 || cx - reach > w || cy + reach < 0 || cy - reach > h) continue;
     }
-    const membraneHue = MEMBRANE_HUE + wh.hueShift;
-    const throatHue = THROAT_HUE + wh.hueShift;
-    // Per-portal flow direction and phase, a slow wheel for the swirl, and a
-    // faint crackle on the red.
-    const dir = wh.seed > Math.PI ? 1 : -1;
-    const phase = wh.angle * 1.7 + wh.seed;
-    const spin = tSec * SPIN + wh.seed;
-    const shimmer = 0.85 + 0.15 * Math.sin(tSec * 16 + wh.seed);
+    const dir = flowDir(wh);
+    const spin = flowSpin(wh, tSec);
 
     ctx.save();
     ctx.translate(wh.x, wh.y);
-    // No frame rotation: the tilt is screen-fixed so the hole reads identically
-    // regardless of the direction the departing body came from.
 
-    // 1) Lens body (source-over): the cached shaded disc that hides the
-    //    undistorted stars and feathers back into the live field, then the
-    //    breathing shadow on top of its baked core.
+    // 1) Lens body: hides the undistorted stars behind the mouth.
     ctx.globalCompositeOperation = "source-over";
-    ctx.save();
-    ctx.scale(1, TILT);
     const R = COVER * L;
     ctx.drawImage(getBodySprite(), -R, -R, R * 2, R * 2);
-    renderShadow(ctx, L, phase, tSec);
-    ctx.restore();
 
-    // Everything below is additive light over the dark disc.
+    // 2) The stars behind the mouth, bent into arcs, and the ring they crowd.
     ctx.globalCompositeOperation = "lighter";
-
-    // 2) The wound haze: cached spiral bands wheeling at their own rates.
-    renderSwirl(ctx, L, tSec, dir, wh.seed);
-
-    // 3) The stars behind the mouth, bent into arcs — the portal's substance.
     if (backdrop) renderLensedStars(ctx, backdrop, cx, cy, L, spin, dir);
+    renderRingGlow(ctx, L, open);
 
-    // 4) Horizon light and the red energy, faint: photon ring, glints, ring
-    //    filaments, then the wisps peeling off into space. Drawn in the
-    //    squashed frame so every circle hugs the tilted mouth.
-    ctx.save();
-    ctx.scale(1, TILT);
-    renderHorizon(ctx, L, membraneHue, throatHue, open, tSec, dir, phase, shimmer, spin);
-    renderWisps(ctx, L, membraneHue, open, tSec, dir, phase);
-    ctx.restore();
+    // 3) The ball itself: the far sky. Its pan follows the mouth's screen
+    //    position so the view through it shifts with parallax.
+    ctx.globalCompositeOperation = "source-over";
+    const sw = backdrop ? backdrop.starfield.w : 0;
+    const sh = backdrop ? backdrop.starfield.h : 0;
+    // The pan rides the far galaxy's band (it runs along x = y in the sky
+    // patch), so every portal looks out across it.
+    const along = wh.seed * 80 + tSec * 3 * dir;
+    const panX = along - (cx - sw / 2) * 0.12;
+    const panY = along - (cy - sh / 2) * 0.12 + wh.hueShift * 1.5;
+    renderSphere(ctx, L, pxScale, panX, panY);
 
     ctx.restore();
   }
   ctx.restore();
 };
 
+// ── Falling through ───────────────────────────────────────────────────────────
+// Draw a body that is falling into (or climbing out of) a portal as seen
+// THROUGH the portal's lens. `depth` 0→1 is how far the body has sunk behind
+// the mouth: at 0 it's drawn as-is in front; as it deepens it is tidally
+// stretched toward the throat, its image is bent by the same lens map the
+// stars use (so it smears into an arc along the Einstein ring and throws a
+// mirrored inner image), the ball occludes whatever of it lies behind the
+// limb, its light splits chromatically and reddens, and it fades out as it
+// passes through.
+//
+// The body is painted by `draw` into an offscreen buffer around the portal and
+// warped per pixel — exact inverse lens mapping from each output pixel back to
+// the buffer. Only the one diving body ever goes through here, for well under a
+// second, so the per-pixel cost is affordable; the loop skips any output pixel
+// whose source falls outside the body's painted bounds.
+const MAX_WARP_PX = 400;
+let warpSrc: HTMLCanvasElement | null = null;
+let warpDst: HTMLCanvasElement | null = null;
+let warpPremul = new Float32Array(0);
+let warpDefl = new Float32Array(0);
+let warpCos = new Float32Array(0);
+let warpSin = new Float32Array(0);
+let warpVis = new Float32Array(0);
+const RADIAL_STEPS_PER_PX = 4;
+
+const scratch = (c: HTMLCanvasElement | null, d: number): HTMLCanvasElement => {
+  const canvas = c ?? document.createElement("canvas");
+  if (canvas.width !== d || canvas.height !== d) {
+    canvas.width = d;
+    canvas.height = d;
+  }
+  return canvas;
+};
+
+export const renderThroughPortal = (
+  ctx: CanvasRenderingContext2D, wh: Wormhole, depth: number, tSec: number,
+  body: { x: number; y: number; reach: number },
+  portalDx: number, portalDy: number,
+  draw: (g: CanvasRenderingContext2D) => void,
+): void => {
+  const open = mouthOpen(wh.maxLife - wh.life, wh.life);
+  const L = wh.radius * open;
+  if (L < 4) {
+    draw(ctx);
+    return;
+  }
+  // Portal centre in the body's frame (the caller resolves the toroidal wrap).
+  const cx = body.x + portalDx;
+  const cy = body.y + portalDy;
+  const dist = Math.hypot(portalDx, portalDy);
+  const stretch = 1 + 2.2 * depth * depth;
+  const squeeze = 1 / (1 + 0.8 * depth * depth);
+  const half = Math.ceil(Math.max(DEFLECT_END * L, dist + body.reach * stretch) + 2);
+  let S = Math.min(1, Math.abs(ctx.getTransform().a) || 1);
+  if (half * 2 * S > MAX_WARP_PX) S = MAX_WARP_PX / (half * 2);
+  const D = Math.ceil(half * 2 * S);
+
+  // 1) Paint the body into the buffer, tidally stretched along the line to the
+  //    throat and shrinking as it recedes.
+  warpSrc = scratch(warpSrc, D);
+  const g = warpSrc.getContext("2d", { willReadFrequently: true })!;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1;
+  g.clearRect(0, 0, D, D);
+  g.setTransform(S, 0, 0, S, (half - cx) * S, (half - cy) * S);
+  const radial = Math.atan2(cy - body.y, cx - body.x);
+  const recede = 1 - 0.3 * depth;
+  g.translate(body.x, body.y);
+  g.rotate(radial);
+  g.scale(stretch * recede, squeeze * recede);
+  g.rotate(-radial);
+  g.translate(-body.x, -body.y);
+  draw(g);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const src = g.getImageData(0, 0, D, D).data;
+
+  // Premultiply for clean bilinear filtering, and find the painted bounds.
+  if (warpPremul.length < D * D * 4) warpPremul = new Float32Array(D * D * 4);
+  const pm = warpPremul;
+  let x0 = D;
+  let y0 = D;
+  let x1 = -1;
+  let y1 = -1;
+  for (let j = 0; j < D; j++) {
+    for (let i = 0; i < D; i++) {
+      const o = (j * D + i) * 4;
+      const a = src[o + 3];
+      if (a === 0) {
+        pm[o] = pm[o + 1] = pm[o + 2] = pm[o + 3] = 0;
+        continue;
+      }
+      const k = a / 255;
+      pm[o] = src[o] * k;
+      pm[o + 1] = src[o + 1] * k;
+      pm[o + 2] = src[o + 2] * k;
+      pm[o + 3] = a;
+      if (i < x0) x0 = i;
+      if (i > x1) x1 = i;
+      if (j < y0) y0 = j;
+      if (j > y1) y1 = j;
+    }
+  }
+  if (x1 < 0) return;
+
+  // Bilinear sample of one premultiplied channel (ch 0–3); 0 outside bounds.
+  const sample = (fx: number, fy: number, ch: number): number => {
+    if (fx < x0 - 1 || fx > x1 || fy < y0 - 1 || fy > y1) return 0;
+    const ix = Math.floor(fx);
+    const iy = Math.floor(fy);
+    const tx = fx - ix;
+    const ty = fy - iy;
+    const ix1 = Math.min(D - 1, ix + 1);
+    const iy1 = Math.min(D - 1, iy + 1);
+    const cx0 = Math.max(0, ix);
+    const cy0 = Math.max(0, iy);
+    const a = pm[(cy0 * D + cx0) * 4 + ch];
+    const b = pm[(cy0 * D + ix1) * 4 + ch];
+    const c = pm[(iy1 * D + cx0) * 4 + ch];
+    const d = pm[(iy1 * D + ix1) * 4 + ch];
+    return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+  };
+
+  // 2) Inverse lens map, output pixel → buffer. Everything that depends only
+  //    on the radius (bend, frame-drag unwind, occlusion by the ball) is
+  //    tabulated once per frame along a fine radial grid.
+  warpDst = scratch(warpDst, D);
+  const dg = warpDst.getContext("2d")!;
+  const outImg = dg.createImageData(D, D);
+  const out = outImg.data;
+  const dir = flowDir(wh);
+  const twist = TWIST + flowSpin(wh, tSec);
+  const ca = 0.06 * depth; // chromatic split: red bends more than blue
+  const lens = Math.min(1, depth * 1.6);
+  const behind = smoothstep(0.15, 0.45, depth);
+  const fade = 1 - smoothstep(0.85, 1, depth);
+  const redG = 1 - 0.3 * depth * depth;
+  const redB = 1 - 0.55 * depth * depth;
+  const limbPx = SPHERE * L;
+  const radialN = Math.ceil(half * Math.SQRT2 * RADIAL_STEPS_PER_PX) + 2;
+  if (warpDefl.length < radialN) {
+    warpDefl = new Float32Array(radialN);
+    warpCos = new Float32Array(radialN);
+    warpSin = new Float32Array(radialN);
+    warpVis = new Float32Array(radialN);
+  }
+  for (let n = 0; n < radialN; n++) {
+    const r = Math.max(1e-3, n / RADIAL_STEPS_PER_PX);
+    const u = r / L;
+    warpDefl[n] = lens * deflection(u) * L;
+    const rot = lens * dir * swirlWeight(u) * twist;
+    warpCos[n] = Math.cos(rot) / r;
+    warpSin[n] = Math.sin(rot) / r;
+    warpVis[n] = (1 - behind * Math.max(0, Math.min(1, (limbPx - r) * S + 0.5))) * fade;
+  }
+  const bx0 = x0 - 1;
+  const by0 = y0 - 1;
+  for (let j = 0; j < D; j++) {
+    const y = (j + 0.5) / S - half;
+    for (let i = 0; i < D; i++) {
+      const x = (i + 0.5) / S - half;
+      const r = Math.sqrt(x * x + y * y);
+      const n = (r * RADIAL_STEPS_PER_PX) | 0;
+      const vis = warpVis[n];
+      if (vis <= 0) continue;
+      // Unit direction back toward the source, unwinding the frame-drag twist.
+      const ux = x * warpCos[n] + y * warpSin[n];
+      const uy = y * warpCos[n] - x * warpSin[n];
+      const defl = warpDefl[n];
+      const sG = r - defl;
+      const gx = (ux * sG + half) * S - 0.5;
+      const gy = (uy * sG + half) * S - 0.5;
+      // Bounds test on the green image before any sampling — nearly every
+      // output pixel maps somewhere the body never painted.
+      if (gx < bx0 - 2 || gx > x1 + 2 || gy < by0 - 2 || gy > y1 + 2) continue;
+      const a = sample(gx, gy, 3);
+      if (a < 0.5) continue;
+      const sR = r - defl * (1 + ca);
+      const sB = r - defl * (1 - ca);
+      const rr = sample((ux * sR + half) * S - 0.5, (uy * sR + half) * S - 0.5, 0);
+      const gg = sample(gx, gy, 1);
+      const bb = sample((ux * sB + half) * S - 0.5, (uy * sB + half) * S - 0.5, 2);
+      const inv = 255 / a;
+      const o = (j * D + i) * 4;
+      out[o] = rr * inv;
+      out[o + 1] = gg * inv * redG;
+      out[o + 2] = bb * inv * redB;
+      out[o + 3] = a * vis;
+    }
+  }
+  dg.putImageData(outImg, 0, 0);
+  ctx.drawImage(warpDst, cx - half, cy - half, half * 2, half * 2);
+};
+
 // How long a body takes to fall all the way through the mouth (warpT 0→1). It
 // must finish comfortably BEFORE the mouth starts collapsing (OPEN + HOLD) so
 // the body is gone while the throat is still wide — the 0.8 leaves headroom for
 // the body to vanish a few frames early even at a low frame rate, rather than
-// winking out against an already-shrinking iris.
+// winking out against an already-shrinking mouth.
 export const WARP_OUT_DURATION = OPEN + HOLD * 0.8;
+
+// Bake the far sky at module load, like the bassteroid halo outlines, so the
+// first portal of a run doesn't stall a frame on the ~60ms bake.
+if (typeof document !== "undefined") skyPixels = bakeFarSky();

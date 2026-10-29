@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 47;
+export const REPLAY_FORMAT_VERSION = 50;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -31,6 +31,10 @@ export const REPLAY_FORMAT_VERSION = 47;
 //   recording that broke a slab re-sims with different collisions.
 // v47 shrinks the superBassCrystal and the wedges' notch to match, so a v46
 //   recording that broke a slab re-sims with different collisions.
+// (v48 and v49 are taken on dev; main skips straight to v50.)
+// v50 makes the wormhole mouth a sphere whose throat is its centre, so a ship
+//   diving into a skip portal lands (and re-emerges) at a different spot, and
+//   aliens warp out toward a different anchor.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
