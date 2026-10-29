@@ -4,7 +4,7 @@ import { AlienBullet } from "./AlienBullet";
 import { Trail } from "./Trail";
 import { rng, cosmeticRng } from "./game/rng";
 import { ENTITY_CONFIG } from "./game/entityConfig";
-import { WARP_OUT_DURATION, warpAnchorOffset } from "./game/wormhole";
+import { WARP_OUT_DURATION, warpAnchorOffset, renderThroughPortal, type Wormhole } from "./game/wormhole";
 
 // Three sizes, each with its own role in the rhythm:
 //   "big"    : 4 HP, fires every other beat (every 2× BEAT_GRID).
@@ -22,6 +22,9 @@ import { WARP_OUT_DURATION, warpAnchorOffset } from "./game/wormhole";
 export type AlienSize = "big" | "medium" | "small";
 
 const SIZE_RADIUS = ENTITY_CONFIG.alien.radius;
+// Aliens are big and often warp out in a crowd (a wave skip sends them all at
+// once), so their lens buffer is held coarser than the ship's.
+const ALIEN_WARP_MAX_PX = 160;
 const SIZE_HP = ENTITY_CONFIG.alien.hp;
 const SIZE_SCORE = ENTITY_CONFIG.alien.score;
 const SIZE_SPEED = ENTITY_CONFIG.alien.speed;
@@ -357,14 +360,16 @@ export class Alien {
   // Warp-out: an alien that reaches maxTravel dives through a departure portal
   // instead of vanishing off the far edge. warpT runs 0→1 over
   // WARP_OUT_DURATION; while it does, the body slides toward warpAnchor (the
-  // portal's vanishing point), shrinks and spins down the throat, then is gone.
-  // needsWormhole tells the Game to spawn exactly one portal. null = not warping.
+  // portal's throat) and is drawn through the portal's lens until it's gone.
+  // needsWormhole tells the Game to spawn exactly one portal (warpPortal, a
+  // render-only reference). null = not warping.
   warpT: number | null = null;
   warpAnchorX = 0;
   warpAnchorY = 0;
   warpStartX = 0;
   warpStartY = 0;
   needsWormhole = false;
+  warpPortal: Wormhole | null = null;
   // Entrance state — the arrival mirror of warpT. See game/entrance.ts.
   entering = false;
   enterOffX = 0;
@@ -773,15 +778,29 @@ export class Alien {
   }
 
   render(ctx: CanvasRenderingContext2D, t: number) {
+    const portal = this.warpT !== null ? this.warpPortal : null;
+    if (portal) {
+      // Warping out: same fall through the lens as the ship's wave-skip dive.
+      renderThroughPortal(
+        ctx, portal, Math.min(1, this.warpT!), { x: this.pos.x, y: this.pos.y, reach: this.radius * 1.8 },
+        portal.x - this.pos.x, portal.y - this.pos.y,
+        (g) => this.paint(g, t, false), ALIEN_WARP_MAX_PX,
+      );
+      return;
+    }
+    this.paint(ctx, t, true);
+  }
+
+  // `warpShrink` is the fallback dive for a warp with no portal to lens through.
+  private paint(ctx: CanvasRenderingContext2D, t: number, warpShrink: boolean) {
     const baseHue = this.hue;
     const r = this.radius;
     const shape = this.shape;
     ctx.save();
     ctx.translate(this.pos.x, this.pos.y);
-    // While warping out, shrink the whole body toward the throat and spin it in
-    // (pos already eases toward the anchor in update). A brief swell as it
-    // crosses the rim, then squeeze to nothing — same dive as the comet head.
-    if (this.warpT !== null) {
+    // Warping out with no portal: shrink the whole body toward the throat and
+    // spin it in. A brief swell, then squeeze to nothing.
+    if (warpShrink && this.warpT !== null) {
       const k = Math.min(1, this.warpT);
       const warpScale = (1 + 0.18 * Math.sin(k * Math.PI)) * (1 - k * k);
       if (warpScale < 0.02) { ctx.restore(); return; }
