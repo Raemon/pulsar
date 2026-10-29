@@ -11,7 +11,9 @@ import {
   throatPointOf,
   WORMHOLE_CLOSE,
   WARP_OUT_DURATION,
+  wormholeMouthRadius,
 } from "./wormhole";
+import { shipTouches } from "../ship/shipHitbox";
 import { isBossWave } from "./waveDirector";
 import { advanceWave, showWaveAnnounce } from "./gameUpdate";
 import { emitCrackParticles } from "./particleBursts";
@@ -184,8 +186,15 @@ const tryEnterSkipPortal = (game: Game) => {
   for (const p of game.skipPortals) {
     const wh = p.wormhole;
     if (!wormholeEnterable(wh)) continue;
+    // Any part of the ship's outline touching the sphere's visible edge.
     const [dx, dy] = toroidalDelta(wh.x - game.ship.pos.x, wh.y - game.ship.pos.y, game.w, game.h);
-    if (Math.hypot(dx, dy) > wh.radius * skipCfg().entryRadiusFrac) continue;
+    const mouth = wormholeMouthRadius(wh);
+    if (Math.hypot(dx, dy) > mouth + game.ship.hitBound) continue;
+    const sphere = {
+      pos: { x: wh.x, y: wh.y },
+      collidesWith: (q: { x: number; y: number }, r: number) => Math.hypot(q.x - wh.x, q.y - wh.y) <= mouth + r,
+    };
+    if (!shipTouches(game.ship, sphere, dx, dy, 0)) continue;
     beginWaveSkip(game, p);
     return;
   }

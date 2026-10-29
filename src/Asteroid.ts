@@ -4,7 +4,7 @@ import { Trail } from "./Trail";
 import { SoundwaveRadiator } from "./SoundwaveRadiator";
 import { rng, cosmeticRng } from "./game/rng";
 import { ENTITY_CONFIG, ENTITY_STATS, entityStat } from "./game/entityConfig";
-import { SHIP_BODY_RADIUS, SHIP_HALO_OFFSET, SHIP_NOSE_MUL, SHIP_WING_ANGLE } from "./ship/shipHitbox";
+import { SHIP_BODY_RADIUS, SHIP_HALO_OFFSET, SHIP_NOSE_MUL, SHIP_WING_ANGLE, haloReach } from "./ship/shipHitbox";
 import { PRONG_ANGLE_STEP } from "./ship/shipWeapons";
 import { drawGlow } from "./glow";
 
@@ -220,10 +220,10 @@ export const traceCitadelHolePath = (ctx: CanvasRenderingContext2D, pos?: Vec, r
 };
 
 // Worst-case reach of the ship's collision silhouette in any direction —
-// the nose halo plus the collision pads, mirroring Ship.hitRadius without
+// the halo's nose tip plus the collision pads, mirroring Ship.hitBound without
 // needing a live Ship. Used by the citadel break-up to place its fragments
 // outside anything the hull could possibly be touching.
-const SHIP_CLEAR_RADIUS = SHIP_BODY_RADIUS * SHIP_NOSE_MUL + SHIP_HALO_OFFSET + 10;
+const SHIP_CLEAR_RADIUS = haloReach(SHIP_BODY_RADIUS, SHIP_HALO_OFFSET) + 10;
 
 // A boss hemisphere's wound — the exposed side where the planetoid was cut —
 // laid out in the hemisphere's local frame (shell on +x, cut along the

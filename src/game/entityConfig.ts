@@ -178,8 +178,6 @@ export const ENTITY_CONFIG = {
     } as Record<AlienSize, [number, number]>,
     // Beats the mouth stays enterable before irising shut on its own.
     lifetimeBeats: 24,
-    // Fraction of the mouth's long axis that counts as flying in.
-    entryRadiusFrac: 0.8,
     // Beats between successive skipped-wave title announces.
     titleCadenceBeats: 4,
     // Beats after the landing wave spawns before the return portal blooms.
