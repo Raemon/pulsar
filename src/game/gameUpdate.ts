@@ -47,7 +47,7 @@ import { updateBassLightnings } from "./bassLightning";
 import { updateDriftBursts } from "./driftBurst";
 import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
-import { updateWormholes, spawnWormhole } from "./wormhole";
+import { updateWormholes, spawnWormhole, type Wormhole } from "./wormhole";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
 import { tickPendingRhythmBonuses, flushPendingRhythmBonuses } from "./rhythmBonus";
 import { emitExplosion, emitCometExplosion } from "./particleBursts";
@@ -1275,12 +1275,13 @@ type WarpingBody = {
   warpStartY: number;
   radius: number;
   warpHeading: number;
+  warpPortal: Wormhole | null;
 };
 const spawnPendingWormholes = (game: Game, bodies: WarpingBody[]) => {
   for (const e of bodies) {
     if (!e.needsWormhole) continue;
     e.needsWormhole = false;
-    spawnWormhole(
+    e.warpPortal = spawnWormhole(
       game.wormholes, { x: e.warpStartX, y: e.warpStartY }, e.radius, e.warpHeading,
     );
   }

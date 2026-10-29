@@ -35,6 +35,7 @@ import {
   onCometKilled,
 } from "./killEffects";
 import { killShip } from "./lifecycle";
+import { shipTouches, type ContactTarget } from "../ship/shipHitbox";
 
 // every bullet-hit handler logs the same fire/impact shape; one helper keeps it uniform.
 const logBulletHit = (game: Game, kind: string, b: Bullet) => {
@@ -211,13 +212,38 @@ const handleShipAsteroidCollisions = (game: Game) => {
   }
 };
 
+// Does any part of the ship's visible outline touch `target`? `reach` bounds
+// the target's own extent for the broad-phase cull; `pad` grows the outline
+// (collision padding for hazards, none for pickups).
+// `pad` may depend on the target's offset from the ship.
+const shipTouchesTarget = (
+  game: Game, target: ContactTarget, reach: number, pad: number | ((dx: number, dy: number) => number),
+): boolean => {
+  const [dx, dy] = toroidalDelta(target.pos.x - game.ship.pos.x, target.pos.y - game.ship.pos.y, game.w, game.h);
+  if (Math.hypot(dx, dy) > reach + game.ship.hitBound) return false;
+  return shipTouches(game.ship, target, dx, dy, typeof pad === "number" ? pad : pad(dx, dy));
+};
+
+// Ship contact with a hazard: the whole visible outline counts, plus the
+// collision padding toward it.
+const shipTouchesHazard = (game: Game, target: ContactTarget, reach: number): boolean =>
+  shipTouchesTarget(game, target, reach, (dx, dy) => game.ship.hazardPad(dx, dy));
+
 // polygon-accurate test against the visible halo means the outline IS the hitbox.
 export const shipAsteroidHit = (game: Game, a: Asteroid): boolean => {
-  const [dx, dy] = toroidalDelta(a.pos.x - game.ship.pos.x, a.pos.y - game.ship.pos.y, game.w, game.h);
-  const distance = Math.hypot(dx, dy);
-  if (distance > a.radius * 1.3 + game.ship.hitRadius) return false;
-  const shipReach = game.ship.hitDistanceToward(Math.atan2(dy, dx));
-  return a.collidesWith(game.ship.pos, shipReach);
+  // The citadel's ship-shaped escape hole is safe to sit in: with the ship's
+  // centre inside it, the hull is threading the hole, not touching the shell.
+  if (a.kind === "citadel") {
+    const p = nearestShipImage(game, a.pos);
+    if (a.citadelHoleContains(p.x, p.y)) return false;
+  }
+  return shipTouchesHazard(game, a, a.radius * 1.3);
+};
+
+// The ship's position unfolded to the image nearest `pos` on the torus.
+const nearestShipImage = (game: Game, pos: { x: number; y: number }) => {
+  const [dx, dy] = toroidalDelta(pos.x - game.ship.pos.x, pos.y - game.ship.pos.y, game.w, game.h);
+  return { x: pos.x - dx, y: pos.y - dy };
 };
 
 // encapsulates the in-place splice when a ram kills, so the outer loop stays a simple sweep.
@@ -331,12 +357,11 @@ const alienBulletDamagesAsteroid = (game: Game, ab: AlienBullet): boolean => {
   return false;
 };
 
-const alienBulletHitsShip = (game: Game, ab: AlienBullet): boolean => {
-  const [dx, dy] = toroidalDelta(ab.pos.x - game.ship.pos.x, ab.pos.y - game.ship.pos.y, game.w, game.h);
-  const distance = Math.hypot(dx, dy);
-  const shipReach = game.ship.hitDistanceToward(Math.atan2(dy, dx));
-  return distance < shipReach + ab.radius;
-};
+const alienBulletHitsShip = (game: Game, ab: AlienBullet): boolean =>
+  shipTouchesHazard(game, {
+    pos: ab.pos,
+    collidesWith: (p, r) => Math.hypot(p.x - ab.pos.x, p.y - ab.pos.y) < r + ab.radius,
+  }, ab.radius);
 
 const onShipHitByAlienBullet = (game: Game) => {
   if (game.ship.shieldActive) {
@@ -368,19 +393,18 @@ const tryKillCometWithBullets = (game: Game, c: Comet): boolean => {
 };
 
 // Grabbing a reward should be forgiving — "anywhere the ship touches it counts",
-// not "ram it dead-centre". The old test summed the ship's hull radius scaled
-// DOWN to 0.9, which sat well inside the visible silhouette. Use the ship's
-// full visible perimeter (hull + the halo that IS the player-facing edge)
-// instead, so a pickup fires the moment the sprites overlap on screen.
-const pickupReach = (game: Game): number =>
-  game.ship.radius + game.ship.haloOffset;
+// not "ram it dead-centre": a pickup fires the moment it overlaps the ship's
+// visible outline (hull + the halo that IS the player-facing edge), nose tip
+// and wing tips included.
+const shipTouchesPickup = (game: Game, target: ContactTarget & { radius: number }): boolean =>
+  shipTouchesTarget(game, target, target.radius, 0);
 
 // pickup-popup labels what was grabbed so the player can read it after the burst clears.
 export const handleCanisterPickups = (game: Game) => {
   if (!game.ship.alive) return;
   const remaining: Canister[] = [];
   for (const c of game.canisters) {
-    if (c.collidesWith(game.ship.pos, pickupReach(game))) collectCanister(game, c);
+    if (shipTouchesPickup(game, c)) collectCanister(game, c);
     else remaining.push(c);
   }
   game.canisters = remaining;
@@ -392,7 +416,7 @@ export const handleFuelOrbPickups = (game: Game) => {
   if (!FUEL_MODE_ENABLED || !game.ship.alive) return;
   const remaining: FuelOrb[] = [];
   for (const o of game.fuelOrbs) {
-    if (o.collidesWith(game.ship.pos, pickupReach(game))) collectFuelOrb(game, o);
+    if (shipTouchesPickup(game, o)) collectFuelOrb(game, o);
     else remaining.push(o);
   }
   game.fuelOrbs = remaining;
@@ -471,7 +495,7 @@ export const handleGems = (game: Game) => {
       }
       continue;
     }
-    if (game.ship.alive && game.ship.invuln <= 0 && g.collidesWith(game.ship.pos, game.ship.radius * 0.9)) {
+    if (game.ship.alive && game.ship.invuln <= 0 && shipTouchesTarget(game, g, g.radius, 0)) {
       shatterGemOnShip(game, g);
       continue;
     }

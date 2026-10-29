@@ -4,6 +4,7 @@ import { WORLD_W, WORLD_H } from "../vec";
 import { killShip } from "./lifecycle";
 import { popShield } from "./collisions";
 import { BEAT_GRID } from "./rhythmConstants";
+import { shipTouches } from "../ship/shipHitbox";
 
 // The boss eye's primary weapon. The eye emits a sustained energy beam that
 // fires STRAIGHT down the aim the telegraph has been ticking onto the player
@@ -97,26 +98,34 @@ export class BossBeam {
     return best;
   }
 
+  // Closest point on the beam's centre-line segment to (x, y).
+  private nearestPoint(x: number, y: number): { x: number; y: number } {
+    const cos = Math.cos(this.angle);
+    const sin = Math.sin(this.angle);
+    const t = Math.max(0, Math.min(BEAM_LENGTH, (x - this.originX) * cos + (y - this.originY) * sin));
+    return { x: this.originX + cos * t, y: this.originY + sin * t };
+  }
+
   hitsShip(game: Game): boolean {
     if (!this.damaging()) return false;
     const ship = game.ship;
-    const cos = Math.cos(this.angle);
-    const sin = Math.sin(this.angle);
     for (let ix = -1; ix <= 1; ix++) {
       for (let iy = -1; iy <= 1; iy++) {
         const sx = ship.pos.x + ix * game.w;
         const sy = ship.pos.y + iy * game.h;
-        const dx = sx - this.originX;
-        const dy = sy - this.originY;
-        // The ship hitbox reach varies with facing; sample it toward the
-        // beam's nearest point so a grazing pass reads fairly.
-        const reach = ship.hitDistanceToward(Math.atan2(-dy, -dx));
-        const along = dx * cos + dy * sin;
-        if (along < -reach) continue;
-        const t = Math.max(0, Math.min(BEAM_LENGTH, along));
-        const px = this.originX + cos * t;
-        const py = this.originY + sin * t;
-        if (Math.hypot(sx - px, sy - py) < reach + BEAM_HALF_WIDTH) return true;
+        // Any part of the ship's visible outline touching the beam's band counts.
+        const nearest = this.nearestPoint(sx, sy);
+        const dx = nearest.x - sx;
+        const dy = nearest.y - sy;
+        if (Math.hypot(dx, dy) > ship.hitBound + BEAM_HALF_WIDTH) continue;
+        const beam = {
+          pos: nearest,
+          collidesWith: (p: { x: number; y: number }, r: number) => {
+            const q = this.nearestPoint(p.x, p.y);
+            return Math.hypot(p.x - q.x, p.y - q.y) < r + BEAM_HALF_WIDTH;
+          },
+        };
+        if (shipTouches(ship, beam, dx, dy, ship.hazardPad(dx, dy))) return true;
       }
     }
     return false;

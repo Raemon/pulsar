@@ -124,7 +124,7 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   // dives into the visible mouth and shrinks down the throat in front of it.
   // They lens the starfield, so they get the same scroll + clock it was
   // painted with this frame.
-  renderWormholes(ctx, game.wormholes, game.time * 0.001, {
+  renderWormholes(ctx, game.wormholes, {
     starfield: game.starfield,
     timeMs: game.time,
     scrollX: game.camScrollX,
