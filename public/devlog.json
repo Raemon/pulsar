@@ -1,5 +1,45 @@
 [
   {
+    "id": "2026-10-31-1fc32c0",
+    "date": "2026-10-31",
+    "title": "Wormholes, obsidian gems, and slow-mo as a pulsar event",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Wormholes are now spherical gravitational lenses showing a distant galaxy through a fish-eye view, ringed by lensed stars on an Einstein ring.",
+          "Diving through a wormhole tidally stretches and warps your ship with chromatic splitting, bloom, and an Einstein ring flare as you cross.",
+          "Lensed stars inside the wormhole are layered at three parallax depths, drifting slowly as you move.",
+          "Aliens warping out are now lensed through their departure portals.",
+          "Slow-mo is now a headline wave event triggered by the pulsar rather than a canister pickup; distortion ripples pulse on each beat as the tempo eases down.",
+          "Gems are now black obsidian with molten gold glowing through jagged cracks, and drop upgrades less frequently."
+        ]
+      },
+      {
+        "heading": "Fixed",
+        "items": [
+          "Ship hull contact now checks the full outline — nose tip, wings, and off-axis grazes — so near-misses no longer pass through silently.",
+          "Drift-aim snap no longer pins your turn in place when a target drifts into the heading each frame."
+        ]
+      }
+    ],
+    "commits": [
+      "1fc32c0",
+      "523a088",
+      "eaa1a12",
+      "5796180",
+      "7bea811",
+      "a637939",
+      "7e5ee11",
+      "5b028e2",
+      "08b1429",
+      "c6bdbff",
+      "5d3c6a7",
+      "96ccf44",
+      "be6eb80"
+    ]
+  },
+  {
     "id": "2026-10-26-5ec47ea",
     "date": "2026-10-26",
     "title": "Metal shard wedges now have a notched right-angle shape",
