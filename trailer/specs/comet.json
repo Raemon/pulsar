@@ -1,0 +1,43 @@
+{
+ "name": "comet",
+ "seed": 62,
+ "wave": 7,
+ "combo": 15,
+ "secs": 6,
+ "entrances": true,
+ "ship": {
+  "vel": [
+   -50,
+   40
+  ],
+  "heading": 200
+ },
+ "events": [
+  {
+   "at": 0,
+   "kind": "comet"
+  }
+ ],
+ "shots": [
+  {
+   "t": 1,
+   "h": 200,
+   "lock": 0.9,
+   "size": "large",
+   "super": true,
+   "minTier": 1,
+   "atStart": true,
+   "fixed": true
+  },
+  {
+   "t": 2.0,
+   "h": 319,
+   "target": "comet",
+   "turnRate": 2.0,
+   "lock": 0.2,
+   "super": true,
+   "leadMul": 0.4,
+   "hitBeats": 1
+  }
+ ]
+}
