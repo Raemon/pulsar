@@ -1,0 +1,132 @@
+{
+ "name": "alien",
+ "seed": 66,
+ "wave": 6,
+ "combo": 19,
+ "secs": 6,
+ "clearWindow": [
+  0,
+  4.6
+ ],
+ "ship": {
+  "vel": [
+   10,
+   -100
+  ],
+  "heading": 330
+ },
+ "rocks": [
+  {
+   "tag": "alien",
+   "kind": "alien",
+   "size": "medium",
+   "rel": [
+    330,
+    -30
+   ],
+   "vel": [
+    -15,
+    -70
+   ],
+   "fireAt": 1.0
+  },
+  {
+   "tag": "alien2",
+   "kind": "alien",
+   "size": "small",
+   "rel": [
+    -480,
+    260
+   ],
+   "vel": [
+    70,
+    -140
+   ],
+   "fireAt": 99
+  },
+  {
+   "tag": "r1",
+   "kind": "normal",
+   "size": "large",
+   "rel": [
+    -620,
+    -250
+   ],
+   "vel": [
+    40,
+    -85
+   ]
+  },
+  {
+   "tag": "r2",
+   "kind": "normal",
+   "size": "medium",
+   "rel": [
+    -280,
+    340
+   ],
+   "vel": [
+    -15,
+    -80
+   ]
+  },
+  {
+   "tag": "r3",
+   "kind": "normal",
+   "size": "small",
+   "rel": [
+    160,
+    390
+   ],
+   "vel": [
+    30,
+    -125
+   ]
+  },
+  {
+   "tag": "r4",
+   "kind": "normal",
+   "size": "small",
+   "rel": [
+    660,
+    330
+   ],
+   "vel": [
+    -10,
+    -115
+   ]
+  },
+  {
+   "tag": "slab",
+   "kind": "metalChunk",
+   "size": "medium",
+   "rel": [
+    -740,
+    190
+   ],
+   "vel": [
+    35,
+    -95
+   ]
+  }
+ ],
+ "shots": [
+  {
+   "t": 1.5,
+   "h": 330,
+   "target": "alien",
+   "lock": 0.3,
+   "turnRate": 1.6,
+   "placeTarget": true
+  },
+  {
+   "t": 2.0,
+   "h": 330,
+   "target": "alien",
+   "lock": 0.2,
+   "turnRate": 1.6,
+   "fire": 0.017
+  }
+ ],
+ "betaMode": false
+}
