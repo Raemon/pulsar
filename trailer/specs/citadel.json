@@ -1,0 +1,65 @@
+{
+ "name": "citadel",
+ "seed": 63,
+ "wave": 14,
+ "combo": 22,
+ "secs": 12,
+ "ship": {
+  "vel": [
+   18,
+   6
+  ],
+  "heading": -15
+ },
+ "rocks": [
+  {
+   "tag": "citadel",
+   "kind": "citadel",
+   "size": "large",
+   "pos": [
+    1279,
+    455
+   ],
+   "vel": [
+    18,
+    6
+   ],
+   "rotation": -15,
+   "rotSpeed": 0,
+   "warblePhaseOffset": 6.5
+  }
+ ],
+ "events": [
+  {
+   "at": 4.2,
+   "kind": "phaseJump",
+   "tag": "citadel",
+   "add": 4.5
+  }
+ ],
+ "shots": [
+  {
+   "t": 6.0,
+   "h": -15,
+   "lock": 0.4,
+   "existing": true,
+   "fire": -0.1
+  }
+ ],
+ "moves": [
+  {
+   "tn": 1.6,
+   "dv": 170,
+   "acc": 300
+  },
+  {
+   "tn": 3.4,
+   "dv": -170,
+   "acc": 300
+  }
+ ],
+ "clearWindow": [
+  0.5,
+  11.5
+ ]
+}

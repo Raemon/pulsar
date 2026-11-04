@@ -1,0 +1,8 @@
+scenes/
+spectra/
+parts/
+intro/
+*.png
+*.wav
+specs/*.report.json
+*.cap.log

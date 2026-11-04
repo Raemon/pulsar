@@ -1,0 +1,174 @@
+{
+ "name": "bass",
+ "seed": 61,
+ "wave": 6,
+ "combo": 9,
+ "secs": 7,
+ "entrances": true,
+ "jitterH": 14,
+ "ship": {
+  "vel": [
+   40,
+   15
+  ],
+  "heading": 200
+ },
+ "rocks": [
+  {
+   "tag": "dA",
+   "kind": "bassA",
+   "size": "small",
+   "rel": [
+    -420,
+    250
+   ],
+   "vel": [
+    52,
+    12
+   ]
+  },
+  {
+   "tag": "dB",
+   "kind": "bassB",
+   "size": "medium",
+   "rel": [
+    -560,
+    300
+   ],
+   "vel": [
+    62,
+    8
+   ]
+  },
+  {
+   "tag": "dD",
+   "kind": "bassD",
+   "size": "small",
+   "rel": [
+    -200,
+    370
+   ],
+   "vel": [
+    48,
+    6
+   ]
+  },
+  {
+   "tag": "bell",
+   "kind": "bell",
+   "size": "large",
+   "rel": [
+    280,
+    330
+   ],
+   "vel": [
+    18,
+    8
+   ]
+  },
+  {
+   "tag": "chime",
+   "kind": "chime",
+   "size": "medium",
+   "rel": [
+    620,
+    260
+   ],
+   "vel": [
+    20,
+    22
+   ]
+  },
+  {
+   "tag": "gem",
+   "kind": "asteroidWithGem",
+   "size": "medium",
+   "rel": [
+    860,
+    400
+   ],
+   "vel": [
+    -5,
+    2
+   ]
+  },
+  {
+   "tag": "xtal",
+   "kind": "solidCrystal",
+   "size": "medium",
+   "rel": [
+    -860,
+    140
+   ],
+   "vel": [
+    75,
+    22
+   ]
+  },
+  {
+   "tag": "rk",
+   "kind": "normal",
+   "size": "small",
+   "rel": [
+    720,
+    -120
+   ],
+   "vel": [
+    10,
+    45
+   ]
+  }
+ ],
+ "shots": [
+  {
+   "t": 1.5,
+   "h": 215,
+   "lock": 0.45,
+   "kind": "bassA",
+   "size": "large",
+   "lightning": true,
+   "atStart": true,
+   "fixed": true
+  },
+  {
+   "t": 2.5,
+   "h": 245,
+   "turnRate": 2.2,
+   "burns": [
+    {
+     "dv": 50,
+     "acc": 320
+    }
+   ],
+   "lock": 0.25,
+   "size": "large"
+  },
+  {
+   "t": 3.5,
+   "h": 195,
+   "turnRate": 2.2,
+   "burns": [
+    {
+     "dv": -45,
+     "acc": 320
+    }
+   ],
+   "lock": 0.25,
+   "kind": "bassC",
+   "size": "large"
+  },
+  {
+   "t": 4.5,
+   "h": 258,
+   "turnRate": 2.2,
+   "burns": [
+    {
+     "dv": 40,
+     "acc": 320
+    }
+   ],
+   "lock": 0.2,
+   "size": "medium"
+  }
+ ]
+}

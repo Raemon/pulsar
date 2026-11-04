@@ -1,0 +1,134 @@
+{
+ "name": "open",
+ "seed": 57,
+ "wave": 2,
+ "combo": 0,
+ "secs": 18,
+ "entrances": true,
+ "ship": {
+  "vel": [
+   70,
+   15
+  ],
+  "heading": 10
+ },
+ "shots": [
+  {
+   "t": 5.0,
+   "h": 115,
+   "turnRate": 2.3,
+   "burns": [
+    {
+     "dv": 160,
+     "acc": 350,
+     "gap": 0.3
+    },
+    {
+     "dv": -100,
+     "acc": 350
+    }
+   ],
+   "lock": 0.7,
+   "size": "large",
+   "minTier": 1,
+   "fixed": true
+  },
+  {
+   "t": 6.0,
+   "h": 23,
+   "turnRate": 2.2,
+   "burns": [
+    {
+     "dv": 78,
+     "acc": 320
+    }
+   ],
+   "lock": 0.15,
+   "size": "medium",
+   "vel": [
+    -80,
+    60
+   ],
+   "noKillCheck": false
+  },
+  {
+   "t": 10.0,
+   "h": 166,
+   "turnRate": 2,
+   "burns": [
+    {
+     "dv": 152,
+     "acc": 320,
+     "gap": 0.6
+    }
+   ],
+   "lock": 0.2,
+   "size": "large",
+   "vel": [
+    40,
+    -90
+   ],
+   "noKillCheck": false
+  },
+  {
+   "t": 12.0,
+   "h": 270,
+   "turnRate": 2.2,
+   "burns": [
+    {
+     "dv": 72,
+     "acc": 320
+    }
+   ],
+   "lock": 0.15,
+   "size": "medium",
+   "vel": [
+    90,
+    30
+   ],
+   "noKillCheck": false
+  },
+  {
+   "t": 14.0,
+   "h": 15,
+   "turnRate": 2.2,
+   "burns": [
+    {
+     "dv": 84,
+     "acc": 320
+    }
+   ],
+   "lock": 0.15,
+   "size": "large",
+   "vel": [
+    -60,
+    -70
+   ],
+   "noKillCheck": false
+  },
+  {
+   "t": 15.0,
+   "h": 91,
+   "turnRate": 2.4,
+   "lock": 0.1,
+   "size": "small",
+   "vel": [
+    20,
+    100
+   ],
+   "noKillCheck": false
+  },
+  {
+   "t": 16.0,
+   "h": 142,
+   "turnRate": 2.4,
+   "lock": 0.1,
+   "size": "medium",
+   "vel": [
+    100,
+    -20
+   ],
+   "noKillCheck": false
+  }
+ ]
+}

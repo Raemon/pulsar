@@ -1,0 +1,61 @@
+{
+ "name": "bosslive",
+ "seed": 65,
+ "wave": 11,
+ "combo": 20,
+ "secs": 7.5,
+ "entrances": true,
+ "ship": {
+  "vel": [
+   0,
+   140
+  ],
+  "heading": 300,
+  "fromBoss": [
+   480,
+   180
+  ]
+ },
+ "rocks": [
+  {
+   "tag": "boss",
+   "kind": "boss",
+   "live": true
+  }
+ ],
+ "shots": [
+  {
+   "t": 4.5,
+   "h": 300,
+   "lock": 0.6,
+   "kind": "bassA",
+   "size": "large",
+   "lightning": true
+  },
+  {
+   "t": 5.5,
+   "h": -10,
+   "turnRate": 2.3,
+   "burns": [
+    {
+     "dv": 100,
+     "acc": 320
+    }
+   ],
+   "lock": 0.15,
+   "kind": "bassC",
+   "size": "large",
+   "lightning": true
+  }
+ ],
+ "clearWindow": [
+  4.4,
+  6.6
+ ],
+ "pulsar": {
+  "shift": [
+   -213,
+   -317
+  ]
+ }
+}
