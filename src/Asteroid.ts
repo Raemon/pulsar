@@ -1267,10 +1267,12 @@ export class Asteroid {
   // Iris angle the eye is currently aiming. Lerps toward the player position
   // over a short window so quick player jukes are tracked but not perfectly.
   bossIrisAngle = 0;
-  // Tracked aim point — locked at the start of the laser charge window so a
-  // player who jukes during beats 7→8 actually dodges the bolt.
-  bossEyeAimX = 0;
-  bossEyeAimY = 0;
+  // Committed aim, stored RELATIVE to the eye (angle + reach) rather than as a
+  // world point: the boss folds across the torus seam, and a world-space aim
+  // point left behind on the far side would flip the aim the instant it did.
+  bossEyeAimAngle = 0;
+  bossEyeAimDist = 0;
+  bossEyeAimSeeded = false;
   // Displayed aim angle — eased toward the committed aim each frame so the
   // telegraph/beam slews smoothly between the discrete per-beat re-target
   // steps instead of snapping. -999 = uninitialised (snap to committed first).
@@ -4466,7 +4468,7 @@ export class Asteroid {
     // Ease the displayed laser aim toward the committed aim so the telegraph
     // and beam slew smoothly across the discrete per-beat re-target steps.
     if (this.isBoss() || this.kind === "bossEye") {
-      const committed = Math.atan2(this.bossEyeAimY - this.pos.y, this.bossEyeAimX - this.pos.x);
+      const committed = this.bossEyeAimAngle;
       if (this.bossAimDisplayAngle === -999) {
         this.bossAimDisplayAngle = committed;
       } else {
@@ -4527,9 +4529,9 @@ export class Asteroid {
     this.bossTrackedShipY = shipY;
     // Seed the locked aim on the first track so the telegraph doesn't slew
     // up from the (0,0) origin on the eye's first live frame.
-    if (this.bossEyeAimX === 0 && this.bossEyeAimY === 0) {
-      this.bossEyeAimX = shipX;
-      this.bossEyeAimY = shipY;
+    if (!this.bossEyeAimSeeded) {
+      this.bossEyeAimSeeded = true;
+      this.aimAtTrackedShip();
     }
     const target = Math.atan2(shipY - this.pos.y, shipX - this.pos.x);
     // Smoothly slew the iris toward the player along the shorter angular
@@ -4566,8 +4568,7 @@ export class Asteroid {
     const inIdle = tNow < LASER_AIM_START;
     if (inIdle) {
       this.bossAimBeatIndex = -1;
-      this.bossEyeAimX = this.bossTrackedShipX;
-      this.bossEyeAimY = this.bossTrackedShipY;
+      this.aimAtTrackedShip();
       return;
     }
     if (!inWindup) return; // post-aim hold: keep the locked aim frozen to fire
@@ -4575,7 +4576,7 @@ export class Asteroid {
     if (beatIndex > this.bossAimBeatIndex) {
       this.bossAimBeatIndex = beatIndex;
       // Current aim direction and the direction to the player, both as angles.
-      const cur = Math.atan2(this.bossEyeAimY - this.pos.y, this.bossEyeAimX - this.pos.x);
+      const cur = this.bossEyeAimAngle;
       const target = Math.atan2(this.bossTrackedShipY - this.pos.y, this.bossTrackedShipX - this.pos.x);
       // Shortest signed angular gap.
       let diff = target - cur;
@@ -4583,13 +4584,18 @@ export class Asteroid {
       while (diff < -Math.PI) diff += TAU;
       // Turn toward the player, but no faster than MAX_AIM_TURN_PER_BEAT.
       const turn = Math.max(-MAX_AIM_TURN_PER_BEAT, Math.min(MAX_AIM_TURN_PER_BEAT, diff));
-      const next = cur + turn;
+      this.bossEyeAimAngle = cur + turn;
       // Re-project the aim point out to the player's distance so the telegraph
       // line reaches the same span as the shot.
-      const dist = Math.max(1, Math.hypot(this.bossTrackedShipX - this.pos.x, this.bossTrackedShipY - this.pos.y));
-      this.bossEyeAimX = this.pos.x + Math.cos(next) * dist;
-      this.bossEyeAimY = this.pos.y + Math.sin(next) * dist;
+      this.bossEyeAimDist = Math.max(1, Math.hypot(this.bossTrackedShipX - this.pos.x, this.bossTrackedShipY - this.pos.y));
     }
+  }
+
+  private aimAtTrackedShip() {
+    const dx = this.bossTrackedShipX - this.pos.x;
+    const dy = this.bossTrackedShipY - this.pos.y;
+    this.bossEyeAimAngle = Math.atan2(dy, dx);
+    this.bossEyeAimDist = Math.hypot(dx, dy);
   }
 
   // Drives a wraith's stalk/strike cycle and writhe phase. Called once per tick
@@ -4937,9 +4943,7 @@ export class Asteroid {
     // smooth slew rather than the committed aim's per-beat jumps. Falls back to
     // the committed direction before the display angle is seeded.
     if (this.bossAimDisplayAngle !== -999) return this.bossAimDisplayAngle;
-    const dx = this.bossEyeAimX - this.pos.x;
-    const dy = this.bossEyeAimY - this.pos.y;
-    return Math.atan2(dy, dx);
+    return this.bossEyeAimAngle;
   }
 
   // Per-kind score from ENTITY_STATS (boss ladder / eye bump / gem / wraith /
@@ -5152,8 +5156,9 @@ export class Asteroid {
       // iris shards ring in the gaps between the plate flashes.
       eye.measureOffset = BASS_MEASURE_LENGTH / 4;
       eye.bossIrisAngle = this.bossIrisAngle;
-      eye.bossEyeAimX = this.bossEyeAimX;
-      eye.bossEyeAimY = this.bossEyeAimY;
+      eye.bossEyeAimAngle = this.bossEyeAimAngle;
+      eye.bossEyeAimDist = this.bossEyeAimDist;
+      eye.bossEyeAimSeeded = this.bossEyeAimSeeded;
       eye.bossRhythmT = this.bossRhythmT;
       eye.bossDidTop = this.bossDidTop;
       eye.bossDidBottom = this.bossDidBottom;
@@ -7255,7 +7260,7 @@ export class Asteroid {
     const windup = this.bossLaserWindup;
     const a = this.eyeAimAngle();
     const startR = (this.kind === "bossEye" ? this.radius : this.bossEyeRadius) * 1.05;
-    const aimDist = Math.hypot(this.bossEyeAimX - this.pos.x, this.bossEyeAimY - this.pos.y);
+    const aimDist = this.bossEyeAimDist;
     // The line runs the full length the beam will reach so the threat covers
     // the same span as the shot, not just up to the player.
     const reach = Math.max(startR + 200, aimDist + 600);

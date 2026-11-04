@@ -1,6 +1,5 @@
 import type { Game } from "../Game";
 import type { Asteroid } from "../Asteroid";
-import { WORLD_W, WORLD_H } from "../vec";
 import { killShip } from "./lifecycle";
 import { popShield } from "./collisions";
 import { BEAT_GRID } from "./rhythmConstants";
@@ -25,6 +24,9 @@ const HOLD_TIME = BEAT_GRID * 1.0;
 const FADE_TIME = 0.2;
 // Hot core half-width; the ship is burned if its hull crosses this.
 const BEAM_HALF_WIDTH = 7;
+// Half the widest drawn stroke (the diffuse aura) / the muzzle bloom radius —
+// how far past the centre line a wrap image can still paint pixels.
+const BEAM_AURA_HALF_WIDTH = 26;
 
 export class BossBeam {
   owner: Asteroid;
@@ -74,63 +76,65 @@ export class BossBeam {
     return !this.dead;
   }
 
-  // Shortest distance from any wrap image of the ship centre to the beam
-  // ray — the beam segment can run past the seam, so the folded ship may sit
-  // on a line the raw math would miss.
-  distanceToShip(sx: number, sy: number): number {
+  // Closest point on a wrap image of the beam's centre-line segment to (x, y).
+  private nearestPoint(ox: number, oy: number, x: number, y: number): { x: number; y: number } {
     const cos = Math.cos(this.angle);
     const sin = Math.sin(this.angle);
-    let best = Infinity;
-    for (let ix = -1; ix <= 1; ix++) {
-      for (let iy = -1; iy <= 1; iy++) {
-        const px0 = sx + ix * WORLD_W;
-        const py0 = sy + iy * WORLD_H;
-        const dx = px0 - this.originX;
-        const dy = py0 - this.originY;
-        const along = dx * cos + dy * sin;
-        const t = Math.max(0, Math.min(BEAM_LENGTH, along));
-        const px = this.originX + cos * t;
-        const py = this.originY + sin * t;
-        const d = Math.hypot(px0 - px, py0 - py);
-        if (d < best) best = d;
-      }
-    }
-    return best;
-  }
-
-  // Closest point on the beam's centre-line segment to (x, y).
-  private nearestPoint(x: number, y: number): { x: number; y: number } {
-    const cos = Math.cos(this.angle);
-    const sin = Math.sin(this.angle);
-    const t = Math.max(0, Math.min(BEAM_LENGTH, (x - this.originX) * cos + (y - this.originY) * sin));
-    return { x: this.originX + cos * t, y: this.originY + sin * t };
+    const t = Math.max(0, Math.min(BEAM_LENGTH, (x - ox) * cos + (y - oy) * sin));
+    return { x: ox + cos * t, y: oy + sin * t };
   }
 
   hitsShip(game: Game): boolean {
     if (!this.damaging()) return false;
     const ship = game.ship;
-    for (let ix = -1; ix <= 1; ix++) {
-      for (let iy = -1; iy <= 1; iy++) {
-        const sx = ship.pos.x + ix * game.w;
-        const sy = ship.pos.y + iy * game.h;
-        // Any part of the ship's visible outline touching the beam's band counts.
-        const nearest = this.nearestPoint(sx, sy);
-        const dx = nearest.x - sx;
-        const dy = nearest.y - sy;
-        if (Math.hypot(dx, dy) > ship.hitBound + BEAM_HALF_WIDTH) continue;
-        const beam = {
-          pos: nearest,
-          collidesWith: (p: { x: number; y: number }, r: number) => {
-            const q = this.nearestPoint(p.x, p.y);
-            return Math.hypot(p.x - q.x, p.y - q.y) < r + BEAM_HALF_WIDTH;
-          },
-        };
-        if (shipTouches(ship, beam, dx, dy, ship.hazardPad(dx, dy))) return true;
-      }
+    const sx = ship.pos.x;
+    const sy = ship.pos.y;
+    // Pad by the hull's reach so an image touching a hull that pokes
+    // across the seam still counts.
+    const pad = ship.hitBound + BEAM_HALF_WIDTH + BEAM_AURA_HALF_WIDTH;
+    for (const [ox, oy] of beamImageOrigins(this, game.w, game.h, pad)) {
+      // Any part of the ship's visible outline touching the beam's band counts.
+      const nearest = this.nearestPoint(ox, oy, sx, sy);
+      const dx = nearest.x - sx;
+      const dy = nearest.y - sy;
+      if (Math.hypot(dx, dy) > ship.hitBound + BEAM_HALF_WIDTH) continue;
+      const beam = {
+        pos: nearest,
+        collidesWith: (p: { x: number; y: number }, r: number) => {
+          const q = this.nearestPoint(ox, oy, p.x, p.y);
+          return Math.hypot(p.x - q.x, p.y - q.y) < r + BEAM_HALF_WIDTH;
+        },
+      };
+      if (shipTouches(ship, beam, dx, dy, ship.hazardPad(dx, dy))) return true;
     }
     return false;
   }
 }
+
+// The beam is longer than the torus is tall and nearly as long as it is wide,
+// so it runs across the seam — up to twice vertically. These are the origins
+// of every wrap image of the beam that comes within `reach` of the
+// [0,w)x[0,h) tile. The hit test and the render walk the SAME set, so the
+// beam can never burn the ship along a stretch that isn't drawn.
+const beamImageOrigins = (beam: BossBeam, w: number, h: number, reach: number): Array<[number, number]> => {
+  const cos = Math.cos(beam.angle);
+  const sin = Math.sin(beam.angle);
+  const out: Array<[number, number]> = [];
+  const kx = Math.ceil((BEAM_LENGTH + reach) / w) + 1;
+  const ky = Math.ceil((BEAM_LENGTH + reach) / h) + 1;
+  for (let ix = -kx; ix <= kx; ix++) {
+    for (let iy = -ky; iy <= ky; iy++) {
+      const ox = beam.originX + ix * w;
+      const oy = beam.originY + iy * h;
+      const ex = ox + cos * BEAM_LENGTH;
+      const ey = oy + sin * BEAM_LENGTH;
+      if (Math.max(ox, ex) + reach < 0 || Math.min(ox, ex) - reach > w) continue;
+      if (Math.max(oy, ey) + reach < 0 || Math.min(oy, ey) - reach > h) continue;
+      out.push([ox, oy]);
+    }
+  }
+  return out;
+};
 
 export const fireBossSweepBeam = (game: Game, a: Asteroid, aimAngle: number) => {
   game.bossBeams.push(new BossBeam(a, aimAngle, a.hue));
@@ -163,9 +167,16 @@ export const tickBossBeams = (game: Game, dt: number) => {
   game.bossBeams = game.bossBeams.filter((b) => b.alive);
 };
 
-export const renderBossBeams = (ctx: CanvasRenderingContext2D, beams: BossBeam[]) => {
+// Paints the beams into one [0,w)x[0,h) tile of the world layer. The scroll
+// camera tiles that layer, so each tile draws every wrap image of the beam
+// clipped to itself: the tiles partition the screen, so the wrapped beam shows
+// exactly once everywhere it reaches, with no doubled additive brightness.
+export const renderBossBeams = (ctx: CanvasRenderingContext2D, beams: BossBeam[], w: number, h: number) => {
   if (beams.length === 0) return;
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
   ctx.globalCompositeOperation = "lighter";
   ctx.lineCap = "round";
   for (const beam of beams) {
@@ -173,51 +184,51 @@ export const renderBossBeams = (ctx: CanvasRenderingContext2D, beams: BossBeam[]
     if (intensity <= 0.01) continue;
     const cos = Math.cos(beam.angle);
     const sin = Math.sin(beam.angle);
-    const ox = beam.originX;
-    const oy = beam.originY;
-    const ex = ox + cos * BEAM_LENGTH;
-    const ey = oy + sin * BEAM_LENGTH;
-    const hue = beam.hue;
+    for (const [ox, oy] of beamImageOrigins(beam, w, h, BEAM_AURA_HALF_WIDTH)) {
+      const ex = ox + cos * BEAM_LENGTH;
+      const ey = oy + sin * BEAM_LENGTH;
+      const hue = beam.hue;
 
-    // Wide diffuse aura.
-    ctx.strokeStyle = `hsla(${hue + 6}, 100%, 60%, ${(0.14 * intensity).toFixed(3)})`;
-    ctx.lineWidth = 34;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
-    // Mid glow.
-    ctx.strokeStyle = `hsla(${hue + 12}, 100%, 65%, ${(0.4 * intensity).toFixed(3)})`;
-    ctx.lineWidth = 14;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
-    // Hot core.
-    ctx.strokeStyle = `hsla(${hue + 30}, 100%, 85%, ${(0.85 * intensity).toFixed(3)})`;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
-    // White-hot centre line.
-    ctx.strokeStyle = `hsla(48, 100%, 98%, ${(intensity).toFixed(3)})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
+      // Wide diffuse aura.
+      ctx.strokeStyle = `hsla(${hue + 6}, 100%, 60%, ${(0.14 * intensity).toFixed(3)})`;
+      ctx.lineWidth = 34;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      // Mid glow.
+      ctx.strokeStyle = `hsla(${hue + 12}, 100%, 65%, ${(0.4 * intensity).toFixed(3)})`;
+      ctx.lineWidth = 14;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      // Hot core.
+      ctx.strokeStyle = `hsla(${hue + 30}, 100%, 85%, ${(0.85 * intensity).toFixed(3)})`;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      // White-hot centre line.
+      ctx.strokeStyle = `hsla(48, 100%, 98%, ${(intensity).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
 
-    // Muzzle bloom at the eye.
-    const muzzleR = 26 * intensity;
-    const muzzle = ctx.createRadialGradient(ox, oy, 0, ox, oy, muzzleR);
-    muzzle.addColorStop(0, `hsla(48, 100%, 98%, ${(0.9 * intensity).toFixed(3)})`);
-    muzzle.addColorStop(0.4, `hsla(${hue + 25}, 100%, 75%, ${(0.5 * intensity).toFixed(3)})`);
-    muzzle.addColorStop(1, `hsla(${hue}, 100%, 55%, 0)`);
-    ctx.fillStyle = muzzle;
-    ctx.beginPath();
-    ctx.arc(ox, oy, muzzleR, 0, Math.PI * 2);
-    ctx.fill();
+      // Muzzle bloom at the eye.
+      const muzzleR = 26 * intensity;
+      const muzzle = ctx.createRadialGradient(ox, oy, 0, ox, oy, muzzleR);
+      muzzle.addColorStop(0, `hsla(48, 100%, 98%, ${(0.9 * intensity).toFixed(3)})`);
+      muzzle.addColorStop(0.4, `hsla(${hue + 25}, 100%, 75%, ${(0.5 * intensity).toFixed(3)})`);
+      muzzle.addColorStop(1, `hsla(${hue}, 100%, 55%, 0)`);
+      ctx.fillStyle = muzzle;
+      ctx.beginPath();
+      ctx.arc(ox, oy, muzzleR, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
 };
