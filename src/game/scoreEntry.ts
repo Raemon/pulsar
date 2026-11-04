@@ -501,7 +501,8 @@ const renderLeaderboard = (game: Game) => {
     const comboTier = combo >= 12 ? "white" : combo >= 4 ? "gold" : combo >= 2 ? "cyan" : "dim";
     const wave = row.wave ?? 1;
     const cls = i === game.leaderboardSelection ? ' class="lb-self"' : "";
-    const replayBtn = row.has_replay ? renderReplayButton(row) : "";
+    const replayBtn =
+      row.has_replay && replayBuildMismatch(row) !== "older" ? renderReplayButton(row) : "";
     const fromNow = formatFromNow(row.created_at);
     const exactDate = escapeHtml(formatExactDate(row.created_at));
     const dateCell = fromNow
