@@ -151,7 +151,7 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   for (const o of game.fuelOrbs) o.render(ctx, game.time);
   for (const al of game.aliens) if (!al.entering) al.render(ctx, game.time);
   for (const ab of game.alienBullets) ab.render(ctx);
-  renderBossBeams(ctx, game.bossBeams);
+  renderBossBeams(ctx, game.bossBeams, game.w, game.h);
   for (const b of game.bullets) b.render(ctx);
   renderLasers(ctx, game.lasers);
   // every wave body brightens on the beat then tapers over ~100ms (paints over the sprites above).
