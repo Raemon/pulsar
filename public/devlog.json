@@ -1,5 +1,35 @@
 [
   {
+    "id": "2026-11-07-a3b0a35",
+    "date": "2026-11-07",
+    "title": "Warp Cannon: shots that swallow whatever they hit",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Warp Cannon upgrade: every shot becomes a small rippling wormhole, its rim coloured by your rhythm tier.",
+          "A warp shot swallows its target whole in one hit, however tough — no explosion, no fragments to chase down. Armour still turns away weak shots, and bosses are too massive to swallow.",
+          "Swallowing pays out as if you'd broken the target all the way down, scoring every piece it would have split into.",
+          "Aliens swallowed by the Warp Cannon fall straight into the wave-skip portal their kill tears open.",
+          "The Warp Cannon and the Bomb swap: picking one up replaces the other."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "Ships and aliens diving into a wormhole now keep their speed all the way in instead of stopping at the edge.",
+          "The wormhole's warp grabs a body the instant it touches the mouth, rather than kicking in partway through the dive."
+        ]
+      }
+    ],
+    "commits": [
+      "a3b0a35",
+      "277965a",
+      "ea21e99",
+      "f83c5aa"
+    ]
+  },
+  {
     "id": "2026-11-07-b00c000",
     "date": "2026-11-07",
     "title": "Bombs now detonate on your command",
