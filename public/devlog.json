@@ -1,5 +1,25 @@
 [
   {
+    "id": "2026-11-07-5e2d681",
+    "date": "2026-11-07",
+    "title": "Heavier bombs and a Warp Cannon that sounds like one",
+    "sections": [
+      {
+        "heading": "Changed",
+        "items": [
+          "Warp Cannon hits now sound like a hole tearing open in space: a zap, a deep drop, a falling warped tone as the target is sucked in, and a gulp as the mouth snaps shut. Small things go down high and quick, big ones low and slow.",
+          "Bomb detonations are much bigger: a crack and a deep kick, a roar, then debris crackling and a rolling rumble. An on-beat detonation also lands a power chord in key with the bomb shot.",
+          "Bombs bounce like dense iron shells: a low clonk instead of a glassy tink, and they shove what they hit. A mine bowls a small rock aside, trades blows with a medium one, and is stopped dead by a large one, which it knocks away. Armoured and bass rocks are much harder to move.",
+          "A rock or saucer drifting into a parked mine now pushes it along instead of grinding to a halt against it."
+        ]
+      }
+    ],
+    "commits": [
+      "5e2d681",
+      "3762895"
+    ]
+  },
+  {
     "id": "2026-11-07-a3b0a35",
     "date": "2026-11-07",
     "title": "Warp Cannon: shots that swallow whatever they hit",
