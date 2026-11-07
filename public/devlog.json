@@ -1,5 +1,28 @@
 [
   {
+    "id": "2026-11-07-b00c000",
+    "date": "2026-11-07",
+    "title": "Bombs now detonate on your command",
+    "sections": [
+      {
+        "heading": "Changed",
+        "items": [
+          "Fire throws a bomb; press fire again to detonate it, blasting everything inside its ring.",
+          "Only one bomb is in play at a time, so presses alternate throw and detonate. Holding fire never sets a bomb off.",
+          "Bombs no longer go off on their own. A thrown bomb waits, still bouncing off obstacles, until you detonate it.",
+          "The bomb's ring flashes on every beat. Detonate on the beat to keep your rhythm streak and score the blast on-beat.",
+          "While a bomb is live, your sight dims to show the next press detonates rather than throws.",
+          "A live bomb fizzles if your ship is destroyed."
+        ]
+      }
+    ],
+    "commits": [
+      "b00c000",
+      "d89e281",
+      "90a780d"
+    ]
+  },
+  {
     "id": "2026-10-31-1fc32c0",
     "date": "2026-10-31",
     "title": "Wormholes, obsidian gems, and slow-mo as a pulsar event",
