@@ -10,13 +10,13 @@ import {
   wormholeEnterable,
   throatPointOf,
   WORMHOLE_CLOSE,
-  WARP_OUT_DURATION,
   wormholeMouthRadius,
   type Dive,
-  planDive,
+  planDiveInto,
   diveAt,
   shiftDive,
 } from "./wormhole";
+import { swallowTimeLeft } from "./warpCannon";
 import { shipTouches } from "../ship/shipHitbox";
 import { isBossWave } from "./waveDirector";
 import { advanceWave, showWaveAnnounce } from "./gameUpdate";
@@ -100,10 +100,11 @@ export const maybeSpawnSkipPortal = (
 
 // Cut every open skip portal down to its collapse so it irises shut on screen.
 // advanceWave calls this the moment a wave ends, which is what makes "portal
-// entered mid-transition" structurally impossible.
+// entered mid-transition" structurally impossible. A portal an alien is still
+// falling into (a Warp Cannon swallow) holds wide until it's through.
 export const collapseSkipPortals = (game: Game) => {
   for (const p of game.skipPortals) {
-    p.wormhole.life = Math.min(p.wormhole.life, WORMHOLE_CLOSE);
+    p.wormhole.life = Math.min(p.wormhole.life, WORMHOLE_CLOSE + swallowTimeLeft(game, p.wormhole));
   }
   game.skipPortals = [];
 };
@@ -155,15 +156,13 @@ const beginWaveSkip = (game: Game, portal: SkipPortal) => {
   // capture it before the transition (whose spawn closure moves game.wave).
   const completedWave = game.wave;
   const schedule = advanceWave(game, landing, skipped * cadenceSec);
-  // advanceWave collapsed every skip portal; re-extend this one so its mouth
-  // stays open while the ship falls through it.
-  portal.wormhole.life = WORMHOLE_CLOSE + WARP_OUT_DURATION;
   sweepFieldForSkip(game);
   // The ship plunges on at the speed it hit the mouth with (planDive) — the
   // dive owns its motion from here, so its own velocity is spent.
-  const throat = throatPointOf(portal.wormhole);
-  const [tdx, tdy] = toroidalDelta(throat.x - ship.pos.x, throat.y - ship.pos.y, game.w, game.h);
-  const dive = planDive(ship.pos, ship.vel, { x: ship.pos.x + tdx, y: ship.pos.y + tdy });
+  const dive = planDiveInto(ship.pos, ship.vel, throatPointOf(portal.wormhole), game.w, game.h);
+  // advanceWave collapsed every skip portal; re-extend this one so its mouth
+  // stays open while the ship falls through it.
+  portal.wormhole.life = WORMHOLE_CLOSE + dive.sec;
   ship.vel.x = 0;
   ship.vel.y = 0;
   ship.thrustOn = false;

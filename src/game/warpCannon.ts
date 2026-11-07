@@ -1,18 +1,19 @@
 import type { Game } from "../Game";
 import type { Bullet } from "../Bullet";
 import type { Asteroid } from "../Asteroid";
-import { Vec, toroidalDelta, TAU } from "../vec";
+import { Vec, TAU } from "../vec";
 import {
   type Wormhole,
   type LensBackdrop,
   type PortalShape,
+  type Dive,
   renderPortalLens,
+  renderBakedMouth,
   renderThroughPortal,
   spawnWormhole,
   portalLongAxis,
   lensScaleForMouth,
-  type Dive,
-  planDive,
+  planDiveInto,
   diveAt,
 } from "./wormhole";
 
@@ -24,21 +25,19 @@ import {
 // (renderThroughPortal), and the kill pays for the body plus every fragment it
 // would have broken into — with none of a break-up's aftermath (killEffects).
 //
-// All of this is cosmetic beyond the collision rule: the swallowed body leaves
-// play the frame it's struck, and the shot's shape and ripples never feed back
-// into the sim.
+// The swallowed body leaves play the frame it's struck. Its fall is ticked in
+// the sim (so it's deterministic and replays) but nothing reads it back except
+// a skip portal's collapse waiting for it; the shot's wobble and ripples are
+// render-only.
 
 // ── The shot ──────────────────────────────────────────────────────────────────
 // Seconds a fresh shot takes to tear fully open off the muzzle.
 const TEAR_OPEN_SEC = 0.08;
 // The wake: a ripple is shed every RIPPLE_EVERY seconds where the shot is, and
 // spreads to RIPPLE_SPREAD× the mouth as it fades over RIPPLE_LIFE.
-const RIPPLE_EVERY = 0.03;
+const RIPPLE_EVERY = 0.035;
 const RIPPLE_LIFE = 0.3;
 const RIPPLE_SPREAD = 4;
-// The far sky through a shot's mouth is small and soft — a coarse map is
-// plenty, and a volley of shots can share the screen.
-const SHOT_SKY_MAX_PX = 64;
 
 export type WarpRipple = { x: number; y: number; age: number };
 
@@ -56,7 +55,8 @@ export const tickWarpRipples = (b: Bullet, dt: number): void => {
 const shotLensScale = (b: Bullet): number => lensScaleForMouth(b.hitRadius());
 
 // Mouth-open fraction: tears open off the muzzle, then closes down across the
-// same post-reticule tail a stock shot fades over.
+// same post-reticule tail a stock shot fades over. Reads the shot's life, so a
+// swallow must take it before the hit consumes the shot.
 const shotOpen = (b: Bullet): number => {
   const tear = Math.min(1, (b.maxLife - b.life) / TEAR_OPEN_SEC);
   return (1 - (1 - tear) * (1 - tear)) * b.rangeAlpha();
@@ -69,9 +69,9 @@ const shotPhase = (b: Bullet): number => (b.firedFrom.x * 0.0131 + b.firedFrom.y
 // The mouth's wobble: drawn out along its flight, with a second stretch that
 // pulses and turns over the first, and a slow breath in its size — a hole in
 // space that quivers as it's dragged through it.
-const shotShape = (b: Bullet, tSec: number, phase: number): PortalShape => {
+const shotShape = (b: Bullet, tSec: number): PortalShape => {
   const heading = Math.atan2(b.vel.y, b.vel.x);
-  const t = tSec + phase;
+  const t = tSec + shotPhase(b);
   const breathe = 1 + 0.06 * Math.sin(t * 19 + 1.3);
   const along = 0.16;
   const wobble = 0.1 * Math.sin(t * 34);
@@ -82,7 +82,8 @@ const shotShape = (b: Bullet, tSec: number, phase: number): PortalShape => {
 };
 
 // The shot's tier reads on its limb and wake, in the stock bullet's palette:
-// pale cyan off-beat, blue on-beat, gold boosted, white super-boosted.
+// pale cyan off-beat, yellow piercing, blue on-beat, gold boosted, white
+// super-boosted.
 const tierTint = (b: Bullet): string =>
   b.superBoosted ? "0, 0%" : b.boosted ? "45, 100%" : b.onBeat ? "222, 100%" : b.pierce ? "60, 100%" : "185, 90%";
 
@@ -91,6 +92,16 @@ const strokeRing = (ctx: CanvasRenderingContext2D, x: number, y: number, r: numb
   ctx.beginPath();
   ctx.arc(x, y, r, 0, TAU);
   ctx.stroke();
+};
+
+// Whether any of the shot — its ripples reach furthest — lands on the canvas
+// in this wrap copy of the world layer (the scroll camera paints up to four).
+const shotOnCanvas = (ctx: CanvasRenderingContext2D, b: Bullet): boolean => {
+  const m = ctx.getTransform();
+  const sx = m.a * b.pos.x + m.e;
+  const sy = m.d * b.pos.y + m.f;
+  const ext = b.hitRadius() * RIPPLE_SPREAD * 1.6 * Math.abs(m.a) + RIPPLE_LIFE * Math.hypot(b.vel.x, b.vel.y) * Math.abs(m.a);
+  return sx + ext >= 0 && sy + ext >= 0 && sx - ext <= ctx.canvas.width && sy - ext <= ctx.canvas.height;
 };
 
 // A wake ripple: a thin crest in the shot's tint, split chromatically like the
@@ -109,27 +120,27 @@ const renderRipples = (ctx: CanvasRenderingContext2D, b: Bullet, mouth: number, 
   }
 };
 
-const renderWarpShot = (
-  ctx: CanvasRenderingContext2D, b: Bullet, backdrop: LensBackdrop | null, tSec: number,
-): void => {
+// A reticule-crossing flash swells the mouth for a beat.
+const shotFlash = (b: Bullet): number => (b.flashTimer > 0 ? Math.min(1, b.flashTimer / 0.06) : 0);
+
+
+const shotLook = (b: Bullet) => ({ x: b.pos.x, y: b.pos.y, radius: shotLensScale(b), seed: shotPhase(b), hueShift: 0 });
+
+// The front of a shot: wake ripples, the far-sky mouth (a baked view, turning
+// slowly), and its limb in the tier's colour — a soft band and a fine bright
+// edge, drawn through the same wobble so they hug the mouth.
+const renderWarpShotFront = (ctx: CanvasRenderingContext2D, b: Bullet, tSec: number): void => {
   const tint = tierTint(b);
   const mouth = b.hitRadius();
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   renderRipples(ctx, b, mouth, tint);
   ctx.restore();
-  // A reticule-crossing flash swells the mouth for a beat.
-  const flash = b.flashTimer > 0 ? Math.min(1, b.flashTimer / 0.06) : 0;
+  const flash = shotFlash(b);
   const open = shotOpen(b) * (1 + 0.25 * flash);
   if (open < 0.02) return;
-  const phase = shotPhase(b);
-  const shape = shotShape(b, tSec, phase);
-  renderPortalLens(
-    ctx, { x: b.pos.x, y: b.pos.y, radius: shotLensScale(b), seed: phase, hueShift: 0 },
-    open, backdrop, shape, SHOT_SKY_MAX_PX,
-  );
-  // The limb in the tier's colour — a soft band and a fine bright edge, drawn
-  // through the same wobble so they hug the mouth.
+  const shape = shotShape(b, tSec);
+  renderBakedMouth(ctx, shotLook(b), open, shape, (tSec + shotPhase(b)) * 1.6);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   ctx.translate(b.pos.x, b.pos.y);
@@ -142,10 +153,25 @@ const renderWarpShot = (
   ctx.restore();
 };
 
-export const renderWarpShots = (
+// The lens a shot drags through the starfield — the dark lens body and the
+// starlight it bends. It stands in for the starfield, so it's painted with the
+// portals, under the bodies: a shot brushing a rock mustn't black it out.
+export const renderWarpShotLenses = (
   ctx: CanvasRenderingContext2D, bullets: ReadonlyArray<Bullet>, backdrop: LensBackdrop | null, timeMs: number,
 ): void => {
-  for (const b of bullets) if (b.warp && b.life > 0) renderWarpShot(ctx, b, backdrop, timeMs * 0.001);
+  const tSec = timeMs * 0.001;
+  for (const b of bullets) {
+    if (!b.warp || b.life <= 0 || !shotOnCanvas(ctx, b)) continue;
+    const open = shotOpen(b) * (1 + 0.25 * shotFlash(b));
+    renderPortalLens(ctx, shotLook(b), open, backdrop, shotShape(b, tSec), "lens");
+  }
+};
+
+// The shots themselves, with the other bullets.
+export const renderWarpShots = (ctx: CanvasRenderingContext2D, bullets: ReadonlyArray<Bullet>, timeMs: number): void => {
+  for (const b of bullets) {
+    if (b.warp && b.life > 0 && shotOnCanvas(ctx, b)) renderWarpShotFront(ctx, b, timeMs * 0.001);
+  }
 };
 
 // ── The swallow ───────────────────────────────────────────────────────────────
@@ -159,28 +185,29 @@ export type Swallow = {
   dive: Dive;
   // Warp progress 0→1 over dive.sec.
   t: number;
+  // Furthest the body paints from its centre (halo included), for the lens buffer.
   reach: number;
   draw: (g: CanvasRenderingContext2D, timeMs: number) => void;
 };
 
 // Cap on the per-pixel lens buffer — a big rock's fall spans a lot of screen,
 // and a prong volley can swallow several at once.
-const SWALLOW_MAX_PX = 240;
+const SWALLOW_MAX_PX = 200;
 
 // Bosses and the Sepulchre's bier party are encounters, not rocks: too massive
 // to swallow, a Warp Cannon shot lands on them as an ordinary hit.
 export const canSwallow = (a: Asteroid): boolean => !a.isBossFamily() && !a.isSepulchreFamily();
 
 // Mouth-open fraction a portal sized for `bodyRadius` is born at so it grows
-// straight out of the shot's own mouth.
+// straight out of the shot's own mouth. Take it before the hit consumes the shot.
 export const swallowOpenFrom = (shot: Bullet, bodyRadius: number): number =>
   Math.min(1, (shotOpen(shot) * shotLensScale(shot)) / portalLongAxis(bodyRadius));
 
 // Drop `body` into `portal` — or, by default, a fresh one torn open where the
-// shot struck.
+// shot struck. Call before the hit consumes the shot (see swallowOpenFrom).
 export const swallowIntoWarp = (
   game: Game, body: { pos: Vec; vel: Vec; radius: number }, shot: Bullet,
-  draw: Swallow["draw"], portal: Wormhole | null = null,
+  reach: number, draw: Swallow["draw"], portal: Wormhole | null = null,
 ): void => {
   if (!portal) {
     game.sound.play("canisterAppear", 1, shot.pos);
@@ -189,15 +216,22 @@ export const swallowIntoWarp = (
       { openFrom: swallowOpenFrom(shot, body.radius) },
     );
   }
-  const [dx, dy] = toroidalDelta(portal.x - body.pos.x, portal.y - body.pos.y, game.w, game.h);
   game.swallows.push({
     portal,
     body,
-    dive: planDive(body.pos, body.vel, { x: body.pos.x + dx, y: body.pos.y + dy }),
+    dive: planDiveInto(body.pos, body.vel, portal, game.w, game.h),
     t: 0,
-    reach: body.radius * 1.6,
+    reach,
     draw,
   });
+};
+
+// Seconds until every body still falling into `portal` is through — how long
+// its mouth must stay wide before it may start to collapse.
+export const swallowTimeLeft = (game: Game, portal: Wormhole): number => {
+  let left = 0;
+  for (const s of game.swallows) if (s.portal === portal) left = Math.max(left, (1 - s.t) * s.dive.sec);
+  return left;
 };
 
 // musicDt, like the portals and every other dive, so slow-mo stretches both.

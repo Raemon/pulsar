@@ -1114,7 +1114,7 @@ prewarmHaloOutlines();
 // all the way down — what a Warp Cannon shot pays on top of the body's own
 // score for swallowing it whole. Mirrors split()'s recipes without running
 // them (split rolls the gameplay RNG and spawns bodies); a randomised break
-// counts its standard recipe. Keep the two in step.
+// counts one fixed recipe. Keep the two in step.
 const fragmentsScore = (kind: AsteroidKind, size: AsteroidSize, splitLevel: number, captives: number): number => {
   const whole = (k: AsteroidKind, z: AsteroidSize, level = 0): number =>
     entityStat(k, z, "score") + fragmentsScore(k, z, level, 1);
@@ -1157,9 +1157,10 @@ const fragmentsScore = (kind: AsteroidKind, size: AsteroidSize, splitLevel: numb
     || kind === "solidCrystalSmall" || kind === "bossPlate" || kind === "bossIrisShard" || kind === "bossEmber"
     || isBurstGem(kind) || CATHEDRAL_DEBRIS_KINDS.includes(kind) || size === "small"
   ) return 0;
-  // splitRegular: a gem-bearing large spits plain smalls (its "trio"); every
-  // other break halves down the size ladder, a gem-bearer's pieces as plain rock.
-  if (kind === "asteroidWithGem" && size === "large") return 3 * whole("normal", "small");
+  // splitRegular, at its larger recipe where it rolls one: a gem-bearing large
+  // spits a plain small and medium (its "pair"); every other break halves down
+  // the size ladder (a large's 2-medium wedge), a gem-bearer's pieces as plain rock.
+  if (kind === "asteroidWithGem" && size === "large") return whole("normal", "small") + whole("normal", "medium");
   const child = kind === "asteroidWithGem" ? "normal" : kind;
   const next: AsteroidSize = size === "huge" ? "large" : size === "large" ? "medium" : "small";
   return 2 * whole(child, next);

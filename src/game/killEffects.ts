@@ -2,7 +2,7 @@ import type { Game } from "../Game";
 import { Asteroid, isBurstGem, isGlassPrison, isMetalHull, isPhasedKind } from "../Asteroid";
 import { Alien } from "../Alien";
 import { AlienBullet } from "../AlienBullet";
-import { Comet } from "../Comet";
+import { Comet, COMET_HALO_REACH } from "../Comet";
 import { Bullet } from "../Bullet";
 import { shotRayDir } from "../ship/shipWeapons";
 import { Vec, nearestImageOf } from "../vec";
@@ -388,10 +388,12 @@ export const onAsteroidSwallowed = (game: Game, a: Asteroid, b: Bullet, isOnBeat
   if (isOnBeatHit) triggerBassLightning(game, a.pos, a);
   game.shake = Math.min(game.shake + 0.3, 1.2);
   stopAsteroidDrones(game, a);
-  // Drops a torus fragment out of its ring's live set (tickTorusGroup).
+  // Drops a torus fragment out of its ring's live set (tickTorusGroup), and
+  // stops it drawing its share of the ring's thread as it falls.
   a.alive = false;
+  a.torusGroup = null;
   recordAsteroidKill(game, a, isOnBeatHit, scoreEarned, comboAtKill);
-  swallowIntoWarp(game, a, b, (g, t) => a.render(g, t));
+  swallowIntoWarp(game, a, b, a.radius * 1.6, (g, t) => a.render(g, t));
 };
 
 // bassteroids take multiple hits to kill; chip points keep the player rewarded for
@@ -459,7 +461,7 @@ export const onAlienKilled = (game: Game, al: Alien, b: Bullet, isOnBeatHit: boo
   if (swallowed) {
     game.shake = Math.min(game.shake + 0.3, 1.2);
     const skip = maybeSpawnSkipPortal(game, al, b.pos, swallowOpenFrom(b, al.radius));
-    swallowIntoWarp(game, al, b, (g, t) => al.render(g, t), skip);
+    swallowIntoWarp(game, al, b, al.radius * 2.2, (g, t) => al.render(g, t), skip);
   } else {
     game.shake = Math.min(game.shake + 0.5, 1.4);
     game.sound.play("alienExplode", 1, al.pos);
@@ -508,7 +510,10 @@ export const onCometKilled = (game: Game, c: Comet, b: Bullet, isOnBeatHit: bool
   game.sound.stopCometShimmer(c);
   if (swallowed) {
     game.shake = Math.min(game.shake + 0.3, 1.2);
-    swallowIntoWarp(game, c, b, (g) => c.render(g));
+    // Only the head falls in: its tail is drawn in world space along where it
+    // has been, which the lens can't carry, so it's dropped.
+    c.trail.length = 0;
+    swallowIntoWarp(game, c, b, COMET_HALO_REACH * c.scale, (g) => c.render(g));
   } else {
     game.shake = Math.min(game.shake + 0.6, 1.6);
     // No pos: these are big centered "event" sounds — the live graph always

@@ -1,4 +1,4 @@
-import type { Vec } from "../vec";
+import { toroidalDelta, type Vec } from "../vec";
 import type { Starfield } from "../Starfield";
 // Seeds only — cosmetic stream so the portal's sky offset/flow never perturbs
 // the gameplay RNG draw count and desyncs replays.
@@ -439,16 +439,15 @@ const getSphereMap = (n: number): SphereMap => {
 const renderSphere = (
   ctx: CanvasRenderingContext2D, L: number, pxScale: number,
   cx: number, cy: number, scrollX: number, scrollY: number, skyPerPx: number, seed: number,
-  maxMapPx: number,
 ): void => {
   const layers = skyLayers ?? (skyLayers = bakeFarSky());
   const r = SPHERE * L;
   // Power-of-two map sizes, so an opening/closing mouth reuses a handful of
-  // cached maps instead of building one per pixel of radius. Capped (128 for a
-  // portal): the deep sky is soft and coarser than that across the ball, so a
-  // larger buffer only costs time — drawImage smooths it up. The stars, which
-  // need the resolution, are dotted straight onto the screen below.
-  const n = Math.min(maxMapPx, Math.max(32, 2 ** Math.ceil(Math.log2(r * 2 * pxScale))));
+  // cached maps instead of building one per pixel of radius. Capped at 128:
+  // the deep sky is soft and coarser than that across the ball, so a larger
+  // buffer only costs time — drawImage smooths it up. The stars, which need
+  // the resolution, are dotted straight onto the screen below.
+  const n = Math.min(128, Math.max(32, 2 ** Math.ceil(Math.log2(r * 2 * pxScale))));
   const map = getSphereMap(n);
   const out = map.img.data;
   const { dx, dy, gain, cover } = map;
@@ -531,6 +530,46 @@ const renderSphere = (
   g.restore();
 };
 
+// A small mouth's far sky, baked. A Warp Cannon shot's ball is a few dozen px
+// across and crossing the screen at speed — re-reading the fish-eye and
+// dotting the far sky's stars per shot per frame buys nothing visible there,
+// and a volley of shots would pay it dozens of times. A handful of baked views
+// (picked by seed, slowly turned by the caller) stand in.
+const MOUTH_SPRITE_PX = 96;
+const MOUTH_VIEWS = 6;
+const mouthSprites: HTMLCanvasElement[] = [];
+const getMouthSprite = (seed: number): HTMLCanvasElement => {
+  const i = ((Math.floor(seed * 7) % MOUTH_VIEWS) + MOUTH_VIEWS) % MOUTH_VIEWS;
+  const hit = mouthSprites[i];
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = MOUTH_SPRITE_PX;
+  c.height = MOUTH_SPRITE_PX;
+  const g = c.getContext("2d")!;
+  g.translate(MOUTH_SPRITE_PX / 2, MOUTH_SPRITE_PX / 2);
+  const L = MOUTH_SPRITE_PX / (2 * SPHERE);
+  renderSphere(g, L, 1, 0, 0, 0, 0, SKY_SCALE / (SPHERE * L), i * 1.37);
+  mouthSprites[i] = c;
+  return c;
+};
+
+// Paint a portal's mouth from a baked view (getMouthSprite) instead of the live
+// fish-eye: for a shot-sized portal. `spin` turns the view.
+export const renderBakedMouth = (
+  ctx: CanvasRenderingContext2D, look: PortalLook, open: number,
+  shape: PortalShape | null, spin: number,
+): void => {
+  const r = SPHERE * look.radius * open;
+  if (r < 0.5) return;
+  ctx.save();
+  ctx.translate(look.x, look.y);
+  if (shape) ctx.transform(shape.a, shape.b, shape.b, shape.d, 0, 0);
+  ctx.rotate(spin);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(getMouthSprite(look.seed), -r, -r, r * 2, r * 2);
+  ctx.restore();
+};
+
 // ── Lensed stars ──────────────────────────────────────────────────────────────
 // What the lens needs from the world: the starfield and the same scroll +
 // clock it was painted with this frame, so the stars it bends are the ones on
@@ -540,6 +579,106 @@ export type LensBackdrop = {
   timeMs: number;
   scrollX: number;
   scrollY: number;
+};
+
+// The frame's on-screen stars, bucketed into a coarse screen-space grid in one
+// pass over the starfield. Every lens drawn this frame — each wrap copy of each
+// portal, a whole volley of Warp Cannon shots — reads its handful of stars from
+// here instead of rescanning the field. Flat typed arrays with a per-cell
+// linked list, reused frame to frame, so the rebuild allocates nothing.
+const GRID_CELL = 64;
+type StarGrid = {
+  timeMs: number;
+  scrollX: number;
+  scrollY: number;
+  cols: number;
+  rows: number;
+  head: Int32Array;
+  next: Int32Array;
+  x: Float32Array;
+  y: Float32Array;
+  size: Float32Array;
+  alpha: Float32Array;
+  halo: Uint8Array;
+  n: number;
+};
+let starGrid: StarGrid | null = null;
+
+const starGridFor = (b: LensBackdrop): StarGrid => {
+  const g = starGrid;
+  if (g && g.timeMs === b.timeMs && g.scrollX === b.scrollX && g.scrollY === b.scrollY) return g;
+  const { w, h } = b.starfield;
+  const cols = Math.ceil(w / GRID_CELL);
+  const rows = Math.ceil(h / GRID_CELL);
+  let grid = g;
+  if (!grid || grid.cols !== cols || grid.rows !== rows) {
+    const cap = grid?.x.length ?? 4096;
+    grid = {
+      timeMs: 0, scrollX: 0, scrollY: 0, cols, rows,
+      head: new Int32Array(cols * rows),
+      next: new Int32Array(cap), x: new Float32Array(cap), y: new Float32Array(cap),
+      size: new Float32Array(cap), alpha: new Float32Array(cap), halo: new Uint8Array(cap),
+      n: 0,
+    };
+  }
+  const gr = grid;
+  gr.timeMs = b.timeMs;
+  gr.scrollX = b.scrollX;
+  gr.scrollY = b.scrollY;
+  gr.head.fill(-1);
+  gr.n = 0;
+  b.starfield.forEachStarNear(b.timeMs, b.scrollX, b.scrollY, w / 2, h / 2, w / 2, h / 2, (x, y, size, _hue, alpha, halo) => {
+    const ci = Math.floor(x / GRID_CELL);
+    const cj = Math.floor(y / GRID_CELL);
+    if (ci < 0 || cj < 0 || ci >= cols || cj >= rows) return;
+    if (gr.n === gr.x.length) growStarGrid(gr);
+    const k = gr.n++;
+    gr.x[k] = x;
+    gr.y[k] = y;
+    gr.size[k] = size;
+    gr.alpha[k] = alpha;
+    gr.halo[k] = halo ? 1 : 0;
+    const cell = cj * cols + ci;
+    gr.next[k] = gr.head[cell];
+    gr.head[cell] = k;
+  });
+  starGrid = gr;
+  return gr;
+};
+
+const growStarGrid = (g: StarGrid): void => {
+  const cap = g.x.length * 2;
+  const grow = <T extends Float32Array | Int32Array | Uint8Array>(a: T, make: (n: number) => T): T => {
+    const out = make(cap);
+    out.set(a);
+    return out;
+  };
+  g.next = grow(g.next, (n) => new Int32Array(n));
+  g.x = grow(g.x, (n) => new Float32Array(n));
+  g.y = grow(g.y, (n) => new Float32Array(n));
+  g.size = grow(g.size, (n) => new Float32Array(n));
+  g.alpha = grow(g.alpha, (n) => new Float32Array(n));
+  g.halo = grow(g.halo, (n) => new Uint8Array(n));
+};
+
+const forEachGridStarNear = (
+  g: StarGrid, cx: number, cy: number, reach: number,
+  visit: (x: number, y: number, size: number, alpha: number, halo: boolean) => void,
+): void => {
+  const i0 = Math.max(0, Math.floor((cx - reach) / GRID_CELL));
+  const i1 = Math.min(g.cols - 1, Math.floor((cx + reach) / GRID_CELL));
+  const j0 = Math.max(0, Math.floor((cy - reach) / GRID_CELL));
+  const j1 = Math.min(g.rows - 1, Math.floor((cy + reach) / GRID_CELL));
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      for (let k = g.head[j * g.cols + i]; k >= 0; k = g.next[k]) {
+        const x = g.x[k];
+        const y = g.y[k];
+        if (Math.abs(x - cx) > reach || Math.abs(y - cy) > reach) continue;
+        visit(x, y, g.size[k], g.alpha[k], g.halo[k] === 1);
+      }
+    }
+  }
 };
 
 // Streak length exaggeration: a real point source only stretches by its
@@ -686,9 +825,9 @@ const renderLensedStars = (
   }
   // Bigger mouths get proportionally longer streaks so the arcs read at any size.
   const sizeScale = Math.sqrt(L / 60);
-  backdrop.starfield.forEachStarNear(
-    backdrop.timeMs, backdrop.scrollX, backdrop.scrollY, cx, cy, reach, reach,
-    (x, y, size, _hue, alpha, halo) => {
+  forEachGridStarNear(
+    starGridFor(backdrop), cx, cy, reach,
+    (x, y, size, alpha, halo) => {
       const X = ia * (x - cx) + ib * (y - cy);
       const Y = ib * (x - cx) + id * (y - cy);
       const s = Math.hypot(X, Y);
@@ -769,14 +908,19 @@ const shapeGrow = (s: PortalShape): number =>
 // What the lens needs of a portal to paint it.
 export type PortalLook = Pick<Wormhole, "x" | "y" | "radius" | "seed" | "hueShift">;
 
-// Paint one portal's lens — the dark lens body, the bent starlight and its
-// ring, and the far-sky ball — at `open` (0…1) of its full lens scale. Shared
-// by the departure/skip portals (renderWormholes) and the Warp Cannon's shots,
-// which pass a `shape` to make the mouth ripple as it flies and a smaller
-// `maxSkyPx` since a volley of them can be on screen at once.
+// Which layers of a portal to paint: the lens proper (the dark lens body, the
+// bent starlight and its ring — all of it in place of the starfield, so it
+// belongs behind the bodies in the world), the mouth (the far-sky ball), or both.
+export type PortalParts = "all" | "lens" | "mouth";
+
+// Paint one portal at `open` (0…1) of its full lens scale. Shared by the
+// departure/skip portals (renderWormholes) and the Warp Cannon's shots, which
+// pass a `shape` to make the lens ripple as it flies and paint only their lens
+// here, under the bodies (`parts`), with a baked mouth over them
+// (renderBakedMouth).
 export const renderPortalLens = (
   ctx: CanvasRenderingContext2D, look: PortalLook, open: number,
-  backdrop: LensBackdrop | null, shape: PortalShape | null = null, maxSkyPx = 128,
+  backdrop: LensBackdrop | null, shape: PortalShape | null = null, parts: PortalParts = "all",
 ): void => {
   if (open < 0.02) return;
   const L = look.radius * open;
@@ -798,23 +942,27 @@ export const renderPortalLens = (
   ctx.translate(look.x, look.y);
   if (shape) ctx.transform(shape.a, shape.b, shape.b, shape.d, 0, 0);
 
-  // 1) Lens body: hides the undistorted stars behind the mouth.
-  ctx.globalCompositeOperation = "source-over";
-  const R = COVER * L;
-  ctx.drawImage(getBodySprite(), -R, -R, R * 2, R * 2);
+  if (parts !== "mouth") {
+    // 1) Lens body: hides the undistorted stars behind the mouth.
+    ctx.globalCompositeOperation = "source-over";
+    const R = COVER * L;
+    ctx.drawImage(getBodySprite(), -R, -R, R * 2, R * 2);
 
-  // 2) The stars behind the mouth, bent into arcs, and the ring they crowd.
-  ctx.globalCompositeOperation = "lighter";
-  if (backdrop) renderLensedStars(ctx, backdrop, cx, cy, L, shape);
-  renderRingGlow(ctx, L, open);
+    // 2) The stars behind the mouth, bent into arcs, and the ring they crowd.
+    ctx.globalCompositeOperation = "lighter";
+    if (backdrop) renderLensedStars(ctx, backdrop, cx, cy, L, shape);
+    renderRingGlow(ctx, L, open);
+  }
 
-  // 3) The ball itself: the far sky. Its pan follows the mouth's screen
-  //    position so the view through it shifts with parallax.
-  ctx.globalCompositeOperation = "source-over";
-  renderSphere(
-    ctx, L, Math.abs(m.a), cx, cy, backdrop?.scrollX ?? 0, backdrop?.scrollY ?? 0,
-    SKY_SCALE / (SPHERE * look.radius), look.seed + look.hueShift * 0.01, maxSkyPx,
-  );
+  if (parts !== "lens") {
+    // 3) The ball itself: the far sky. Its pan follows the mouth's screen
+    //    position so the view through it shifts with parallax.
+    ctx.globalCompositeOperation = "source-over";
+    renderSphere(
+      ctx, L, Math.abs(m.a), cx, cy, backdrop?.scrollX ?? 0, backdrop?.scrollY ?? 0,
+      SKY_SCALE / (SPHERE * look.radius), look.seed + look.hueShift * 0.01,
+    );
+  }
 
   ctx.restore();
 };
@@ -858,9 +1006,9 @@ const LENS_FULL = 0.4;
 let warpOut: ImageData | null = null;
 
 // How far a falling body has shrunk at `depth`: a little as it sinks toward
-// the throat, then away to nothing once it's there (a dive reaches the throat
-// at its midpoint — planDive), so it keeps on going in instead of hanging at
-// the centre as a lingering ring of light.
+// the throat, then away to nothing over the back half of the dive — by when
+// most bodies have reached the throat (planDive) — so it keeps on going in
+// instead of hanging at the centre as a lingering ring of light.
 const recedeAt = (depth: number): number =>
   (1 - 0.3 * depth) * (1 - 0.9 * smoothstep(0.45, 1, depth));
 
@@ -893,14 +1041,17 @@ export const renderThroughPortal = (
   const stretch = 1 + 2.2 * tidal;
   const squeeze = 1 / (1 + 0.8 * tidal);
   const lens = smoothstep(0, LENS_FULL, depth);
-  // Before the lens takes hold (and for a mouth too small to matter) the body
-  // only stretches — draw it straight, at full resolution.
+  const fade = 1 - smoothstep(0.7, 1, depth);
+  // Before the lens takes hold (and for a mouth too small to matter — one
+  // collapsing under a body still falling in) the body only stretches, shrinks
+  // and fades — draw it straight, at full resolution.
   if (L < 4 || lens <= 0) {
     const rc = recedeAt(depth);
     const st = stretch * rc;
     const sq = squeeze * rc;
     const radial = Math.atan2(cy - body.y, cx - body.x);
     ctx.save();
+    ctx.globalAlpha *= fade;
     ctx.translate(body.x, body.y);
     ctx.rotate(radial);
     ctx.scale(st, sq);
@@ -999,7 +1150,6 @@ export const renderThroughPortal = (
   out.fill(0);
   const ca = 0.06 * lens; // chromatic split: red bends more than blue
   const behind = smoothstep(0.08, 0.4, depth);
-  const fade = 1 - smoothstep(0.7, 1, depth);
   // Light concentrated onto the ring washes toward white rather than keeping
   // the hull's hue (a literal redshift turns the teal hull a muddy green).
   const wash = 0.55 * lens;
@@ -1108,10 +1258,10 @@ export const WARP_OUT_DURATION = OPEN + HOLD * 0.8;
 // a quadratic Bézier whose first leg is that velocity, timed so a head-on dive
 // holds its speed exactly rather than braking at the lip. A body arriving
 // slowly (or at rest) is drawn in within MAX_ARRIVE_SEC instead, accelerating.
-// Once at the throat it sits behind the ball while its lensed image fades. The
-// whole dive — lens taking hold, ball swallowing it, fade — spans twice the
-// arrival, so a fast body is through quickly and a slow one takes the full
-// WARP_OUT_DURATION.
+// Once at the throat it sits behind the ball while its lensed image shrinks
+// away. The whole dive — lens taking hold, ball swallowing it, fade — spans
+// twice the arrival, clamped to MIN_DIVE_SEC…WARP_OUT_DURATION, so a fast body
+// is through quickly and a slow one takes the full WARP_OUT_DURATION.
 const MAX_ARRIVE_SEC = 0.4;
 const MIN_DIVE_SEC = 0.3;
 
@@ -1143,6 +1293,13 @@ export const planDive = (from: Vec, vel: Vec, throat: Vec): Dive => {
     arriveSec,
     sec: Math.max(MIN_DIVE_SEC, Math.min(WARP_OUT_DURATION, arriveSec * 2)),
   };
+};
+
+// A dive from `from` into `portal`'s throat — its image nearest the body on
+// the w×h torus, so the plunge never crosses the seam the long way round.
+export const planDiveInto = (from: Vec, vel: Vec, portal: { x: number; y: number }, w: number, h: number): Dive => {
+  const [dx, dy] = toroidalDelta(portal.x - from.x, portal.y - from.y, w, h);
+  return planDive(from, vel, { x: from.x + dx, y: from.y + dy });
 };
 
 // Where the diving body is at warp progress t (0→1).
