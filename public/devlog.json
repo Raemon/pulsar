@@ -1,5 +1,33 @@
 [
   {
+    "id": "2026-11-07-8110874",
+    "date": "2026-11-07",
+    "title": "Two-shot magazine with beat-timed reloads",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Your ship carries two shots, shown as glowing rounds on either side of the hull. Each one reloads on its own three beats after you fire it.",
+          "Reloads count in on the beat: an empty socket ticks, then a ring closes in and the round pops back exactly on the beat it's ready."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "Holding fire shoots twice and stops. Release and press again once a round is back.",
+          "The sight dims while both rounds are spent."
+        ]
+      }
+    ],
+    "commits": [
+      "8110874",
+      "a8ff13c",
+      "49eae1b",
+      "34ebf3f",
+      "76f0416"
+    ]
+  },
+  {
     "id": "2026-11-07-5e2d681",
     "date": "2026-11-07",
     "title": "Heavier bombs and a Warp Cannon that sounds like one",
