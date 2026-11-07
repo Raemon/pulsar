@@ -93,7 +93,7 @@ const HOVER_ZONE_PULSE_HEAD_HALO_RADIUS = 4;
 const HOVER_ZONE_PULSE_HEAD_HALO_ALPHA = 0.3;
 const HOVER_ZONE_FADE_IN_SEC = 0.05;
 // hint text that appears alongside the first crosshair shown per game session — only for
-// pre-veteran pilots (anyone who has never hit 6x rhythm). Veterans skip the hint entirely;
+// pre-veteran pilots (anyone who has never hit 12x rhythm). Veterans skip the hint entirely;
 // non-veterans see it once per run, anchored to the spot of first appearance, and fade out
 // gently after the originating hover ends.
 const HOVER_ZONE_HINT_LINES = ["Aim at the target", "to hit on the beat"] as const;
@@ -117,7 +117,7 @@ let hoverZoneHintAnchor: { x: number; y: number } | null = null;
 let hoverZoneHintShownAt: number | null = null;
 // beat-time the originating hover ended; null while still active. Drives the fade-out window.
 let hoverZoneHintRetiredAt: number | null = null;
-// veteran flag is stamped persistently by waveDirector when the player ever hits 6x rhythm;
+// veteran flag is stamped persistently by waveDirector when the player ever hits 12x rhythm;
 // read it inline to avoid pulling the whole waveDirector module (heavy import graph) just for
 // this gate.
 const HOVER_ZONE_HINT_VETERAN_KEY = "pulsar.veteran";

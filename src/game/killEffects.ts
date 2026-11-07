@@ -29,7 +29,7 @@ import {
   emitWraithDeath,
 } from "./particleBursts";
 import { snapshotAsteroidKill, snapshotAlienKill, snapshotCometKill } from "./killSnapshot";
-import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet, markVeteranPilot } from "./waveDirector";
+import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet, markVeteranPilot, VETERAN_COMBO_THRESHOLD } from "./waveDirector";
 import { BASS_KIND_SOUND } from "./bassClock";
 import { maybeSpawnSkipPortal } from "./waveSkip";
 import { swallowIntoWarp, swallowOpenFrom } from "./warpCannon";
@@ -116,7 +116,7 @@ export const applyHitToCombo = (game: Game, isOnBeatHit: boolean, hitPos: Vec, b
     game.beatCombo += 1;
     if (game.beatCombo > game.maxCombo) game.maxCombo = game.beatCombo;
     if (game.beatCombo > game.maxComboThisWave) game.maxComboThisWave = game.beatCombo;
-    if (game.beatCombo >= 6) markVeteranPilot();
+    if (game.beatCombo >= VETERAN_COMBO_THRESHOLD) markVeteranPilot();
     trackRhythmComboHit(game, hitPos, beatsAway);
     // Dismiss the post-rhythm-loss "fire and hit on the beat" hint as soon as
     // the player lands one — reaching here means an on-beat fire was followed

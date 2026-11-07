@@ -147,10 +147,11 @@ export const isBossForeshadowWave = (wave: number): boolean => BOSS_FORESHADOW_W
 // the player-facing label is shifted down by one so the warm-up rock is "Wave 0".
 export const displayWave = (wave: number): number => wave - 1;
 
-// Persistent across runs: once the player has ever reached 6x rhythm, they've
-// outgrown the single-rock warm-up. Future normal-mode runs (not tutorial)
+// Persistent across runs: once the player has ever reached a 12x rhythm combo,
+// they've outgrown the single-rock warm-up. Future normal-mode runs (not tutorial)
 // skip straight to internal wave 2 — the first proper wave.
 const VETERAN_KEY = "pulsar.veteran";
+export const VETERAN_COMBO_THRESHOLD = 12;
 
 export const isVeteranPilot = (): boolean => {
   try {
