@@ -113,14 +113,16 @@ export class Ship {
   fireCooldown = 0;
   // one shot per beat by default; reticule previews where it lands at the next beat boundary.
   fireRate = BEAT_GRID;
-  // Two-shot magazine, drawn as a missile on each pylon. See ship/shipMagazine.ts.
+  // Two-shot magazine, drawn as a loaded round on each pylon. See ship/shipMagazine.ts.
   shotsLoaded = MAGAZINE_SIZE;
   magazineReloadBeat = 0;
   // Fire held on an empty magazine must be released before it fires again.
   triggerHeldDry = false;
-  // Cosmetic: the refill pop and the spent missile's launch slide.
-  magazineRefillFlash = 0;
+  // Cosmetic: the spent round's launch slide; the beat clock the refill count-in rides; and the
+  //   first pylon the last refill restored (MAGAZINE_SIZE = none), so only those pop.
   magazineSpentFlash = 0;
+  magazineBeatsToRefill = 0;
+  magazineRefilledFrom = MAGAZINE_SIZE;
 
   bulletSpeed = 620;
   bulletLife = 0.85;

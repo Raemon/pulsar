@@ -6,7 +6,6 @@ import { BEAT_GRID, BEAT_WINDOW } from "../game/rhythmConstants";
 export const MAGAZINE_SIZE = 2;
 export const MAGAZINE_RELOAD_BEATS = 4;
 
-const REFILL_FLASH_SEC = 0.4;
 const SPENT_FLASH_SEC = 0.16;
 
 // A beat counts from when its on-beat window opens, so an early press on the refill beat lands.
@@ -17,17 +16,18 @@ export const magazineBlocksFire = (ship: Ship) => ship.shotsLoaded === 0 && !shi
 export const spendShot = (ship: Ship, beatTime: number) => {
   ship.shotsLoaded -= 1;
   ship.magazineSpentFlash = 1;
+  ship.magazineRefilledFrom = MAGAZINE_SIZE;
   ship.magazineReloadBeat = openedBeat(beatTime) + MAGAZINE_RELOAD_BEATS;
 };
 
 const refillOnReloadBeat = (ship: Ship, beatTime: number) => {
   if (ship.shotsLoaded === MAGAZINE_SIZE || openedBeat(beatTime) < ship.magazineReloadBeat) return;
+  ship.magazineRefilledFrom = ship.shotsLoaded;
   ship.shotsLoaded = MAGAZINE_SIZE;
-  ship.magazineRefillFlash = 1;
 };
 
 export const tickMagazine = (ship: Ship, dt: number, beatTime: number) => {
   refillOnReloadBeat(ship, beatTime);
-  ship.magazineRefillFlash = Math.max(0, ship.magazineRefillFlash - dt / REFILL_FLASH_SEC);
+  ship.magazineBeatsToRefill = ship.magazineReloadBeat - beatTime / BEAT_GRID;
   ship.magazineSpentFlash = Math.max(0, ship.magazineSpentFlash - dt / SPENT_FLASH_SEC);
 };
