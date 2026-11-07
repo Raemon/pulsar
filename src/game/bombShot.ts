@@ -104,7 +104,8 @@ const detonateLiveBombs = (game: Game) => {
 export const handleBombs = (game: Game) => {
   if (game.ship.bombDetonateRequested) {
     game.ship.bombDetonateRequested = false;
-    detonateLiveBombs(game);
+    // A pilot killed earlier this frame takes the press with them.
+    if (game.ship.alive) detonateLiveBombs(game);
   }
   // Read after the blast, which may have killed or split targets.
   const targets = strikeTargets(game, INCLUDE_PICKUPS);

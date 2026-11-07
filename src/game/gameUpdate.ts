@@ -1076,7 +1076,7 @@ const boostNewBullets = (game: Game, firstNewIndex: number) => {
     newBullet.onBeat = true;
     newBullet.boosted = boosted;
     newBullet.superBoosted = superBoosted;
-    // A bomb's life is counted in pulses, not flight time, so reach doesn't apply.
+    // A bomb lives until it's detonated, not for a flight time, so reach doesn't apply.
     if (superBoosted && !newBullet.bomb) setShotLife(newBullet, shotLife(game.ship, true));
   }
 };

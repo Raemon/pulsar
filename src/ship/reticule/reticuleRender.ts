@@ -703,7 +703,8 @@ export const renderShipReticules = (
   const hitboxPulse = cosineEnvelope(beatTime, RETICULE_HITBOX_PULSE_PERIOD_SEC, RETICULE_HITBOX_PULSE_MIN, RETICULE_HITBOX_PULSE_MAX);
   const radarPulse = cosineEnvelope(beatTime, RETICULE_RADAR_PULSE_PERIOD_SEC, RETICULE_RADAR_PULSE_MIN, RETICULE_RADAR_PULSE_MAX);
   const beatPulseBoost = computeBeatPulseBoost(beatTime, beatGrid);
-  const cooldownDim = ship.fireCooldown > 0 ? RETICULE_COOLDOWN_DIM : 1;
+  // A live mine dims the sight too: the next press detonates it, not a throw.
+  const cooldownDim = ship.fireCooldown > 0 || ship.bombInPlay ? RETICULE_COOLDOWN_DIM : 1;
   const baseHitAlpha = hitboxPulse * cooldownDim * beatPulseBoost;
   paintConeBackground(ctx, ship, apex, beatTime, beatGrid);
   paintRangeArcs(ctx, ship, apex, beatTime, radarPulse);
@@ -731,7 +732,7 @@ export const renderShipReticules = (
       : reticuleOverlapsAnyTarget(pos, targets, w, h);
     const slot = slotByPosIndex[i];
     paintAimDiscs(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha, overlaps, onFirstBeatDot, tutorialHighlight, slot);
-    if (ship.bombActive && slot === 1) paintBombBlastPreview(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha);
+    if (ship.bombActive && !ship.bombInPlay && slot === 1) paintBombBlastPreview(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha);
   }
   // each slot's ring uses the softer proximity halo (>0 anywhere in the dot glow ramp) so the
   // player gets feedback the moment the reticule grazes the visible circle, not just on strict

@@ -52,11 +52,11 @@ export const muzzleOf = (ship: Ship, headingOffset = 0): Vec =>
 // bullet inherits a fraction of ship velocity so muzzle output reads as physical, not portaled.
 const BULLET_VEL_INHERIT = 0.4;
 
-// A bomb inherits none of the ship's velocity. It detonates by where it sits when
-// a beat lands, judged against rocks in the world; inherited momentum would move
-// that spot by up to ±92px a beat depending on how the ship was flying — as wide
-// as the blast — and under the ship-pinned camera would make a mine thrown at
-// full thrust hang off the nose. With none, a bomb always lands where it was aimed.
+// A bomb inherits none of the ship's velocity. Its blast lands where it sits,
+// judged against rocks in the world; inherited momentum would move that spot by
+// up to ±92px a beat depending on how the ship was flying — as wide as the blast
+// — and under the ship-pinned camera would make a mine thrown at full thrust hang
+// off the nose. With none, a bomb always lands where the sight aimed it.
 export const shotVelInherit = (ship: Ship): number => (ship.bombActive ? 0 : BULLET_VEL_INHERIT);
 
 // How far a shot has flown along its heading `t` seconds after leaving the muzzle,

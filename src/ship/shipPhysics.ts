@@ -6,7 +6,7 @@ import { Bullet } from "../Bullet";
 import { Sound } from "../Sound";
 import { emitThrust, emitReverseThrust, emitSideThrust } from "./shipParticles";
 import { fireBullets, shotTravel, hasLiveBomb } from "./shipWeapons";
-import { isDown, wasPressed } from "../game/controlBindings";
+import { isDown } from "../game/controlBindings";
 import { FUEL_MODE_ENABLED, FUEL_THRUST_DRAIN, FUEL_SIDE_DRAIN, FUEL_RECHARGE, FUEL_RECHARGE_INTERVAL } from "../game/fuel";
 import { BEAT_GRID } from "../game/rhythmConstants";
 
@@ -294,7 +294,7 @@ const updateSideThrust = (ship: Ship, input: IInput, particles: ParticleSystem, 
   else if (!isActive && wasActive) sound.stopSideThrust();
 };
 
-// rapid powerup halves the cooldown; both states use the same trigger gate.
+// rapid powerup halves the cooldown.
 const armFireCooldown = (ship: Ship) => {
   const RAPID_FIRE_RATE_MULTIPLIER = 0.5;
   ship.fireCooldown = ship.rapidActive ? ship.fireRate * RAPID_FIRE_RATE_MULTIPLIER : ship.fireRate;
@@ -303,12 +303,18 @@ const armFireCooldown = (ship: Ship) => {
 // lasershot replaces the per-press bullet emit with hold-to-charge / release-to-fire
 // driven by game/laserShot.ts.tickLaserShot — gate the bullet path off entirely here.
 const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[]) => {
-  // A live bomb makes fire its detonator: the next fresh press blows it (in
-  // game/bombShot.ts, which can reach the targets) and launches nothing, so only
-  // one is ever in play. A press, not a hold, so the hold that threw the mine
-  // never sets it off; the cooldown keeps that press from re-launching at once.
-  if (hasLiveBomb(bullets)) {
-    if (wasPressed(input, "fire")) {
+  // The press edge comes from held state, which replays record; justPressed
+  // isn't recorded, so a tap shorter than a frame would desync a re-sim.
+  const down = isDown(input, "fire");
+  const pressed = down && !ship.fireWasDown;
+  ship.fireWasDown = down;
+  // A live bomb makes fire its detonator: the next press blows it (in
+  // game/bombShot.ts, which can reach the targets) and throws nothing, so only
+  // one is ever in play. The cooldown keeps a banked super-laser from also
+  // firing on that press.
+  ship.bombInPlay = hasLiveBomb(bullets);
+  if (ship.bombInPlay) {
+    if (pressed) {
       ship.bombDetonateRequested = true;
       armFireCooldown(ship);
     }
@@ -319,7 +325,16 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[]) => {
   // bolt. The bullet path is suppressed here; the game-level tickSuperLaserFire
   // owns the actual fire (it needs game state the ship module can't see).
   if (ship.superLaserCharged) return;
-  if (!isDown(input, "fire")) return;
+  // A bomb throws on a press, never a hold or a cooldown, so each press does
+  // exactly one thing: throw, then blow.
+  if (ship.bombActive) {
+    if (pressed) {
+      fireBullets(ship, bullets);
+      armFireCooldown(ship);
+    }
+    return;
+  }
+  if (!down) return;
   if (ship.fireCooldown > 0) return;
   fireBullets(ship, bullets);
   armFireCooldown(ship);
