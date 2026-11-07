@@ -5,12 +5,12 @@ import {
   BULLET_CORE_RADIUS, bulletHeadGlowMul, OFF_BEAT_HUE, OFF_BEAT_HEAD_ALPHA,
   OFF_BEAT_TRAIL_ALPHA, OFF_BEAT_CORE_FILL, TRAIL_RADIUS_MUL,
 } from "../Bullet";
-import { MAGAZINE_SIZE } from "./shipMagazine";
+import type { Pylon } from "./shipMagazine";
 
 // Ship-local, +x = heading. Sits between hull and halo so the hitbox doesn't widen.
 const PYLON_X = -2.5;
 const PYLON_Y = 12;
-// Port, starboard. The first shot spends the starboard round.
+// Port, starboard.
 const PYLON_SIDES = [-1, 1];
 
 // A loaded round is an off-beat bullet in miniature, its trail streaming back along the hull.
@@ -22,9 +22,9 @@ const TRAIL_SPACING = 2.2;
 const SOCKET_R = 3;
 const LAUNCH_SLIDE_PX = 9;
 
-// Count-in to the refill: an empty socket ticks on each reload beat, harder as the refill nears;
-// through the last beat a ring contracts and motes spiral in, landing on the refill beat itself.
-const TICK_STRENGTH_BY_BEATS_LEFT = [1, 0.65, 0.4];
+// Count-in to a reload: an empty socket ticks on each beat of it, harder on the last; through
+// that last beat a ring contracts and motes spiral in, landing on the reload beat itself.
+const TICK_STRENGTH_BY_BEATS_LEFT = [1, 0.6];
 const TICK_BEATS = 0.35;
 const APPROACH_R = 9;
 const MOTES = 5;
@@ -58,28 +58,28 @@ const paintRound = (ctx: CanvasRenderingContext2D, x: number, alpha: number) => 
 };
 
 // 0..1, peaking as each reload beat lands.
-const countInTick = (beatsToRefill: number): number => {
-  const beatsLeft = Math.ceil(beatsToRefill);
+const countInTick = (beatsToReady: number): number => {
+  const beatsLeft = Math.ceil(beatsToReady);
   const strength = TICK_STRENGTH_BY_BEATS_LEFT[beatsLeft - 1] ?? 0;
-  const since = (beatsLeft - beatsToRefill) / TICK_BEATS;
+  const since = (beatsLeft - beatsToReady) / TICK_BEATS;
   return since < 1 ? strength * (1 - since) * (1 - since) : 0;
 };
 
-const paintFinalBeatGather = (ctx: CanvasRenderingContext2D, beatsToRefill: number, invuln: number) => {
-  const near = 1 - beatsToRefill;
-  strokeRing(ctx, SOCKET_R + APPROACH_R * beatsToRefill, (0.15 + 0.75 * near) * invuln, 0.6 + 1.2 * near);
-  const moteR = SOCKET_R + APPROACH_R * beatsToRefill ** 1.3;
+const paintFinalBeatGather = (ctx: CanvasRenderingContext2D, beatsToReady: number, invuln: number) => {
+  const near = 1 - beatsToReady;
+  strokeRing(ctx, SOCKET_R + APPROACH_R * beatsToReady, (0.15 + 0.75 * near) * invuln, 0.6 + 1.2 * near);
+  const moteR = SOCKET_R + APPROACH_R * beatsToReady ** 1.3;
   for (let j = 0; j < MOTES; j++) {
-    const a = (j / MOTES) * TAU + beatsToRefill * 2.4;
+    const a = (j / MOTES) * TAU + beatsToReady * 2.4;
     drawGlow(ctx, Math.cos(a) * moteR, Math.sin(a) * moteR, 4, OFF_BEAT_HUE, Math.min(1, 1.5 * near) * invuln);
   }
   drawGlow(ctx, 0, 0, HEAD_R * (0.4 + 0.6 * near), OFF_BEAT_HUE, 0.5 * near * near * invuln);
 };
 
-const paintEmptySocket = (ctx: CanvasRenderingContext2D, beatsToRefill: number, invuln: number) => {
-  const tick = countInTick(beatsToRefill);
+const paintEmptySocket = (ctx: CanvasRenderingContext2D, beatsToReady: number, invuln: number) => {
+  const tick = countInTick(beatsToReady);
   strokeRing(ctx, SOCKET_R + tick, (0.22 + 0.6 * tick) * invuln, 0.8 + tick);
-  if (beatsToRefill > 0 && beatsToRefill <= 1) paintFinalBeatGather(ctx, beatsToRefill, invuln);
+  if (beatsToReady > 0 && beatsToReady <= 1) paintFinalBeatGather(ctx, beatsToReady, invuln);
 };
 
 // The same white flash an on-beat bullet makes as it crosses a beat.
@@ -91,31 +91,27 @@ const paintRefillPop = (ctx: CanvasRenderingContext2D, beatsSince: number, invul
   strokeRing(ctx, SOCKET_R + 10 * (1 - k), 0.7 * env, 0.5 + 1.5 * env);
 };
 
-// The sim refills as the refill beat's window opens; the round waits for the beat to show.
-const awaitsRefillBeat = (ship: Ship, i: number) =>
-  i >= ship.magazineRefilledFrom && ship.magazineBeatsToRefill > 0;
-
-const paintPylon = (ctx: CanvasRenderingContext2D, ship: Ship, i: number, invuln: number) => {
-  const beatsToRefill = ship.magazineBeatsToRefill;
-  if (i >= ship.shotsLoaded || awaitsRefillBeat(ship, i)) {
-    paintEmptySocket(ctx, beatsToRefill, invuln);
-    const slide = i === ship.shotsLoaded ? ship.magazineSpentFlash : 0;
-    if (slide > 0) paintRound(ctx, (1 - slide) * LAUNCH_SLIDE_PX, slide * invuln);
+const paintPylon = (ctx: CanvasRenderingContext2D, pylon: Pylon, invuln: number) => {
+  const b = pylon.beatsToReady;
+  // The sim reloads as the reload beat's window opens; the round waits for the beat to show.
+  if (!pylon.loaded || b > 0) {
+    paintEmptySocket(ctx, b, invuln);
+    if (pylon.spentFlash > 0) paintRound(ctx, (1 - pylon.spentFlash) * LAUNCH_SLIDE_PX, pylon.spentFlash * invuln);
     return;
   }
   paintRound(ctx, 0, invuln);
-  if (i >= ship.magazineRefilledFrom && -beatsToRefill < POP_BEATS) paintRefillPop(ctx, -beatsToRefill, invuln);
+  if (-b < POP_BEATS) paintRefillPop(ctx, -b, invuln);
 };
 
 export const paintMagazine = (ctx: CanvasRenderingContext2D, ship: Ship, invuln: number) => {
   if (ship.lasershotActive) return;
   ctx.save();
   ctx.rotate(ship.heading);
-  for (let i = 0; i < MAGAZINE_SIZE; i++) {
+  ship.pylons.forEach((pylon, i) => {
     ctx.save();
     ctx.translate(PYLON_X, PYLON_SIDES[i] * PYLON_Y);
-    paintPylon(ctx, ship, i, invuln);
+    paintPylon(ctx, pylon, invuln);
     ctx.restore();
-  }
+  });
   ctx.restore();
 };

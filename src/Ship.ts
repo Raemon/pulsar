@@ -9,7 +9,7 @@ import { BEAT_GRID } from "./game/rhythmConstants";
 import { haloVertices, haloReach, hitDistanceToward, SHIP_BODY_RADIUS, SHIP_HALO_OFFSET } from "./ship/shipHitbox";
 import { tickShip } from "./ship/shipPhysics";
 import { applyPowerup } from "./ship/shipWeapons";
-import { MAGAZINE_SIZE } from "./ship/shipMagazine";
+import { newPylons } from "./ship/shipMagazine";
 import { setComboFromValue } from "./ship/shipComboHalo";
 import { renderShipBody } from "./ship/shipRender";
 import { renderShipReticules, tickHoverLockState, ReticuleHoverProbe } from "./ship/reticule/reticuleRender";
@@ -114,15 +114,9 @@ export class Ship {
   // one shot per beat by default; reticule previews where it lands at the next beat boundary.
   fireRate = BEAT_GRID;
   // Two-shot magazine, drawn as a loaded round on each pylon. See ship/shipMagazine.ts.
-  shotsLoaded = MAGAZINE_SIZE;
-  magazineReloadBeat = 0;
+  pylons = newPylons();
   // Fire held on an empty magazine must be released before it fires again.
   triggerHeldDry = false;
-  // Cosmetic: the spent round's launch slide; the beat clock the refill count-in rides; and the
-  //   first pylon the last refill restored (MAGAZINE_SIZE = none), so only those pop.
-  magazineSpentFlash = 0;
-  magazineBeatsToRefill = 0;
-  magazineRefilledFrom = MAGAZINE_SIZE;
 
   bulletSpeed = 620;
   bulletLife = 0.85;

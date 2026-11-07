@@ -59,9 +59,9 @@ export const REPLAY_FORMAT_VERSION = 57;
 //   bounce the next frame) and resolves a mine against every body it touches,
 //   so a v55 run where a mine was thrown point-blank or squeezed re-sims differently.
 // v57 gives the ship a two-shot magazine: each bullet volley or bomb throw spends
-//   a shot, both reload four beats after the last one, and a trigger held on an
-//   empty magazine must be released to fire again, so a v56 run that fired three
-//   times inside that window or held fire through it re-sims without those shots.
+//   a shot that reloads three beats later, and a trigger held on an empty magazine
+//   must be released to fire again, so a v56 run that fired faster than that or
+//   held fire through a reload re-sims without those shots.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
