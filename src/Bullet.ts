@@ -15,8 +15,8 @@ export const BULLET_DAMAGE_BEAT = 4;
 export const BULLET_DAMAGE_BEAT_BOOSTED = 8;
 
 // The Bomb upgrade fires stock-sized shells that act as thrown mines: they
-// glide out, settle under drag, bounce off whatever they touch, and pulse on
-// every beat — detonating when a target sits inside the blast ring (see
+// glide out, settle under drag, bounce off whatever they touch, and detonate on
+// the player's next fire press, striking everything inside the blast ring (see
 // game/bombShot.ts). The blast hits with twice the shot's damage.
 export const BOMB_DAMAGE_MULT = 2;
 // Linear drag on a bomb shell, per second. A shell launched at v0 comes to rest
@@ -95,22 +95,20 @@ export class Bullet {
   // it, so a single shot can punch through a row of asteroids.
   pierce = false;
   // Set by Ship.fire when the player has the bomb upgrade. The shell bounces
-  // instead of hitting, slows under BOMB_DRAG, and detonates on a beat pulse
-  // (game/bombShot.ts); it swaps the tier palette from blue/gold/white to
+  // instead of hitting, slows under BOMB_DRAG, and detonates on the next fire
+  // press (game/bombShot.ts); it swaps the tier palette from blue/gold/white to
   // red/orange/white-with-a-gold-halo.
   bomb = false;
   // Set by Ship.fire under the Warp Cannon upgrade: the shot is a flying
   // wormhole that swallows what it hits whole (game/warpCannon.ts), painted by
-  // renderWarpShots rather than render() below. The wake ripples it sheds are
-  // cosmetic.
+  // renderWarpShotLenses / renderWarpShots rather than render() below. The
+  // wake ripples it sheds are cosmetic.
   warp = false;
   warpRipples: WarpRipple[] = [];
   warpRippleClock = 0;
-  // Beat index (perceivedBeatTime / BEAT_GRID) of the bomb's next pulse; -1
-  // until bombShot arms it from firedAtBeatTime.
+  // Beat index (perceivedBeatTime / BEAT_GRID) of the bomb ring's next flash;
+  // -1 until bombShot seeds it from firedAtBeatTime.
   bombNextPulseBeat = -1;
-  // Pulses left before the bomb detonates whether or not anything is in range.
-  bombPulsesLeft = 0;
   // Seconds since the last beat pulse, for the ring's flash-and-fade.
   bombPulseAge = Infinity;
   // A bullet's momentum transfers once, ever. Set on the first knockback it
@@ -263,12 +261,11 @@ export class Bullet {
 
   // The bomb's blast ring, drawn at exactly BOMB_BLAST_RADIUS so "the ring is
   // touching it" is the whole rule. A faint resting ring shows the reach between
-  // beats; each pulse flashes it bright and fades, so the player sees the beat
-  // the mine is listening on. The final pulse's lead-up burns hotter.
+  // beats; each beat flashes it bright and fades, so the player sees when to
+  // press for an on-beat detonation.
   renderBlastRing(ctx: CanvasRenderingContext2D) {
     const pulse = Math.max(0, 1 - this.bombPulseAge / BOMB_PULSE_FADE_SEC);
-    const lastBeat = this.bombPulsesLeft === 1;
-    const alpha = (lastBeat ? 0.32 : 0.18) + 0.6 * pulse * pulse;
+    const alpha = 0.18 + 0.6 * pulse * pulse;
     ctx.strokeStyle = `hsla(${this.bombHue()}, 100%, ${70 + 25 * pulse}%, ${alpha})`;
     ctx.lineWidth = 1.5 + 2 * pulse;
     ctx.beginPath();
