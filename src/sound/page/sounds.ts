@@ -129,6 +129,8 @@ export const OBJECTS: GameObject[] = [
     about: "bomb upgrade, on the grid — two octaves under the normal shot",
     actions: [
       { verb: "fires", sound: "fireBombBeat", trigger: beat(1) },
+      { verb: "bounces off a rock", sound: "bombBounce", trigger: beat(2, 0.5), note: "solid hit; glancing and full-force variants in game" },
+      { verb: "detonates", sound: "bombBlast", trigger: beat(4), note: "on-beat blast; off-beat drops the power chord" },
     ],
   },
   {
@@ -153,6 +155,7 @@ export const OBJECTS: GameObject[] = [
       // The on-beat kill replaces the noise explosion with a taiko boom.
       // Rendered as a "kill" so the visual matches the audio event.
       { verb: "killed on-beat (taiko boom)", sound: "asteroidBoomBeat", trigger: beat(4) },
+      { verb: "swallowed by a Warp Cannon shot", sound: "warpSwallow", trigger: beat(4), note: "medium; small and large pitch a fourth up / down" },
     ],
   },
 
@@ -386,7 +389,7 @@ const MENTIONED_SOUNDS = [
   // ship
   "death", "thrust", "reverseThrust", "sideThrust", "shieldPop", "bonusLife",
   // bullets
-  "fire", "fireBeat", "fireBomb", "fireBombBeat", "comboTick",
+  "fire", "fireBeat", "fireBomb", "fireBombBeat", "bombBounce", "bombBlast", "warpSwallow", "comboTick",
   // asteroids
   "explosionSmall", "explosionMedium", "explosionLarge", "asteroidBoomBeat",
   "bassKick", "bassPluck", "bassBoom", "bassSnap", "bassHit", "bassEcho",

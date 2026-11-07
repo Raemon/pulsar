@@ -1,4 +1,6 @@
 import type { Game } from "../Game";
+import { isTorusFragment, type Asteroid } from "../Asteroid";
+import type { Alien } from "../Alien";
 import { Bullet, BOMB_BLAST_RADIUS } from "../Bullet";
 import { toroidalDelta } from "../vec";
 import { BEAT_GRID } from "./rhythmConstants";
@@ -6,7 +8,7 @@ import { isInBeatWindow } from "./rhythmGate";
 import { registerOnBeatFire, registerOffBeatFire } from "./gameUpdate";
 import { isLiveBomb } from "../ship/shipWeapons";
 import { applyStrikes, strikeShot, strikeTargets, StrikeTarget } from "./weaponStrike";
-import { emitBounceSparks, emitBombBlast } from "./particleBursts";
+import { emitBounceSparks, emitBounceDebris, emitBombBlast } from "./particleBursts";
 
 // The Bomb upgrade turns fire into a two-press weapon. The first press throws a
 // mine: the shell glides out, settles under drag (Bullet.update), and never
@@ -19,11 +21,20 @@ import { emitBounceSparks, emitBombBlast } from "./particleBursts";
 // The detonating press is judged on the beat like any fire press; the ring
 // flashes on every beat as the metronome for it.
 
-// Fraction of the closing speed a bounce returns. Low, so a mine that hits a
-// rock rebounds a short way and still has it in range when it's detonated.
-const BOMB_RESTITUTION = 0.35;
+// Fraction of the closing speed a bounce returns. Low: a dense shell thuds
+// into a rock rather than pinging off it, and stays close enough to still have
+// it in range when it's detonated.
+const BOMB_RESTITUTION = 0.25;
+// The shell weighs as much as a rock this radius, and a body's mass goes with
+// its radius squared. So it bowls a small rock aside and barely deflects,
+// trades momentum evenly with a medium, and is stopped dead by a large one,
+// which it shoves off. Bodies that don't drift freely (bosses, the Sepulchre's
+// party, torus fragments on their ring, comets, gems) take the blow as a wall.
+const BOMB_MASS_RADIUS = 30;
 // Closing speed at which a bounce rings and sparks at full strength.
 const BOUNCE_FULL_IMPACT_SPEED = 400;
+// Screen shake a full-strength bounce adds.
+const BOUNCE_SHAKE = 0.22;
 // Speed of the blast's push on each target. It sets the direction kill fragments
 // fly (straight out from the blast) and the knockback on survivors.
 const BLAST_PUSH_SPEED = 300;
@@ -35,28 +46,55 @@ const INCLUDE_PICKUPS = false;
 const blastReaches = (b: Bullet, target: StrikeTarget): boolean =>
   target.collidesWith(b.pos, BOMB_BLAST_RADIUS);
 
-// Rebound off a touched target, in its frame: the target's own velocity carries
-// over, so a rock that rolls into a resting mine shoves it ahead rather than
-// passing through. Only the closing part of the motion reflects; a mine already
-// separating keeps going.
-const bounceOff = (game: Game, b: Bullet, target: StrikeTarget) => {
+// The free-drifting bodies a bounce can shove, looked up by strike target.
+type Shoveable = ReadonlyMap<StrikeTarget, Asteroid | Alien>;
+const shoveableBodies = (game: Game): Shoveable => new Map<StrikeTarget, Asteroid | Alien>([
+  ...game.asteroids
+    .filter((a) => !a.isBossFamily() && !a.isSepulchreFamily() && !isTorusFragment(a.kind))
+    .map((a) => [a, a] as const),
+  ...game.aliens.map((al) => [al, al] as const),
+]);
+
+// The bounce's voice: glancing, solid, or full.
+const bounceSoundKey = (impact: number): number => (impact < 0.3 ? 0 : impact < 0.7 ? 1 : 2);
+
+// Rebound off a touched target as a collision between masses, so a rock that
+// rolls into a resting mine shoves it ahead rather than passing through, and a
+// mine that hits a small rock bowls it away. Only the closing part of the
+// motion is exchanged; a pair already separating carries on.
+const bounceOff = (game: Game, b: Bullet, target: StrikeTarget, shoveable: Shoveable) => {
   const [dx, dy] = toroidalDelta(b.pos.x - target.pos.x, b.pos.y - target.pos.y, game.w, game.h);
   const len = Math.hypot(dx, dy) || 1;
   const nx = dx / len;
   const ny = dy / len;
   const closing = (b.vel.x - target.vel.x) * nx + (b.vel.y - target.vel.y) * ny;
   if (closing >= 0) return;
-  b.vel.x -= (1 + BOMB_RESTITUTION) * closing * nx;
-  b.vel.y -= (1 + BOMB_RESTITUTION) * closing * ny;
+  // Each side's share of the exchange goes with the other side's mass; a body
+  // that can't be shoved is a wall and the shell takes all of it.
+  const body = shoveable.get(target);
+  const mass = body ? (body.radius / BOMB_MASS_RADIUS) ** 2 : Infinity;
+  const shellShare = body ? mass / (1 + mass) : 1;
+  const exchange = (1 + BOMB_RESTITUTION) * closing;
+  b.vel.x -= exchange * shellShare * nx;
+  b.vel.y -= exchange * shellShare * ny;
+  target.vel.x += exchange * (1 - shellShare) * nx;
+  target.vel.y += exchange * (1 - shellShare) * ny;
   b.trail.length = 0;
   const impact = Math.min(1, -closing / BOUNCE_FULL_IMPACT_SPEED);
-  game.sound.play("tink", 0.4 + 0.3 * impact, b.pos);
-  emitBounceSparks(game.particles, b.pos, { x: nx, y: ny }, b.bombHue(), impact);
+  const contact = { x: b.pos.x - nx * b.hitRadius(), y: b.pos.y - ny * b.hitRadius() };
+  b.bombBounceAge = 0;
+  b.bombBounceImpact = impact;
+  b.bombBounceAt = contact;
+  if (body) body.flashAmount = Math.max(body.flashAmount, 0.4 * impact);
+  game.shake = Math.min(game.shake + BOUNCE_SHAKE * impact, 1.2);
+  game.sound.play("bombBounce", bounceSoundKey(impact), b.pos);
+  emitBounceSparks(game.particles, contact, { x: nx, y: ny }, b.bombHue(), impact);
+  emitBounceDebris(game.particles, contact, { x: nx, y: ny }, b.bombHue(), impact);
 };
 
-const bounceBomb = (game: Game, b: Bullet, targets: StrikeTarget[]) => {
+const bounceBomb = (game: Game, b: Bullet, targets: StrikeTarget[], shoveable: Shoveable) => {
   const touched = targets.find((t) => t.collidesWith(b.pos, b.hitRadius()));
-  if (touched) bounceOff(game, b, touched);
+  if (touched) bounceOff(game, b, touched, shoveable);
 };
 
 // The blast scores on-beat when the detonating press was — a second kill in the
@@ -77,7 +115,7 @@ const detonate = (game: Game, b: Bullet, onBeat: boolean) => {
     const push = { x: (dx / len) * BLAST_PUSH_SPEED, y: (dy / len) * BLAST_PUSH_SPEED };
     return { damage, onBeat, shot: strikeShot(impact, push, b), bossImpact: false };
   });
-  game.sound.play("explosionMedium", 1, b.pos);
+  game.sound.play("bombBlast", onBeat ? 1 : 0, b.pos);
   game.shake = Math.min(game.shake + 0.3, 1.2);
   emitBombBlast(game.particles, b.pos, b.bombHue(), BOMB_BLAST_RADIUS);
 };
@@ -109,9 +147,11 @@ export const handleBombs = (game: Game) => {
   }
   // Read after the blast, which may have killed or split targets.
   const targets = strikeTargets(game, INCLUDE_PICKUPS);
+  let shoveable: Shoveable | null = null;
   for (const b of game.bullets) {
     if (!isLiveBomb(b)) continue;
-    bounceBomb(game, b, targets);
+    shoveable ??= shoveableBodies(game);
+    bounceBomb(game, b, targets, shoveable);
     pulseBomb(game, b);
   }
 };

@@ -203,14 +203,19 @@ export const canSwallow = (a: Asteroid): boolean => !a.isBossFamily() && !a.isSe
 export const swallowOpenFrom = (shot: Bullet, bodyRadius: number): number =>
   Math.min(1, (shotOpen(shot) * shotLensScale(shot)) / portalLongAxis(bodyRadius));
 
+// The swallow's voice is keyed by the body's size: a small rock or a meteor
+// goes down high and quick, a medium rock, a comet or a small saucer in the
+// middle, a large rock or a bigger saucer low and slow.
+const swallowSoundSize = (radius: number): number => (radius < 22 ? 0 : radius < 40 ? 1 : 2);
+
 // Drop `body` into `portal` — or, by default, a fresh one torn open where the
 // shot struck. Call before the hit consumes the shot (see swallowOpenFrom).
 export const swallowIntoWarp = (
   game: Game, body: { pos: Vec; vel: Vec; radius: number }, shot: Bullet,
   reach: number, draw: Swallow["draw"], portal: Wormhole | null = null,
 ): void => {
+  game.sound.play("warpSwallow", swallowSoundSize(body.radius), shot.pos);
   if (!portal) {
-    game.sound.play("canisterAppear", 1, shot.pos);
     portal = spawnWormhole(
       game.wormholes, shot.pos, body.radius, Math.atan2(shot.vel.y, shot.vel.x),
       { openFrom: swallowOpenFrom(shot, body.radius) },

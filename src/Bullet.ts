@@ -29,6 +29,10 @@ export const BOMB_DRAG = 2;
 export const BOMB_BLAST_RADIUS = 96;
 // Seconds the beat-pulse ring takes to fade after flashing.
 const BOMB_PULSE_FADE_SEC = 0.3;
+// The shock a bounce leaves at the contact point: a ring spreading to
+// BOMB_SHOCK_REACH px at full impact, fading over BOMB_SHOCK_SEC.
+const BOMB_SHOCK_REACH = 30;
+const BOMB_SHOCK_SEC = 0.3;
 
 // Seconds over which an on-beat flash's ballooned core shrinks back to its
 // resting size. The flash itself lasts longer (FLASH_DURATION_SEC in
@@ -111,6 +115,11 @@ export class Bullet {
   bombNextPulseBeat = -1;
   // Seconds since the last beat pulse, for the ring's flash-and-fade.
   bombPulseAge = Infinity;
+  // The last bounce (bombShot.bounceOff), for its shock ring: seconds since
+  // it, how hard it struck (0..1), and the contact point.
+  bombBounceAge = Infinity;
+  bombBounceImpact = 0;
+  bombBounceAt: Vec = { x: 0, y: 0 };
   // A bullet's momentum transfers once, ever. Set on the first knockback it
   // applies (deflection or cracked hit); repeat deflections off a spinning
   // armored crystal — or later pierce hits — shove nothing more.
@@ -228,6 +237,7 @@ export class Bullet {
       this.vel.x *= decay;
       this.vel.y *= decay;
       this.bombPulseAge += dt;
+      this.bombBounceAge += dt;
     }
     wrapMut(this.pos, w, h);
     if (this.warp) tickWarpRipples(this, dt);
@@ -273,6 +283,25 @@ export class Bullet {
     ctx.stroke();
   }
 
+  // The shock a bounce leaves where it struck: a white-hot ring thrown out
+  // across the contact point, cooling to the shell's hue as it spreads — wider,
+  // thicker and brighter the harder the hit.
+  private renderBounceShock(ctx: CanvasRenderingContext2D) {
+    const k = this.bombBounceAge / BOMB_SHOCK_SEC;
+    if (k >= 1) return;
+    const impact = this.bombBounceImpact;
+    const r = 3 + (8 + BOMB_SHOCK_REACH * impact) * (1 - (1 - k) * (1 - k));
+    const fade = (1 - k) * (1 - k);
+    const strength = fade * (0.5 + 0.5 * impact);
+    const { x, y } = this.bombBounceAt;
+    drawGlow(ctx, x, y, r * 1.2, this.bombHue() + 25, 0.7 * strength);
+    ctx.lineWidth = 1.5 + 4 * impact * (1 - k);
+    ctx.strokeStyle = `hsla(${this.bombHue() + 30}, 100%, ${95 - 25 * k}%, ${strength.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.stroke();
+  }
+
   whiteGlow(): boolean {
     return this.superBoosted;
   }
@@ -309,7 +338,10 @@ export class Bullet {
     if (this.bomb && this.superBoosted) {
       drawGlow(ctx, this.pos.x, this.pos.y, coreRadius * headRadiusMul * 2.2, 45, 0.7 * rangeAlpha);
     }
-    if (this.bomb) this.renderBlastRing(ctx);
+    if (this.bomb) {
+      this.renderBlastRing(ctx);
+      this.renderBounceShock(ctx);
+    }
     if (flashing) {
       // sharp attack, tail-off — peak brightness lands on the first frame of the flash.
       const flashEnv = Math.min(1, this.flashTimer / CORE_FLASH_TAIL_SEC);

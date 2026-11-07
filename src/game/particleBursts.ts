@@ -120,6 +120,28 @@ export const emitBounceSparks = (particles: ParticleSystem, pos: Vec, normal: Ve
   }
 };
 
+// The heavy half of a bomb's bounce: fat, slow chunks sprayed out sideways
+// along the struck surface (either side of the normal), lingering after the
+// quick sparks have gone — what a dense shell knocks loose, not a glint.
+export const emitBounceDebris = (particles: ParticleSystem, pos: Vec, normal: Vec, hue: number, impact = 0.5) => {
+  const baseAngle = Math.atan2(normal.y, normal.x);
+  const count = 3 + Math.round(impact * 9);
+  for (let i = 0; i < count; i++) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const angle = baseAngle + side * rand(0.9, 1.5);
+    particles.emit({
+      pos: { ...pos },
+      vel: fromAngle(angle, rand(50, 110 + impact * 130)),
+      life: rand(0.35, 0.55 + impact * 0.25),
+      maxLife: 0.8,
+      size: rand(2.4, 3.4 + impact * 1.4),
+      hue: hue + rand(10, 30),
+      shrink: 1,
+      drag: 3.2,
+    });
+  }
+};
+
 // heavier dark debris reads "cracked, not killed" — distinguishes a chip from a kill.
 export const emitCrackParticles = (particles: ParticleSystem, a: Asteroid, onBeat: boolean) => {
   emitBurst(particles, {
