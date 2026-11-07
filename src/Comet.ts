@@ -4,6 +4,12 @@ import { Trail } from "./Trail";
 import { rng } from "./game/rng";
 import { ENTITY_CONFIG } from "./game/entityConfig";
 
+// Head bloom: base radius at scale 1, and how far past it the halo fades out.
+const HEAD_RADIUS = 26;
+const HALO_MULT = 2.6;
+// Furthest the head paints from its centre at scale 1 (pulse peak).
+export const COMET_HALO_REACH = HEAD_RADIUS * HALO_MULT;
+
 // Ethereal background event that wanders across the field over ~25-40 seconds
 // playing a slow melodic phrase locked to the bass-beat grid. Doesn't collide
 // with anything — it's purely an audio/visual flourish that decorates the
@@ -168,15 +174,15 @@ export class Comet {
     // visual feels coupled to the audio. Pulse amplitude is gentle (±15%)
     // because the bass kit already supplies the strong rhythmic accents.
     const pulse = 0.85 + 0.15 * Math.sin(this.noteIndex * 1.3 + this.age * 2);
-    const radius = 26 * pulse * this.scale;
+    const radius = HEAD_RADIUS * pulse * this.scale;
     if (radius < 0.5) { ctx.restore(); return; }
-    const halo = ctx.createRadialGradient(hx, hy, 0, hx, hy, radius * 2.6);
+    const halo = ctx.createRadialGradient(hx, hy, 0, hx, hy, radius * HALO_MULT);
     halo.addColorStop(0, `hsla(${this.hue}, 100%, 92%, ${(0.85 * b).toFixed(3)})`);
     halo.addColorStop(0.4, `hsla(${this.hue}, 95%, 80%, ${(0.35 * b).toFixed(3)})`);
     halo.addColorStop(1, `hsla(${this.hue}, 95%, 60%, 0)`);
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(hx, hy, radius * 2.6, 0, TAU);
+    ctx.arc(hx, hy, radius * HALO_MULT, 0, TAU);
     ctx.fill();
 
     // Bright pin-prick at the head — sells the "burning ice" core. Pure

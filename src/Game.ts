@@ -22,6 +22,7 @@ import { FIRST_BONUS_LIFE_SCORE } from "./game/bonusLife";
 import type { BassLightning } from "./game/bassLightning";
 import type { DriftBurst } from "./game/driftBurst";
 import type { Wormhole } from "./game/wormhole";
+import type { Swallow } from "./game/warpCannon";
 import type { InkPatch } from "./game/inkCloud";
 import type { SkipPortal, WaveSkipState } from "./game/waveSkip";
 import { LaserBeam } from "./game/laserShot";
@@ -99,6 +100,9 @@ export class Game implements HudElements {
   //   suck-in lives on the entity; this holds the portal visual — see
   //   game/wormhole.ts.
   wormholes: Wormhole[] = [];
+  // Bodies a Warp Cannon shot swallowed, falling through the portal it tore
+  //   open (also in the list above) — cosmetic; see game/warpCannon.ts.
+  swallows: Swallow[] = [];
   // Wave-skip portals torn open by player-killed aliens: each record pairs a
   //   wormhole visual (shared with the list above) with its rolled skip depth.
   //   Entering one starts the warp below — see game/waveSkip.ts.

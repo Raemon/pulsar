@@ -5,7 +5,7 @@ import { SIDE_THRUST_ALWAYS_ON } from "./ship/shipPhysics";
 
 // Powerup kinds. The canister doesn't reveal which one it holds — the
 // player finds out on pickup.
-export type PowerupKind = "prong" | "rapid" | "pierce" | "shield" | "slow" | "radar" | "longshot" | "sideEngines" | "lasershot" | "bomb";
+export type PowerupKind = "prong" | "rapid" | "pierce" | "shield" | "slow" | "radar" | "longshot" | "sideEngines" | "lasershot" | "bomb" | "warpCannon";
 
 // Hue is kept for downstream effects (pickup burst tinting) but the canister
 // itself renders pure white so the player reads it as "incoming pod" first
@@ -21,12 +21,13 @@ export const POWERUP_HUE: Record<PowerupKind, number> = {
   sideEngines: 25,
   lasershot: 195,
   bomb: 0,
+  warpCannon: 250,
 };
 
 // slow-mo is a pulsar event now (see game/slowMo.ts), not a pickup.
 // sideEngines is dropped from the pool when side thrust is always-on (it would
 // be a no-op pickup); flip SIDE_THRUST_ALWAYS_ON back to false to restore it.
-export const POWERUP_KINDS: PowerupKind[] = (["prong", "shield", "radar", "longshot", "sideEngines", "lasershot", "bomb"] as PowerupKind[])
+export const POWERUP_KINDS: PowerupKind[] = (["prong", "shield", "radar", "longshot", "sideEngines", "lasershot", "bomb", "warpCannon"] as PowerupKind[])
   .filter((k) => !(k === "sideEngines" && SIDE_THRUST_ALWAYS_ON));
 
 // warp-out plays a brief vortex flash before the canister vanishes so the player

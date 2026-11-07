@@ -47,7 +47,8 @@ import { updateBassLightnings } from "./bassLightning";
 import { updateDriftBursts } from "./driftBurst";
 import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
-import { updateWormholes, spawnWormhole, type Wormhole } from "./wormhole";
+import { updateWormholes, spawnWormhole, type Dive, type Wormhole } from "./wormhole";
+import { updateSwallows } from "./warpCannon";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
 import { tickPendingRhythmBonuses, flushPendingRhythmBonuses } from "./rhythmBonus";
 import { emitExplosion, emitCometExplosion } from "./particleBursts";
@@ -933,6 +934,7 @@ const updatePlaying = (game: Game, dt: number) => {
   // musicDt (not dt) so the portal opens/closes in lockstep with the body's
   // dive, which also runs on musicDt — under slow-mo both stretch together.
   game.wormholes = updateWormholes(game.wormholes, musicDt);
+  game.swallows = updateSwallows(game.swallows, musicDt);
   tickPendingDriftBonuses(game);
   tickPendingRhythmBonuses(game);
   tickStreakTimeout(game);
@@ -1264,25 +1266,24 @@ const updatePositionalAudio = (game: Game) => {
   for (const c of game.comets) if (!c.isMeteor) game.sound.updateCometShimmer(c, audiblePos(c));
 };
 
-// A comet that times out / an alien that flies past the far edge flags
-// needsWormhole the frame it begins warping out (the body owns the suck-in; this
-// spawns the portal it dives into). Anchor the portal at the body's warp-start
-// position so the mouth gapes where the dive began. Called right after each
-// entity's update loop with that array; the flag is consumed once.
+// An alien that flies past the far edge flags needsWormhole the frame it begins
+// warping out (the body owns the plunge; this spawns the portal it dives into).
+// The portal opens at the dive's throat, just ahead on the flight path. Called
+// right after each entity's update loop with that array; the flag is consumed
+// once.
 type WarpingBody = {
   needsWormhole: boolean;
-  warpStartX: number;
-  warpStartY: number;
+  warpDive: Dive | null;
   radius: number;
   warpHeading: number;
   warpPortal: Wormhole | null;
 };
 const spawnPendingWormholes = (game: Game, bodies: WarpingBody[]) => {
   for (const e of bodies) {
-    if (!e.needsWormhole) continue;
+    if (!e.needsWormhole || !e.warpDive) continue;
     e.needsWormhole = false;
     e.warpPortal = spawnWormhole(
-      game.wormholes, { x: e.warpStartX, y: e.warpStartY }, e.radius, e.warpHeading,
+      game.wormholes, { x: e.warpDive.x1, y: e.warpDive.y1 }, e.radius, e.warpHeading,
     );
   }
 };

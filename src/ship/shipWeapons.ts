@@ -119,6 +119,7 @@ const launchBullet = (ship: Ship, headingOffset: number): Bullet => {
     return bullet;
   }
   bullet.pierce = ship.pierceActive;
+  bullet.warp = ship.warpCannonActive;
   setShotLife(bullet, shotLife(ship, false));
   return bullet;
 };
@@ -129,6 +130,7 @@ export const fireBullets = (ship: Ship, bullets: Bullet[]) => {
 };
 
 // powerup flags are simple bool latches; shield is one-shot, the rest persist for the run.
+// Bomb and Warp Cannon both replace the shell, so picking up one swaps out the other.
 export const applyPowerup = (ship: Ship, kind: PowerupKind) => {
   if (kind === "prong") ship.prongCount += 1;
   else if (kind === "rapid") ship.rapidActive = true;
@@ -138,5 +140,11 @@ export const applyPowerup = (ship: Ship, kind: PowerupKind) => {
   else if (kind === "longshot") ship.longshotActive = true;
   else if (kind === "sideEngines") ship.sideEnginesActive = true;
   else if (kind === "lasershot") ship.lasershotActive = true;
-  else if (kind === "bomb") ship.bombActive = true;
+  else if (kind === "bomb") {
+    ship.bombActive = true;
+    ship.warpCannonActive = false;
+  } else if (kind === "warpCannon") {
+    ship.warpCannonActive = true;
+    ship.bombActive = false;
+  }
 };
