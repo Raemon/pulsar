@@ -402,7 +402,7 @@ export const finalizeIntroToPlay = (game: Game) => {
 
 // Tutorial button → guided tutorial (single practice rock + stage 1 controls hint);
 //   Start button → skips straight to the single-asteroid warm-up (displayed Wave 0).
-//   Veteran pilots (anyone who has ever hit 6x rhythm) skip the warm-up and start on
+//   Veteran pilots (anyone who has ever hit 12x rhythm) skip the warm-up and start on
 //   the first proper density wave instead. Used at both calibration hand-off and the
 //   direct startGame path so the two stay in sync.
 const beginFirstWaveByTutorialFlag = (game: Game, tutorial: boolean, veteran: boolean) => {
