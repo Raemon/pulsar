@@ -44,16 +44,8 @@ const spawnAsteroid = (game: Game, kind: AsteroidKind = "normal", size?: Asteroi
 };
 
 const applyPowerup = (game: Game, kind: PowerupKind) => {
-  if (kind === "prong") game.ship.prongCount += 1;
-  else if (kind === "rapid") game.ship.rapidActive = true;
-  else if (kind === "pierce") game.ship.pierceActive = true;
-  else if (kind === "shield") game.ship.shieldActive = true;
-  else if (kind === "radar") game.ship.radarActive = true;
-  else if (kind === "longshot") game.ship.longshotActive = true;
-  else if (kind === "sideEngines") game.ship.sideEnginesActive = true;
-  else if (kind === "lasershot") game.ship.lasershotActive = true;
-  else if (kind === "bomb") game.ship.bombActive = true;
-  else if (kind === "slow") startSlowMo(game);
+  if (kind === "slow") startSlowMo(game);
+  else game.ship.applyPowerup(kind);
 };
 
 // Each registry below is keyed by the canonical union type, so adding a new
@@ -118,6 +110,7 @@ const POWERUP_LABELS: Record<PowerupKind, string> = {
   sideEngines: "Side Engines",
   lasershot: "Laser",
   bomb: "Bomb",
+  warpCannon: "Warp Cannon",
 };
 
 const ALIEN_TILES: Record<AlienSize, string> = {
@@ -294,6 +287,7 @@ const iconFor = (id: string): string => {
   if (id === "longshot") return `<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2" fill="none" stroke="${c}" stroke-width="1.7"/><circle cx="18" cy="12" r="2" fill="none" stroke="${c}" stroke-width="1.7"/><path d="M3 12 L21 12 M18 9 L21 12 L18 15" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   if (id === "sideEngines") return `<svg viewBox="0 0 24 24"><path d="M12 4 L8 10 L12 8 L16 10 Z" fill="none" stroke="${c}" stroke-width="1.7" stroke-linejoin="round"/><path d="M2 12 L8 12 M22 12 L16 12 M5 9 L2 12 L5 15 M19 9 L22 12 L19 15" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   if (id === "lasershot") return `<svg viewBox="0 0 24 24"><path d="M3 12 L21 12" stroke="${c}" stroke-width="2.5" stroke-linecap="round"/><path d="M3 12 L21 12" stroke="${c}" stroke-width="1" stroke-linecap="round" opacity="0.5"/><path d="M18 7 L21 12 L18 17" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  if (id === "warpCannon") return `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="${c}" stroke-width="1.7"/><path d="M12 3 A9 9 0 0 1 21 12 M12 21 A9 9 0 0 1 3 12" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" opacity="0.7"/></svg>`;
   if (id === "bomb") return `<svg viewBox="0 0 24 24"><circle cx="11" cy="14" r="7" fill="none" stroke="${c}" stroke-width="1.7"/><path d="M15 8 L18 5 M18 5 L21 3 M18 5 L20 7" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round"/></svg>`;
   return "";
 };

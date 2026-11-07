@@ -33,7 +33,9 @@ import {
   onAlienKilled,
   onAlienCracked,
   onCometKilled,
+  onAsteroidSwallowed,
 } from "./killEffects";
+import { canSwallow } from "./warpCannon";
 import { killShip } from "./lifecycle";
 import { shipTouches, type ContactTarget } from "../ship/shipHitbox";
 
@@ -186,6 +188,12 @@ const hitAsteroidWithBullets = (game: Game, a: Asteroid): Asteroid[] | null => {
     }
     consumeBullet(b);
     logBulletHit(game, "HIT asteroid", b);
+    // A Warp Cannon shot that gets through the armour takes the whole body,
+    // whatever its HP.
+    if (b.warp && canSwallow(a)) {
+      onAsteroidSwallowed(game, a, b, onBeat);
+      return [];
+    }
     const { killed } = a.applyDamage(dmg, innerHit, b.pos);
     game.shake = Math.min(game.shake + (killed ? 0.4 : 0.2), 1.2);
     if (!killed) {
@@ -287,6 +295,10 @@ const tryKillAlienWithBullets = (game: Game, a: Alien): boolean => {
     consumeBullet(b);
     const onBeat = isHitOnBeat(game, b);
     logBulletHit(game, "HIT alien", b);
+    if (b.warp) {
+      onAlienKilled(game, a, b, onBeat, true);
+      return true;
+    }
     const { killed } = a.applyDamage();
     if (!killed) {
       a.applyKnockback(b.vel.x, b.vel.y, 1);
@@ -388,7 +400,7 @@ const tryKillCometWithBullets = (game: Game, c: Comet): boolean => {
   consumeBullet(b);
   const onBeat = isHitOnBeat(game, b);
   logBulletHit(game, "HIT comet", b);
-  onCometKilled(game, c, b, onBeat);
+  onCometKilled(game, c, b, onBeat, b.warp);
   return true;
 };
 

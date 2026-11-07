@@ -93,6 +93,13 @@ export const Hud = () => (
           <path d="M15 8 L18 5 M18 5 L21 3 M18 5 L20 7" />
         </svg>
       </Powerup>
+      <Powerup kind="warpCannon" title="Warp Cannon — shots become wormholes that swallow whatever they hit whole, scoring every piece it would have broken into">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 3 A9 9 0 0 1 21 12 M12 21 A9 9 0 0 1 3 12" opacity="0.7" />
+          <path d="M17.5 5.5 A9 9 0 0 1 19 7.5 M6.5 18.5 A9 9 0 0 1 5 16.5" opacity="0.45" />
+        </svg>
+      </Powerup>
     </div>
     <div id="hud-right">
       <input

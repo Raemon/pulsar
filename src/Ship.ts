@@ -128,6 +128,9 @@ export class Ship {
   // Bomb upgrade: shots become thrown mines that bounce, pulse on the beat and
   //   blast everything in range. See game/bombShot.ts.
   bombActive = false;
+  // Warp Cannon upgrade: shots become small wormholes that swallow what they
+  //   hit whole. See game/warpCannon.ts. Swaps with the bomb — one shell type.
+  warpCannonActive = false;
   // Laser-shot charge state. Active while the player holds fire under the
   //   lasershot upgrade; release fires a beam dealing 1 + numChargedDots damage.
   //   See game/laserShot.ts for the charge/release logic.

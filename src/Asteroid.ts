@@ -1110,6 +1110,61 @@ const prewarmHaloOutlines = () => {
 };
 prewarmHaloOutlines();
 
+// Summed score of every fragment Asteroid.split() would break this body into,
+// all the way down — what a Warp Cannon shot pays on top of the body's own
+// score for swallowing it whole. Mirrors split()'s recipes without running
+// them (split rolls the gameplay RNG and spawns bodies); a randomised break
+// counts its standard recipe. Keep the two in step.
+const fragmentsScore = (kind: AsteroidKind, size: AsteroidSize, splitLevel: number, captives: number): number => {
+  const whole = (k: AsteroidKind, z: AsteroidSize, level = 0): number =>
+    entityStat(k, z, "score") + fragmentsScore(k, z, level, 1);
+  const sum = (pieces: AsteroidKind[], z: AsteroidSize): number =>
+    pieces.reduce((acc, k) => acc + whole(k, z), 0);
+  if (kind === "boss") return 2 * whole("bossHemisphere", "medium") + whole("bossEye", "medium");
+  if (kind === "bossHemisphere") return 3 * whole("bossPlate", "small");
+  if (kind === "bossEye") return 2 * whole("bossIrisShard", "small") + whole("bossEmber", "small");
+  if (kind === "torus") return 2 * whole("torusArc", "large");
+  if (kind === "torusArc") {
+    return size === "large" ? whole("torusArc", "medium") + ENTITY_CONFIG.torus.chunkCount * whole("torusChunk", "small") : 0;
+  }
+  if ((BASS_KINDS as ReadonlyArray<AsteroidKind>).includes(kind)) {
+    if (size === "huge") return GIANT_POD_COUNT * whole(kind, "large");
+    if (splitLevel >= BASS_MAX_SPLIT_LEVEL) return 0;
+    const level = splitLevel + 1;
+    return 2 * whole(kind, level === 1 ? "medium" : "small", level);
+  }
+  if (isGlassPrison(kind)) {
+    return captives * whole("wraith", "medium") + (kind === "bigGlassPrison" ? 5 : 3) * whole("solidCrystalSmall", "small");
+  }
+  if (kind === "citadel") return 3 * whole("warble", "large");
+  if (kind === "metalChunk") return 2 * whole("metalShard", "small") + whole("superBassCrystal", "small");
+  if (kind === "solidCrystal") return 2 * whole("solidCrystalSmall", "small");
+  if (kind === "bell") {
+    return sum(
+      size === "large" ? ["glassShard", "cathedralKeystone", "columnDrum", "rubbleBlock"]
+      : size === "medium" ? ["glassShard", "cathedralKeystone", "rubbleBlock"]
+      : ["glassShard", "cathedralKeystone"],
+      "small",
+    );
+  }
+  if (kind === "pallbearer") return sum(["glassShard", "cathedralKeystone", "columnDrum", "rubbleBlock", "glassShard"], "small");
+  if (kind === "sepulchre") {
+    return sum(["cathedralKeystone", "columnDrum", "rubbleBlock", "glassShard"], "medium")
+      + sum(["glassShard", "rubbleBlock", "glassShard", "columnDrum", "cathedralKeystone", "rubbleBlock"], "small");
+  }
+  if (
+    kind === "wraith" || kind === "torusChunk" || kind === "superBassCrystal" || kind === "metalShard"
+    || kind === "solidCrystalSmall" || kind === "bossPlate" || kind === "bossIrisShard" || kind === "bossEmber"
+    || isBurstGem(kind) || CATHEDRAL_DEBRIS_KINDS.includes(kind) || size === "small"
+  ) return 0;
+  // splitRegular: a gem-bearing large spits plain smalls (its "trio"); every
+  // other break halves down the size ladder, a gem-bearer's pieces as plain rock.
+  if (kind === "asteroidWithGem" && size === "large") return 3 * whole("normal", "small");
+  const child = kind === "asteroidWithGem" ? "normal" : kind;
+  const next: AsteroidSize = size === "huge" ? "large" : size === "large" ? "medium" : "small";
+  return 2 * whole(child, next);
+};
+
 export class Asteroid {
   pos: Vec;
   vel: Vec;
@@ -4951,6 +5006,12 @@ export class Asteroid {
   // plain kinds. Combo multiplier applies on top at the call site.
   scoreValue(): number {
     return entityStat(this.kind, this.size, "score");
+  }
+
+  // This body's score plus that of every fragment its break-up would yield —
+  // the payout for a Warp Cannon shot swallowing it whole (see fragmentsScore).
+  wholeScore(): number {
+    return this.scoreValue() + fragmentsScore(this.kind, this.size, this.splitLevel, Math.max(1, this.prisonCaptives));
   }
 
   // Giant bassteroid break: each docked pod becomes a fresh gen-0 large of the

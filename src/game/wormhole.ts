@@ -44,7 +44,7 @@ import { cosmeticRng as rng } from "./rng";
 const TAU = Math.PI * 2;
 
 // Lifecycle (seconds): the mouth opens, holds while the body is swallowed,
-// then collapses. WARP_OUT_DURATION on the entity is tuned to land mid-hold.
+// then collapses. A dive (planDive) is capped to land mid-hold.
 const OPEN = 0.34;
 const HOLD = 0.42;
 const CLOSE = 0.4;
@@ -55,11 +55,6 @@ export const WORMHOLE_LIFE = OPEN + HOLD + CLOSE;
 // invisibly small hole.
 export const portalLongAxis = (bodyRadius: number): number => Math.max(40, bodyRadius * 2.0);
 
-// The mouth is a sphere, so the throat a body falls toward is its centre.
-export const warpAnchorOffset = (
-  _bodyRadius: number, _heading: number,
-): { dx: number; dy: number } => ({ dx: 0, dy: 0 });
-
 // ── Lens geometry, in units of the portal's lens scale (u = r / L) ──────────
 // SPHERE: the mouth itself — the ball showing the far sky. RING: the Einstein
 // radius, where lensed local starlight piles up; every source star's main
@@ -69,6 +64,9 @@ export const warpAnchorOffset = (
 // displaced images sit on their own hidden originals rather than beside them).
 const SPHERE = 0.5;
 const RING = 0.62;
+
+// Lens scale whose sphere — the visible mouth — has radius `mouthRadius`.
+export const lensScaleForMouth = (mouthRadius: number): number => mouthRadius / SPHERE;
 const DEFLECT_END = 1.25;
 const COVER = 1.4;
 
@@ -88,6 +86,11 @@ export type Wormhole = {
 
 export type WormholeOpts = {
   holdSec?: number;
+  // Mouth-open fraction (0…1) the portal is born at, for a mouth that grows
+  // out of something already open (a Warp Cannon shot) rather than from a
+  // point. The skipped stretch of opening is added to the hold, so the mouth
+  // still starts collapsing when a from-nothing portal's would.
+  openFrom?: number;
 };
 
 export const spawnWormhole = (
@@ -95,6 +98,9 @@ export const spawnWormhole = (
   opts?: WormholeOpts,
 ): Wormhole => {
   const life = OPEN + (opts?.holdSec ?? HOLD) + CLOSE;
+  // Inverse of mouthOpen's ease-out opening.
+  const f = Math.max(0, Math.min(0.999, opts?.openFrom ?? 0));
+  const skippedOpen = OPEN * (1 - Math.sqrt(1 - f));
   const wh: Wormhole = {
     x: pos.x,
     y: pos.y,
@@ -103,7 +109,7 @@ export const spawnWormhole = (
     hueShift: (rng() - 0.5) * 24,
     seed: rng() * TAU,
     life,
-    maxLife: life,
+    maxLife: life + skippedOpen,
   };
   list.push(wh);
   return wh;
@@ -128,8 +134,8 @@ export const wormholeEnterable = (wh: Wormhole): boolean =>
 export const wormholeMouthRadius = (wh: Wormhole): number =>
   SPHERE * wh.radius * mouthOpen(wh.maxLife - wh.life, wh.life);
 
-// Absolute position of the portal's throat — the point a diving body eases
-// toward (mirrors warpAnchorOffset for a live portal): the sphere's centre.
+// Absolute position of the portal's throat — the point a diving body plunges
+// toward (see planDive): the mouth is a sphere, so it's the sphere's centre.
 export const throatPointOf = (wh: Wormhole): { x: number; y: number } => ({ x: wh.x, y: wh.y });
 
 // Mouth-open factor 0→1→0. Opens over the first OPEN seconds, collapses over
@@ -433,15 +439,16 @@ const getSphereMap = (n: number): SphereMap => {
 const renderSphere = (
   ctx: CanvasRenderingContext2D, L: number, pxScale: number,
   cx: number, cy: number, scrollX: number, scrollY: number, skyPerPx: number, seed: number,
+  maxMapPx: number,
 ): void => {
   const layers = skyLayers ?? (skyLayers = bakeFarSky());
   const r = SPHERE * L;
   // Power-of-two map sizes, so an opening/closing mouth reuses a handful of
-  // cached maps instead of building one per pixel of radius. Capped at 128:
-  // the deep sky is soft and coarser than that across the ball, so a larger
-  // buffer only costs time — drawImage smooths it up. The stars, which need
-  // the resolution, are dotted straight onto the screen below.
-  const n = Math.min(128, Math.max(32, 2 ** Math.ceil(Math.log2(r * 2 * pxScale))));
+  // cached maps instead of building one per pixel of radius. Capped (128 for a
+  // portal): the deep sky is soft and coarser than that across the ball, so a
+  // larger buffer only costs time — drawImage smooths it up. The stars, which
+  // need the resolution, are dotted straight onto the screen below.
+  const n = Math.min(maxMapPx, Math.max(32, 2 ** Math.ceil(Math.log2(r * 2 * pxScale))));
   const map = getSphereMap(n);
   const out = map.img.data;
   const { dx, dy, gain, cover } = map;
@@ -648,9 +655,13 @@ const addStarArc = (
 // beyond the ring, and — when it isn't swallowed by the shadow — a fainter
 // mirrored inner image between the ring and the horizon, the way a real lens
 // doubles what sits close behind it.
+//
+// Under a PortalShape the arcs are drawn through the distortion, so each
+// source star is first carried back through its inverse into the lens's own
+// frame — a star well clear of the bending still lands on its own position.
 const renderLensedStars = (
   ctx: CanvasRenderingContext2D, backdrop: LensBackdrop,
-  cx: number, cy: number, L: number,
+  cx: number, cy: number, L: number, shape: PortalShape | null,
 ): void => {
   for (let i = 0; i < DUST_BUCKETS * 2; i++) {
     dustPaths[i] = new Path2D();
@@ -662,14 +673,24 @@ const renderLensedStars = (
     starCounts[i] = 0;
     starCounts[STAR_BUCKETS + i] = 0;
   }
-  const reach = COVER * L;
+  const reach = COVER * L * (shape ? shapeGrow(shape) : 1);
+  // Inverse of the symmetric shape matrix, pre-divided by L.
+  let ia = 1 / L;
+  let ib = 0;
+  let id = 1 / L;
+  if (shape) {
+    const k = 1 / ((shape.a * shape.d - shape.b * shape.b) * L);
+    ia = shape.d * k;
+    ib = -shape.b * k;
+    id = shape.a * k;
+  }
   // Bigger mouths get proportionally longer streaks so the arcs read at any size.
   const sizeScale = Math.sqrt(L / 60);
   backdrop.starfield.forEachStarNear(
     backdrop.timeMs, backdrop.scrollX, backdrop.scrollY, cx, cy, reach, reach,
     (x, y, size, _hue, alpha, halo) => {
-      const X = (x - cx) / L;
-      const Y = (y - cy) / L;
+      const X = ia * (x - cx) + ib * (y - cy);
+      const Y = ib * (x - cx) + id * (y - cy);
       const s = Math.hypot(X, Y);
       if (s >= COVER) return;
       const thS = Math.atan2(Y, X);
@@ -736,58 +757,73 @@ const renderRingGlow = (ctx: CanvasRenderingContext2D, L: number, open: number):
 };
 
 
-export const renderWormholes = (
-  ctx: CanvasRenderingContext2D, list: Wormhole[],
-  backdrop: LensBackdrop | null = null,
+// A symmetric 2×2 linear map (x' = a·x + b·y, y' = b·x + d·y) the whole lens
+// is drawn through — the Warp Cannon shot's ripple and wobble. A still portal
+// has none.
+export type PortalShape = { a: number; b: number; d: number };
+
+// The shape's larger eigenvalue: how far it stretches the lens at most.
+const shapeGrow = (s: PortalShape): number =>
+  (s.a + s.d) / 2 + Math.hypot((s.a - s.d) / 2, s.b);
+
+// What the lens needs of a portal to paint it.
+export type PortalLook = Pick<Wormhole, "x" | "y" | "radius" | "seed" | "hueShift">;
+
+// Paint one portal's lens — the dark lens body, the bent starlight and its
+// ring, and the far-sky ball — at `open` (0…1) of its full lens scale. Shared
+// by the departure/skip portals (renderWormholes) and the Warp Cannon's shots,
+// which pass a `shape` to make the mouth ripple as it flies and a smaller
+// `maxSkyPx` since a volley of them can be on screen at once.
+export const renderPortalLens = (
+  ctx: CanvasRenderingContext2D, look: PortalLook, open: number,
+  backdrop: LensBackdrop | null, shape: PortalShape | null = null, maxSkyPx = 128,
 ): void => {
-  if (list.length === 0) return;
+  if (open < 0.02) return;
+  const L = look.radius * open;
   // World → screen for this paint (the scroll camera paints the world layer at
   // wrap offsets; each copy has its own translate): the lens has to ask the
   // starfield about the stars at its SCREEN position, in CSS px.
   const m = ctx.getTransform();
-  const offX = m.e / m.a;
-  const offY = m.f / m.d;
-  const pxScale = Math.abs(m.a);
-  ctx.save();
-  for (const wh of list) {
-    const elapsed = wh.maxLife - wh.life;
-    const open = mouthOpen(elapsed, wh.life);
-    if (open < 0.02) continue;
-    const L = wh.radius * open;
-    const cx = wh.x + offX;
-    const cy = wh.y + offY;
-    // Cull the wrap copies that land entirely off-screen — the lens is the
-    // costliest thing in the layer to paint for nothing.
-    if (backdrop) {
-      const reach = COVER * L;
-      const { w, h } = backdrop.starfield;
-      if (cx + reach < 0 || cx - reach > w || cy + reach < 0 || cy - reach > h) continue;
-    }
-
-    ctx.save();
-    ctx.translate(wh.x, wh.y);
-
-    // 1) Lens body: hides the undistorted stars behind the mouth.
-    ctx.globalCompositeOperation = "source-over";
-    const R = COVER * L;
-    ctx.drawImage(getBodySprite(), -R, -R, R * 2, R * 2);
-
-    // 2) The stars behind the mouth, bent into arcs, and the ring they crowd.
-    ctx.globalCompositeOperation = "lighter";
-    if (backdrop) renderLensedStars(ctx, backdrop, cx, cy, L);
-    renderRingGlow(ctx, L, open);
-
-    // 3) The ball itself: the far sky. Its pan follows the mouth's screen
-    //    position so the view through it shifts with parallax.
-    ctx.globalCompositeOperation = "source-over";
-    renderSphere(
-      ctx, L, pxScale, cx, cy, backdrop?.scrollX ?? 0, backdrop?.scrollY ?? 0,
-      SKY_SCALE / (SPHERE * wh.radius), wh.seed + wh.hueShift * 0.01,
-    );
-
-    ctx.restore();
+  const cx = look.x + m.e / m.a;
+  const cy = look.y + m.f / m.d;
+  // Cull the wrap copies that land entirely off-screen — the lens is the
+  // costliest thing in the layer to paint for nothing.
+  if (backdrop) {
+    const reach = COVER * L * (shape ? shapeGrow(shape) : 1);
+    const { w, h } = backdrop.starfield;
+    if (cx + reach < 0 || cx - reach > w || cy + reach < 0 || cy - reach > h) return;
   }
+
+  ctx.save();
+  ctx.translate(look.x, look.y);
+  if (shape) ctx.transform(shape.a, shape.b, shape.b, shape.d, 0, 0);
+
+  // 1) Lens body: hides the undistorted stars behind the mouth.
+  ctx.globalCompositeOperation = "source-over";
+  const R = COVER * L;
+  ctx.drawImage(getBodySprite(), -R, -R, R * 2, R * 2);
+
+  // 2) The stars behind the mouth, bent into arcs, and the ring they crowd.
+  ctx.globalCompositeOperation = "lighter";
+  if (backdrop) renderLensedStars(ctx, backdrop, cx, cy, L, shape);
+  renderRingGlow(ctx, L, open);
+
+  // 3) The ball itself: the far sky. Its pan follows the mouth's screen
+  //    position so the view through it shifts with parallax.
+  ctx.globalCompositeOperation = "source-over";
+  renderSphere(
+    ctx, L, Math.abs(m.a), cx, cy, backdrop?.scrollX ?? 0, backdrop?.scrollY ?? 0,
+    SKY_SCALE / (SPHERE * look.radius), look.seed + look.hueShift * 0.01, maxSkyPx,
+  );
+
   ctx.restore();
+};
+
+export const renderWormholes = (
+  ctx: CanvasRenderingContext2D, list: Wormhole[],
+  backdrop: LensBackdrop | null = null,
+): void => {
+  for (const wh of list) renderPortalLens(ctx, wh, mouthOpen(wh.maxLife - wh.life, wh.life), backdrop);
 };
 
 // ── Falling through ───────────────────────────────────────────────────────────
@@ -798,8 +834,9 @@ export const renderWormholes = (
 // stars use (so it smears into an arc along the Einstein ring and throws a
 // mirrored inner image), the ball occludes whatever of it lies behind the
 // limb, its light splits chromatically and washes toward white, and it fades
-// out as it
-// passes through.
+// out as it passes through. Every one of those takes hold from the moment of
+// contact — the grip is front-loaded so the body visibly starts to warp on the
+// very first frames rather than sliding in looking untouched.
 //
 // The body is painted by `draw` into an offscreen buffer around the portal and
 // warped per pixel — exact inverse lens mapping from each output pixel back to
@@ -815,9 +852,17 @@ let warpDefl = new Float32Array(0);
 let warpInvR = new Float32Array(0);
 let warpVis = new Float32Array(0);
 const RADIAL_STEPS_PER_PX = 4;
-// Depth at which the lens starts bending the falling body.
-const LENS_ONSET = 0.08;
+// Depth by which the lens has fully taken hold of a falling body. It starts
+// bending it at contact (depth 0) and ramps fast, so the fall reads at once.
+const LENS_FULL = 0.4;
 let warpOut: ImageData | null = null;
+
+// How far a falling body has shrunk at `depth`: a little as it sinks toward
+// the throat, then away to nothing once it's there (a dive reaches the throat
+// at its midpoint — planDive), so it keeps on going in instead of hanging at
+// the centre as a lingering ring of light.
+const recedeAt = (depth: number): number =>
+  (1 - 0.3 * depth) * (1 - 0.9 * smoothstep(0.45, 1, depth));
 
 const scratch = (c: HTMLCanvasElement | null, d: number): HTMLCanvasElement => {
   const canvas = c ?? document.createElement("canvas");
@@ -840,17 +885,18 @@ export const renderThroughPortal = (
   // Portal centre in the body's frame (the caller resolves the toroidal wrap).
   const cx = body.x + portalDx;
   const cy = body.y + portalDy;
-  // Before the lens takes hold (and for a mouth too small to matter) the body
-  // only stretches — draw it straight, at full resolution.
-  // Tidal stretch along the line to the throat, fading out for a body that
-  // already sits on the throat (an alien warps out where its portal opens),
-  // where the stretch has no direction.
+  // Tidal stretch along the line to the throat, growing from contact and
+  // fading out for a body that already sits on the throat (an alien warps out
+  // where its portal opens), where the stretch has no direction.
   const dist = Math.hypot(portalDx, portalDy);
-  const tidal = depth * depth * (L > 0 ? Math.min(1, dist / (0.3 * L)) : 0);
+  const tidal = depth * (L > 0 ? Math.min(1, dist / (0.3 * L)) : 0);
   const stretch = 1 + 2.2 * tidal;
   const squeeze = 1 / (1 + 0.8 * tidal);
-  if (L < 4 || depth < LENS_ONSET) {
-    const rc = 1 - 0.3 * depth;
+  const lens = smoothstep(0, LENS_FULL, depth);
+  // Before the lens takes hold (and for a mouth too small to matter) the body
+  // only stretches — draw it straight, at full resolution.
+  if (L < 4 || lens <= 0) {
+    const rc = recedeAt(depth);
     const st = stretch * rc;
     const sq = squeeze * rc;
     const radial = Math.atan2(cy - body.y, cx - body.x);
@@ -886,7 +932,7 @@ export const renderThroughPortal = (
   g.clearRect(0, 0, D, D);
   g.setTransform(S, 0, 0, S, (half - cx) * S, (half - cy) * S);
   const radial = Math.atan2(cy - body.y, cx - body.x);
-  const recede = 1 - 0.3 * depth;
+  const recede = recedeAt(depth);
   g.translate(body.x, body.y);
   g.rotate(radial);
   g.scale(stretch * recede, squeeze * recede);
@@ -951,12 +997,9 @@ export const renderThroughPortal = (
   const outImg = warpOut;
   const out = outImg.data;
   out.fill(0);
-  const ca = 0.06 * depth; // chromatic split: red bends more than blue
-  // The lens takes hold a beat after the tidal stretch, so the ship still
-  // reads as itself for the first part of the fall.
-  const lens = smoothstep(LENS_ONSET, 0.7, depth);
-  const behind = smoothstep(0.15, 0.45, depth);
-  const fade = 1 - smoothstep(0.85, 1, depth);
+  const ca = 0.06 * lens; // chromatic split: red bends more than blue
+  const behind = smoothstep(0.08, 0.4, depth);
+  const fade = 1 - smoothstep(0.7, 1, depth);
   // Light concentrated onto the ring washes toward white rather than keeping
   // the hull's hue (a literal redshift turns the teal hull a muddy green).
   const wash = 0.55 * lens;
@@ -1034,7 +1077,7 @@ export const renderThroughPortal = (
     ctx.drawImage(warpBloom, cx - half - spread, cy - half - spread, (half + spread) * 2, (half + spread) * 2);
     ctx.globalAlpha = 1;
   }
-  const flare = smoothstep(0.35, 0.7, depth) * (1 - smoothstep(0.8, 1, depth));
+  const flare = smoothstep(0.1, 0.45, depth) * (1 - smoothstep(0.8, 1, depth));
   if (flare > 0.01) {
     const rIn = SPHERE * L;
     const rOut = (RING + 0.1) * L;
@@ -1052,12 +1095,74 @@ export const renderThroughPortal = (
   ctx.restore();
 };
 
-// How long a body takes to fall all the way through the mouth (warpT 0→1). It
-// must finish comfortably BEFORE the mouth starts collapsing (OPEN + HOLD) so
-// the body is gone while the throat is still wide — the 0.8 leaves headroom for
-// the body to vanish a few frames early even at a low frame rate, rather than
-// winking out against an already-shrinking mouth.
+// The longest a body takes to fall all the way through the mouth (warp
+// progress 0→1). It must finish comfortably BEFORE the mouth starts collapsing
+// (OPEN + HOLD) so the body is gone while the throat is still wide — the 0.8
+// leaves headroom for the body to vanish a few frames early even at a low frame
+// rate, rather than winking out against an already-shrinking mouth.
 export const WARP_OUT_DURATION = OPEN + HOLD * 0.8;
+
+// ── The plunge ────────────────────────────────────────────────────────────────
+// A body caught by a portal plunges in under its own momentum: it leaves the
+// point of contact at the velocity it arrived with and curves into the throat —
+// a quadratic Bézier whose first leg is that velocity, timed so a head-on dive
+// holds its speed exactly rather than braking at the lip. A body arriving
+// slowly (or at rest) is drawn in within MAX_ARRIVE_SEC instead, accelerating.
+// Once at the throat it sits behind the ball while its lensed image fades. The
+// whole dive — lens taking hold, ball swallowing it, fade — spans twice the
+// arrival, so a fast body is through quickly and a slow one takes the full
+// WARP_OUT_DURATION.
+const MAX_ARRIVE_SEC = 0.4;
+const MIN_DIVE_SEC = 0.3;
+
+export type Dive = {
+  x0: number;
+  y0: number;
+  // Bézier control point: half the arrival time along the incoming velocity.
+  cx: number;
+  cy: number;
+  // The throat, in the body's unwrapped frame.
+  x1: number;
+  y1: number;
+  arriveSec: number;
+  // Seconds for warp progress to run 0→1.
+  sec: number;
+};
+
+export const planDive = (from: Vec, vel: Vec, throat: Vec): Dive => {
+  const speed = Math.hypot(vel.x, vel.y);
+  const dist = Math.hypot(throat.x - from.x, throat.y - from.y);
+  const arriveSec = speed > 1e-3 ? Math.min(MAX_ARRIVE_SEC, dist / speed) : MAX_ARRIVE_SEC;
+  return {
+    x0: from.x,
+    y0: from.y,
+    cx: from.x + (vel.x * arriveSec) / 2,
+    cy: from.y + (vel.y * arriveSec) / 2,
+    x1: throat.x,
+    y1: throat.y,
+    arriveSec,
+    sec: Math.max(MIN_DIVE_SEC, Math.min(WARP_OUT_DURATION, arriveSec * 2)),
+  };
+};
+
+// Where the diving body is at warp progress t (0→1).
+export const diveAt = (dive: Dive, t: number): { x: number; y: number } => {
+  const s = dive.arriveSec > 0 ? Math.min(1, (t * dive.sec) / dive.arriveSec) : 1;
+  const a = (1 - s) * (1 - s);
+  const b = 2 * s * (1 - s);
+  const c = s * s;
+  return { x: a * dive.x0 + b * dive.cx + c * dive.x1, y: a * dive.y0 + b * dive.cy + c * dive.y1 };
+};
+
+// Carry a dive across a torus fold.
+export const shiftDive = (dive: Dive, dx: number, dy: number): void => {
+  dive.x0 += dx;
+  dive.y0 += dy;
+  dive.cx += dx;
+  dive.cy += dy;
+  dive.x1 += dx;
+  dive.y1 += dy;
+};
 
 // Bake the far sky at module load, like the bassteroid halo outlines, so the
 // first portal of a run doesn't stall a frame on the ~60ms bake.

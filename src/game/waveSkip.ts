@@ -12,6 +12,10 @@ import {
   WORMHOLE_CLOSE,
   WARP_OUT_DURATION,
   wormholeMouthRadius,
+  type Dive,
+  planDive,
+  diveAt,
+  shiftDive,
 } from "./wormhole";
 import { shipTouches } from "../ship/shipHitbox";
 import { isBossWave } from "./waveDirector";
@@ -52,8 +56,8 @@ export type WaveSkipState = {
   phase: "dive" | "hidden" | "emerge";
   // 0→1 progress through the current cosmetic phase (dive / emerge).
   t: number;
-  diveFrom: { x: number; y: number };
-  diveTo: { x: number; y: number };
+  // The plunge into the dive portal's throat, carrying the ship's speed in.
+  dive: Dive;
   // The portal the ship is riding — the dive portal on the way in, swapped to
   // the emerge portal on the way out. The renderer draws the hull through this
   // portal's lens so it smears and fades as it passes through. null while the
@@ -75,17 +79,23 @@ const skipCfg = () => CFG.skipWormhole;
 
 // A player kill tears a skip portal aligned to the alien's flight path. Not in
 // the beta/tutorial sandboxes, not once the wave is already over, and never on
-// a boss wave — the portal must not shortcut the boss fight.
-export const maybeSpawnSkipPortal = (game: Game, al: Alien) => {
-  if (game.betaMode || game.tutorialActive || game.waveTransitioning) return;
-  if (isBossWave(game.wave)) return;
+// a boss wave — the portal must not shortcut the boss fight. A Warp Cannon kill
+// tears it where the shot struck, already part-open (`openFrom`), and the alien
+// falls into it — hence the returned portal (null when none opened).
+export const maybeSpawnSkipPortal = (
+  game: Game, al: Alien, at: { x: number; y: number } = al.pos, openFrom = 0,
+): Wormhole | null => {
+  if (game.betaMode || game.tutorialActive || game.waveTransitioning) return null;
+  if (isBossWave(game.wave)) return null;
   const [lo, hi] = skipCfg().skips[al.size];
   const skip = lo + Math.floor(rng() * (hi - lo + 1));
-  const wormhole = spawnWormhole(game.wormholes, al.pos, al.radius, al.warpHeading, {
+  const wormhole = spawnWormhole(game.wormholes, at, al.radius, al.warpHeading, {
     holdSec: skipCfg().lifetimeBeats * BEAT_GRID,
+    openFrom,
   });
   game.skipPortals.push({ wormhole, skip });
-  game.sound.play("canisterAppear", 1, al.pos);
+  game.sound.play("canisterAppear", 1, at);
+  return wormhole;
 };
 
 // Cut every open skip portal down to its collapse so it irises shut on screen.
@@ -149,6 +159,11 @@ const beginWaveSkip = (game: Game, portal: SkipPortal) => {
   // stays open while the ship falls through it.
   portal.wormhole.life = WORMHOLE_CLOSE + WARP_OUT_DURATION;
   sweepFieldForSkip(game);
+  // The ship plunges on at the speed it hit the mouth with (planDive) — the
+  // dive owns its motion from here, so its own velocity is spent.
+  const throat = throatPointOf(portal.wormhole);
+  const [tdx, tdy] = toroidalDelta(throat.x - ship.pos.x, throat.y - ship.pos.y, game.w, game.h);
+  const dive = planDive(ship.pos, ship.vel, { x: ship.pos.x + tdx, y: ship.pos.y + tdy });
   ship.vel.x = 0;
   ship.vel.y = 0;
   ship.thrustOn = false;
@@ -160,8 +175,6 @@ const beginWaveSkip = (game: Game, portal: SkipPortal) => {
   game.sound.stopSideThrust();
   ship.alive = false;
   ship.skipWarpT = 0;
-  const throat = throatPointOf(portal.wormhole);
-  const [tdx, tdy] = toroidalDelta(throat.x - ship.pos.x, throat.y - ship.pos.y, game.w, game.h);
   const normalSpawnBeat = schedule.spawnBeat - skipped * cadenceSec;
   const titles: Array<{ atBeat: number; wave: number }> = [];
   for (let i = 0; i < skipped; i++) {
@@ -170,8 +183,7 @@ const beginWaveSkip = (game: Game, portal: SkipPortal) => {
   game.waveSkip = {
     phase: "dive",
     t: 0,
-    diveFrom: { x: ship.pos.x, y: ship.pos.y },
-    diveTo: { x: ship.pos.x + tdx, y: ship.pos.y + tdy },
+    dive,
     cropPortal: portal.wormhole,
     titles,
     landingChimeBeat: schedule.spawnBeat,
@@ -224,16 +236,13 @@ export const tickWaveSkip = (game: Game, musicDt: number) => {
     warp.landingChimeBeat = null;
   }
   if (warp.phase === "dive") {
-    warp.t = Math.min(1, warp.t + musicDt / WARP_OUT_DURATION);
-    const ease = warp.t * warp.t;
-    ship.pos.x = warp.diveFrom.x + (warp.diveTo.x - warp.diveFrom.x) * ease;
-    ship.pos.y = warp.diveFrom.y + (warp.diveTo.y - warp.diveFrom.y) * ease;
+    warp.t = Math.min(1, warp.t + musicDt / warp.dive.sec);
+    const p = diveAt(warp.dive, warp.t);
+    ship.pos.x = p.x;
+    ship.pos.y = p.y;
     const fold = wrapMut(ship.pos, game.w, game.h);
     if (fold) {
-      warp.diveFrom.x += fold.x;
-      warp.diveFrom.y += fold.y;
-      warp.diveTo.x += fold.x;
-      warp.diveTo.y += fold.y;
+      shiftDive(warp.dive, fold.x, fold.y);
       shiftEntranceFrames(game, fold.x, fold.y);
     }
     ship.skipWarpT = warp.t;

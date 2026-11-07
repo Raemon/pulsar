@@ -191,6 +191,7 @@ export const showTitle = (game: Game) => {
   game.ship.longshotActive = false;
   game.ship.sideEnginesActive = false;
   game.ship.bombActive = false;
+  game.ship.warpCannonActive = false;
   syncPowerupHud(game);
   hideScoreEntry(game);
   showLeaderboard(game);
@@ -603,6 +604,7 @@ const resetRunCollections = (game: Game) => {
   game.bossBeams = [];
   // Skip portals can outlive their wave by design — never a run boundary.
   game.wormholes = [];
+  game.swallows = [];
   game.waveEvents = newWaveEventSchedule();
 };
 

@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 52;
+export const REPLAY_FORMAT_VERSION = 53;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -44,6 +44,10 @@ export const REPLAY_FORMAT_VERSION = 52;
 //   reach along the centre line, so v50 runs touch things at different times.
 // v52 brings dev's v48 and v49 rules to main, which shipped v50 and v51 without
 //   them, so main's v51 recordings would re-sim into different runs.
+// v53 adds the Warp Cannon to the upgrade pool (every canister/gem roll shifts)
+//   and makes every portal dive carry the body's own speed into the throat
+//   (the ship's skip dive; aliens now fly into a portal opened just ahead of
+//   them), so v52 runs re-sim into different runs.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
