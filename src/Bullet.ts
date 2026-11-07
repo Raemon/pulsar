@@ -90,16 +90,16 @@ export class Bullet {
   // twice as far — same hitbox/core as the yellow tier, but sharper-looking
   // and with extended reach so the streak feels like a longer arm.
   superBoosted = false;
-  // Set by Ship.fire when the player has the pierce powerup active. Game's
+  // Set by fireBullets when the player has the pierce powerup active. Game's
   // collision pass keeps a piercing bullet alive on hit instead of consuming
   // it, so a single shot can punch through a row of asteroids.
   pierce = false;
-  // Set by Ship.fire when the player has the bomb upgrade. The shell bounces
+  // Set by fireBullets when the player has the bomb upgrade. The shell bounces
   // instead of hitting, slows under BOMB_DRAG, and detonates on the next fire
   // press (game/bombShot.ts); it swaps the tier palette from blue/gold/white to
   // red/orange/white-with-a-gold-halo.
   bomb = false;
-  // Set by Ship.fire under the Warp Cannon upgrade: the shot is a flying
+  // Set by fireBullets under the Warp Cannon upgrade: the shot is a flying
   // wormhole that swallows what it hits whole (game/warpCannon.ts), painted by
   // renderWarpShotLenses / renderWarpShots rather than render() below. The
   // wake ripples it sheds are cosmetic.

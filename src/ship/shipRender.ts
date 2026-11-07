@@ -219,7 +219,7 @@ export const renderShipBody = (ctx: CanvasRenderingContext2D, ship: Ship, t: num
   renderComboHalo(ctx, ship, beatPulse);
   paintSuperLaserCharge(ctx, ship, t);
   paintShipHull(ctx, verts, invuln, beatPulse, bonusFlash, ship.laserCooldownDim);
-  paintMissilePylons(ctx, ship, beatPulse, invuln);
+  paintMissilePylons(ctx, ship, invuln);
   paintThrustFlame(ctx, ship);
   paintRetroFlares(ctx, ship);
   paintSideJets(ctx, ship);
