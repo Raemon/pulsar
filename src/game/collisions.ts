@@ -62,7 +62,8 @@ const isHitOnBeat = (game: Game, b: Bullet) => {
 };
 
 // A live shot that lands by touching its target. Bomb shells never do — they
-// bounce and detonate on the beat (bombShot.ts) — so every contact pass skips them.
+// bounce, and detonate on the next fire press (bombShot.ts) — so every contact
+// pass skips them.
 const hitsOnContact = (b: Bullet): boolean => b.life > 0 && !b.bomb;
 
 // single-hit targets (comets/canisters) share this shape; multi-hit targets bookkeep separately.

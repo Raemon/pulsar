@@ -125,9 +125,17 @@ export class Ship {
   longshotActive = false;
   sideEnginesActive = false;
   lasershotActive = false;
-  // Bomb upgrade: shots become thrown mines that bounce, pulse on the beat and
-  //   blast everything in range. See game/bombShot.ts.
+  // Bomb upgrade: fire throws a mine that bounces off what it touches; the next
+  //   fire press detonates it, blasting everything in range. See game/bombShot.ts.
   bombActive = false;
+  // Set by the fire trigger when a press should detonate the live bomb; the
+  //   game-level bomb pass (which can reach the targets) consumes it.
+  bombDetonateRequested = false;
+  // A thrown mine is waiting on fire to detonate it, so fire won't throw: the
+  //   sight dims to say so. Refreshed each tick by the fire trigger.
+  bombInPlay = false;
+  // Fire was held last tick, for the bomb's press edge (shipPhysics).
+  fireWasDown = false;
   // Laser-shot charge state. Active while the player holds fire under the
   //   lasershot upgrade; release fires a beam dealing 1 + numChargedDots damage.
   //   See game/laserShot.ts for the charge/release logic.

@@ -745,6 +745,9 @@ export const killShip = (game: Game) => {
   // A held super-laser charge doesn't survive death.
   game.ship.superLaserCharged = false;
   game.ship.superLaserChargeGlow = 0;
+  // Nor does a thrown mine: the respawned ship comes back without the bomb, so
+  //   nothing would be left to detonate it.
+  for (const b of game.bullets) if (b.bomb) b.life = 0;
   game.lives -= 1;
   // During replay we render the death but never flip to "dying"/gameover — the
   //   scrubber stays in control. We still mirror the death→respawn lifecycle so
