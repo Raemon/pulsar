@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 52;
+export const REPLAY_FORMAT_VERSION = 53;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -44,6 +44,9 @@ export const REPLAY_FORMAT_VERSION = 52;
 //   reach along the centre line, so v50 runs touch things at different times.
 // v52 brings dev's v48 and v49 rules to main, which shipped v50 and v51 without
 //   them, so main's v51 recordings would re-sim into different runs.
+// v53 makes the bomb a two-press weapon: fire throws a mine that waits (no
+//   timeout, no beat-pulse detonation) until the next fire press blows it, and
+//   no new mine launches while one is live, so a v52 bomb run re-sims differently.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

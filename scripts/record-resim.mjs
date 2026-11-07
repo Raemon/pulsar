@@ -169,7 +169,7 @@ const divs = windowStub.__replayDivergences ?? game2.replayPlayer?.divergences ?
 // Frame-by-frame fine diff: the replay world is at frame 0 after startReplay; step
 //   it and compare each frame's fine-state to the recording's. Catches the exact
 //   frame a position/bullet first drifts — long before a 60-frame checkpoint flips.
-const approx = (a, b, eps = 1e-6) => (a === undefined || b === undefined) ? a === b : Math.abs(a - b) <= eps;
+const approx = (a, b, eps = 1e-6) => a === b || (a !== undefined && b !== undefined && Math.abs(a - b) <= eps);
 const diffFields = (r, p) => {
   const out = [];
   for (const k of ["blt", "ast", "sc", "lives", "cmb"]) if (r[k] !== p[k]) out.push(`${k}:rec ${r[k]}≠rep ${p[k]}`);
