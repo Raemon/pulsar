@@ -124,11 +124,10 @@ export class Ship {
 
   bulletSpeed = 620;
   bulletLife = 0.85;
-  // prong/rapid/pierce/radar/longshot persist for the run; shield is one-shot.
+  // prong/pierce/radar/longshot persist for the run; shield is one-shot.
   // prongCount stacks: each upgrade adds two more bullets (see prongOffsets for the fan).
   prongCount = 0;
   get prongActive() { return this.prongCount > 0; }
-  rapidActive = false;
   pierceActive = false;
   shieldActive = false;
   radarActive = false;
@@ -242,13 +241,13 @@ export class Ship {
   // aim disc + radar cone + trajectory previews share one composition — single delegate.
   renderReticules(
     ctx: CanvasRenderingContext2D, beatGrid: number, w: number, h: number,
-    targets: ReadonlyArray<ReticuleTarget> = [], beatTime: number = 0, doubletime: boolean = false,
+    targets: ReadonlyArray<ReticuleTarget> = [], beatTime: number = 0,
     tutorialHighlight: boolean = false, sound: Sound | null = null, audioBeatTime: number = beatTime,
     superBoosted: boolean = false,
     hoverProbes: ReadonlyArray<ReticuleHoverProbe> = [],
     aimHint: AimHintRender | null = null,
   ) {
-    renderShipReticules(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, ctx, beatGrid, w, h, targets, beatTime, doubletime, tutorialHighlight, sound, audioBeatTime, superBoosted, hoverProbes, aimHint);
+    renderShipReticules(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, ctx, beatGrid, w, h, targets, beatTime, tutorialHighlight, sound, audioBeatTime, superBoosted, hoverProbes, aimHint);
   }
 
   // How long ago the radar last had this target in its cone, in beat-time seconds; null if it
@@ -263,11 +262,11 @@ export class Ship {
   //   `emit` true on live (fires the lock hum/hint), false on replay.
   tickReticuleLock(
     beatGrid: number, w: number, h: number,
-    targets: ReadonlyArray<ReticuleTarget>, beatTime: number, doubletime: boolean,
+    targets: ReadonlyArray<ReticuleTarget>, beatTime: number,
     superBoosted: boolean, hoverProbes: ReadonlyArray<ReticuleHoverProbe>,
     sound: Sound | null, emit: boolean,
   ) {
-    tickHoverLockState(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, beatGrid, w, h, targets, beatTime, doubletime, superBoosted, hoverProbes, sound, emit);
+    tickHoverLockState(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, beatGrid, w, h, targets, beatTime, superBoosted, hoverProbes, sound, emit);
   }
 
   // hull + thrust + retro + shield + combo halo all composite together in one

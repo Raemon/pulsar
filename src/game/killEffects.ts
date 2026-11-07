@@ -127,7 +127,7 @@ export const applyHitToCombo = (game: Game, isOnBeatHit: boolean, hitPos: Vec, b
     window.dispatchEvent(new CustomEvent("rhythm-loss-hint:dismiss"));
     // grid just halved (quarters→eighths) at the 32x sparkle threshold; resync the evaluator
     // so the freshly-uncovered odd eighths don't all close in a burst on the next frame.
-    if (crossedSparkleThreshold && !game.ship.rapidActive) rebaseBeatEval(game);
+    if (crossedSparkleThreshold) rebaseBeatEval(game);
     syncComboHud(game);
     tryUnlockPilotLog1(game);
     tryUnlockPilotLog3(game);

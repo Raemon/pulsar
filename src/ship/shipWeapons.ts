@@ -133,7 +133,6 @@ export const fireBullets = (ship: Ship, bullets: Bullet[]) => {
 // Bomb and Warp Cannon both replace the shell, so picking up one swaps out the other.
 export const applyPowerup = (ship: Ship, kind: PowerupKind) => {
   if (kind === "prong") ship.prongCount += 1;
-  else if (kind === "rapid") ship.rapidActive = true;
   else if (kind === "pierce") ship.pierceActive = true;
   else if (kind === "shield") ship.shieldActive = true;
   else if (kind === "radar") ship.radarActive = true;

@@ -295,10 +295,8 @@ const updateSideThrust = (ship: Ship, input: IInput, particles: ParticleSystem, 
   else if (!isActive && wasActive) sound.stopSideThrust();
 };
 
-// rapid powerup halves the cooldown.
 const armFireCooldown = (ship: Ship) => {
-  const RAPID_FIRE_RATE_MULTIPLIER = 0.5;
-  ship.fireCooldown = ship.rapidActive ? ship.fireRate * RAPID_FIRE_RATE_MULTIPLIER : ship.fireRate;
+  ship.fireCooldown = ship.fireRate;
 };
 
 // lasershot replaces the per-press bullet emit with hold-to-charge / release-to-fire

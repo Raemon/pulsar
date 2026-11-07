@@ -1,7 +1,6 @@
 import type { Game } from "../Game";
 import type { Bullet } from "../Bullet";
 import { Vec } from "../vec";
-import { comboGrid } from "./rhythmGate";
 import { BEAT_GRID, FAR_SHOT_BIG_BEATS, FAR_SHOT_MIN_BEATS, FAR_SHOT_POINTS } from "./rhythmConstants";
 import { syncComboHud, syncHud, flashScoreGain } from "./hud";
 import { checkBonusLife } from "./bonusLife";
@@ -71,8 +70,7 @@ const streakGapQualifies = (game: Game, grid: number, beatCenter: number): boole
 //   of orbs grows around the reticule. Called once per new-beat combo shot
 //   (same-beat prong pairs are filtered out by the caller). A shot extends the
 //   streak as long as it lands within STREAK_MAX_GAP beats of the last one; the
-//   gap no longer has to repeat a fixed interval. `grid`/`beatCenter` are the
-//   caller's, so the gap is in grid units and stays meaningful under doubletime.
+//   gap no longer has to repeat a fixed interval.
 const trackStreak = (game: Game, grid: number, beatCenter: number, hitPos: Vec) => {
   // No streak in flight (or the ring already faded away): this shot seeds one.
   if (game.streakGrid <= 0) {
@@ -115,7 +113,7 @@ const trackStreak = (game: Game, grid: number, beatCenter: number, hitPos: Vec) 
 //   the ring fade out mid-fight. Never seeds or establishes.
 export const extendStreakWindow = (game: Game) => {
   if (game.streakGrid <= 0) return;
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const beatCenter = Math.round(game.perceivedBeatTime / grid) * grid;
   if (streakGapQualifies(game, grid, beatCenter)) game.streakLastBeatCenter = beatCenter;
 };
@@ -124,12 +122,11 @@ export const extendStreakWindow = (game: Game) => {
 //   the gap between the beat centres of the fire and of the hit (both sit inside the beat
 //   window for any combo hit, so the centres are exact), capped at the beat slots the bullet's
 //   life actually reaches — a stock shot fired late in its window can still connect inside the
-//   NEXT window at 0.78–0.85s of flight, but it never had a 2-beat reticule to aim by. Counted
-//   on BEAT_GRID rather than comboGrid so Rapid's eighth-note slots don't make every shot far.
+//   NEXT window at 0.78–0.85s of flight, but it never had a 2-beat reticule to aim by.
 //   Read from firedAtBeatTime, not life: consumeBullet zeroes life before the kill handler runs.
 export const beatsAwayAtHit = (game: Game, b: Bullet): number => {
   if (b.instantHit) return 0;
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const fireCenter = Math.round(b.firedAtBeatTime / grid) * grid;
   const hitCenter = Math.round(game.perceivedBeatTime / grid) * grid;
   const beats = Math.floor((hitCenter - fireCenter) / BEAT_GRID + 1e-6);
@@ -160,7 +157,7 @@ const awardFarShot = (game: Game, hitPos: Vec, beatsAway: number) => {
 // called for every combo-incrementing on-beat hit (see applyHitToCombo). beatsAway is the
 //   shot's flight in beats (beatsAwayAtHit); 0 for strikes with no flight time.
 export const trackRhythmComboHit = (game: Game, hitPos: Vec, beatsAway = 0) => {
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const beatCenter = Math.round(game.perceivedBeatTime / grid) * grid;
   const prev = game.lastRhythmHitBeatCenter;
   const sameBeat = prev >= 0 && Math.abs(beatCenter - prev) < grid / 2;

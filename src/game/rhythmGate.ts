@@ -5,32 +5,21 @@ import { syncComboHud } from "./hud";
 import { popupBeatDebug, popupComboLost } from "./popups";
 import { resetStreak } from "./streakBurst";
 
-// Two grid tiers, measured as the period between on-beat slots:
-//   default          → quarter-notes (BEAT_GRID): the groove the player judges against.
-//   rapid powerup    → eighth-notes (BEAT_GRID/2): rapid-fire pulls each land on a beat.
-// combo ≥ 32 stays on quarter-notes: the player never hits on off-beats, so there are no
-//   extra reticules and no same-beat double-hitting at the cap. (The doubletime "and"
-//   percussion still layers in above 32 — see bassClock.ts — it's decoration, not a slot.)
-export const comboGrid = (game: Game): number => {
-  if (game.ship.rapidActive) return BEAT_GRID / 2;
-  return BEAT_GRID;
-};
-
 export const beatWindow = (_game: Game): number => {
   return BEAT_WINDOW;
 };
 
 // pure predicate — classifies fire / hit as on-beat without side effects on combo state.
 export const isInBeatWindow = (game: Game, time: number): boolean => {
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const beatIndex = Math.round(time / grid);
   const beatCenter = beatIndex * grid;
   return Math.abs(time - beatCenter) <= beatWindow(game);
 };
 
 // debug logging needs the signed offset even when the event sits outside the on-beat window.
-export const beatOffsetFor = (game: Game, time: number): number => {
-  const grid = comboGrid(game);
+export const beatOffsetFor = (_game: Game, time: number): number => {
+  const grid = BEAT_GRID;
   const beatIndex = Math.round(time / grid);
   return time - beatIndex * grid;
 };
@@ -46,7 +35,7 @@ const beatPulseEnvelope = (normalized: number): number => {
 //   matching the judged window rather than the raw audio grid.
 export const currentBeatPulse = (game: Game): number => {
   if (game.state !== "playing" && game.state !== "dying") return 0;
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const beatPhase = game.perceivedBeatTime / grid;
   const signedBeatsFromNearestBeat = beatPhase - Math.round(beatPhase);
   const windowFractionOfGrid = beatWindow(game) / grid;
@@ -60,7 +49,7 @@ export const currentBeatPulse = (game: Game): number => {
 const BEAT_FLASH_DECAY = 0.1;
 export const currentBeatFlash = (game: Game): number => {
   if (game.state !== "playing" && game.state !== "dying") return 0;
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const beatPhase = game.perceivedBeatTime / grid;
   const secondsSinceBeat = (beatPhase - Math.floor(beatPhase)) * grid;
   if (secondsSinceBeat >= BEAT_FLASH_DECAY) return 0;
@@ -98,7 +87,7 @@ export const loseCombo = (game: Game, sourcePos?: Vec, reason: "fire" | "hit" = 
   // it drops back to the 4x halo tier so the player keeps the yellow halo and music bed.
   game.beatCombo = prev >= 32 ? 4 : 0;
   // a post-loss hit must not pair with a pre-loss one for Rapid Rhythm / Twin Shot.
-  //   Set inline (no rhythmBonus.ts import) to avoid a cycle through comboGrid.
+  //   Set inline (no rhythmBonus.ts import) to avoid an import cycle.
   game.lastRhythmHitBeatCenter = -1;
   game.rhythmHitsThisBeat = 0;
   game.lastRhythmHitPos = null;
@@ -131,9 +120,7 @@ export const loseCombo = (game: Game, sourcePos?: Vec, reason: "fire" | "hit" = 
     }
     game.hasLostComboEver = true;
   }
-  // grid may have just widened (eighths→quarters from sparkle dropping); resync
-  // nextBeatToEvaluate against the wider grid so the next closure lands cleanly.
-  if (!game.ship.rapidActive) rebaseBeatEval(game);
+  rebaseBeatEval(game);
   syncComboHud(game);
   // build-to-4x diamond row mirrors live rhythm; an off-beat fire wipes both.
   //   Dispatched inline (no lifecycle.ts import) to avoid the cycle between
@@ -145,10 +132,9 @@ export const loseCombo = (game: Game, sourcePos?: Vec, reason: "fire" | "hit" = 
 
 // Off-beat fires now drop the combo immediately (registerOffBeatFire), so the
 // latch stays false and the loss branch below is a dormant backstop. This still
-// marches nextBeatToEvaluate so rebaseBeatEval keeps a valid index as the grid
-// shifts (rapid / sparkle / loss).
+// marches nextBeatToEvaluate so rebaseBeatEval keeps a valid index.
 export const evaluateClosedBeats = (game: Game) => {
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const window = beatWindow(game);
   while (game.nextBeatToEvaluate * grid + window <= game.perceivedBeatTime) {
     if (game.firedOffBeatSinceLastBeat && game.beatCombo !== 0) loseCombo(game, game.ship.pos);
@@ -157,9 +143,7 @@ export const evaluateClosedBeats = (game: Game) => {
   }
 };
 
-// call after any state change that flips comboGrid (rapid powerup, combo crossing 16, combo
-// loss) so the evaluator index keeps marching forward against the new grid instead of either
-// stalling (grid grew) or firing a burst of phantom closures (grid shrank).
+// resyncs the evaluator index to now, so it neither stalls nor fires a burst of phantom closures.
 export const rebaseBeatEval = (game: Game) => {
-  game.nextBeatToEvaluate = Math.max(0, Math.floor((game.perceivedBeatTime - beatWindow(game)) / comboGrid(game)) + 1);
+  game.nextBeatToEvaluate = Math.max(0, Math.floor((game.perceivedBeatTime - beatWindow(game)) / BEAT_GRID) + 1);
 };

@@ -137,7 +137,7 @@ export const OBJECTS: GameObject[] = [
   {
     id: "bullet-prong",
     label: "prong bullets",
-    about: "rapid+prong powerup spread",
+    about: "prong powerup spread",
     actions: [
       // No unique sound — it's still fireBeat — but the visual difference
       // earns its own row so the page covers the prong variant explicitly.

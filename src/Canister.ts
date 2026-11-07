@@ -5,14 +5,13 @@ import { SIDE_THRUST_ALWAYS_ON } from "./ship/shipPhysics";
 
 // Powerup kinds. The canister doesn't reveal which one it holds — the
 // player finds out on pickup.
-export type PowerupKind = "prong" | "rapid" | "pierce" | "shield" | "slow" | "radar" | "longshot" | "sideEngines" | "lasershot" | "bomb" | "warpCannon";
+export type PowerupKind = "prong" | "pierce" | "shield" | "slow" | "radar" | "longshot" | "sideEngines" | "lasershot" | "bomb" | "warpCannon";
 
 // Hue is kept for downstream effects (pickup burst tinting) but the canister
 // itself renders pure white so the player reads it as "incoming pod" first
 // and only learns its kind on pickup.
 export const POWERUP_HUE: Record<PowerupKind, number> = {
   prong: 180,
-  rapid: 300,
   pierce: 60,
   shield: 200,
   slow: 130,

@@ -13,7 +13,6 @@ import {
   spawnBeatDebugPopup,
   evaluateClosedBeats,
   currentBeatPulse,
-  comboGrid,
   loseCombo,
 } from "./rhythmGate";
 import { BASS_KIND_SOUND, BASS_SPLIT_PITCH_RATIO, tickBassBeats, tickAuxBeats } from "./bassClock";
@@ -954,10 +953,9 @@ const updatePlaying = (game: Game, dt: number) => {
 //   (earlier in the frame) reads the PRIOR frame's lock state — exactly as it did when render owned
 //   this. emit=false on replay so it doesn't re-fire the lock hum over the recorded audio stream.
 const tickHoverLock = (game: Game) => {
-  const doubletime = comboGrid(game) < BEAT_GRID;
   const superBoosted = game.beatCombo >= 12;
   game.ship.tickReticuleLock(
-    BEAT_GRID, game.w, game.h, targetsForReticule(game), game.perceivedBeatTime, doubletime,
+    BEAT_GRID, game.w, game.h, targetsForReticule(game), game.perceivedBeatTime,
     superBoosted, game.gems, game.sound, !game.replayPlayer,
   );
 };
@@ -1114,7 +1112,7 @@ export const registerOnBeatFire = (game: Game) => {
 // off the beat drops the streak the instant the shot leaves the barrel (sound +
 // "RHYTHM LOST" text + halo music cut on the next syncHaloAmbient). Clear the
 // deferred latch so evaluateClosedBeats doesn't re-penalize at beat closure —
-// it would otherwise drop a doubletime streak from its 4x floor to 0.
+// it would otherwise drop a streak from its 4x floor to 0.
 export const registerOffBeatFire = (game: Game) => {
   game.firedOffBeatSinceLastBeat = false;
   loseCombo(game, game.ship.pos, "fire");
@@ -1168,7 +1166,7 @@ const compactInPlace = <T>(arr: T[], alive: (item: T) => boolean): void => {
 // triggers once per slot, and we count up to whatever the bullet's age has reached.
 const FLASH_DURATION_SEC = 0.12;
 const tickBulletReticuleCrossings = (game: Game) => {
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   if (grid <= 0) return;
   for (const b of game.bullets) {
     // a bomb shows the beat with its own blast-ring pulse (bombShot.ts).

@@ -62,7 +62,6 @@ Roughly one in three waves a glowing canister drifts in somewhere mid-level (8�
 | Letter | Powerup | Effect |
 | --- | --- | --- |
 | `T` | Trident | Fires a 3-bullet spread until you die |
-| `R` | Rapid Pulse | Fires every 8th note (2× cadence) until you die, and 8th beats count for combo while it's active |
 | `P` | Piercing Plasma | Bullets punch through asteroids until you die |
 | `S` | Shield Bloom | Absorbs one collision, then pops |
 | `Z` | Slow Tide | The whole music side of the clock (beat, bassteroids, asteroid motion) crawls at ~half speed for 8s while you and your bullets keep full speed — it's bullet-time, not pause |

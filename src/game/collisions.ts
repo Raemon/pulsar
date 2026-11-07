@@ -15,7 +15,7 @@ import {
 } from "../Gem";
 import { FuelOrb, spawnFuelOrbAt } from "../FuelOrb";
 import { FUEL_MODE_ENABLED, FUEL_ORB_RESTORE } from "./fuel";
-import { isInBeatWindow, beatOffsetFor, logBeatEvent, spawnBeatDebugPopup, rebaseBeatEval } from "./rhythmGate";
+import { isInBeatWindow, beatOffsetFor, logBeatEvent, spawnBeatDebugPopup } from "./rhythmGate";
 import { SLOW_MO_DURATION } from "./slowMo";
 import { syncHud } from "./hud";
 import { emitShieldPop, emitCanisterPickup, emitCanisterPop, emitGemPickup, emitFuelOrbPickup, emitBounceSparks, emitAlienBulletPop } from "./particleBursts";
@@ -469,11 +469,7 @@ const collectCanister = (game: Game, c: Canister) => {
   if (c.kind === "slow") {
     game.slowMoTimer = SLOW_MO_DURATION;
   } else {
-    // rapid flips grid quarters→eighths; rebase against the new grid so closures keep
-    // marching forward. (skip if combo is already ≥ 16 — grid was already on eighths.)
-    const willChangeGrid = c.kind === "rapid" && !game.ship.rapidActive && game.beatCombo < 16;
     game.ship.applyPowerup(c.kind);
-    if (willChangeGrid) rebaseBeatEval(game);
   }
   emitCanisterPickup(game.particles, c);
 };

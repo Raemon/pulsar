@@ -139,7 +139,7 @@ export class Game implements HudElements {
   //   at a steady 4-beat/rev rate. Orbit phase derives from beatTime, fade + window from
   //   perceivedBeatTime — no per-frame RNG or stored phase, so replays reproduce it.
   streakInterval = 0; // orbit rate in grid units (beats per revolution); 0 = no streak
-  streakGrid = 0; // comboGrid value the streak runs on; a grid change breaks it
+  streakGrid = 0; // beat grid the streak runs on; 0 = no streak
   streakShots = 0; // orbs currently orbiting (the "N") — 0 while a seed awaits its 2nd shot
   streakEstablished = false; // has a 2nd in-window shot started counting toward the metric?
   streakLastBeatCenter = -1; // beat-center of last streak shot or extending hit; gap + fade
