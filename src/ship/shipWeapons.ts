@@ -89,12 +89,16 @@ export const shotPositionAt = (ship: Ship, headingOffset: number, t: number): Ve
   return add(add(muzzleOf(ship, headingOffset), mul(dir, shotTravel(ship, t))), inherited);
 };
 
-// A bomb pulses this many beats, then detonates whether or not anything is near.
-export const BOMB_PULSES = 4;
-// Bomb sights: one per pulse would stack — by the third beat a settling mine has
+// Bomb sights: one per beat would stack — by the third beat a settling mine has
 // barely moved (196 → 268 → 295px out), so the second sight already marks where
 // it rests, well inside its own blast ring.
 export const BOMB_SIGHT_SLOTS = 2;
+
+// A thrown mine still waiting for its detonating press. While one is live the
+// fire button is its detonator, not a launcher (shipPhysics.updateFireTrigger),
+// so only one volley is ever in play.
+export const isLiveBomb = (b: Bullet): boolean => b.bomb && b.life > 0;
+export const hasLiveBomb = (bullets: Bullet[]): boolean => bullets.some(isLiveBomb);
 
 // (Re)sets a stock shot's flight time. The farthest reticule sits at
 // beatSlotCount(life) beats out; anything past that can't land on a beat, so the
@@ -108,12 +112,10 @@ export const setShotLife = (bullet: Bullet, life: number) => {
 const launchBullet = (ship: Ship, headingOffset: number): Bullet => {
   const bullet = new Bullet(muzzleOf(ship, headingOffset), shotLaunchVel(ship, headingOffset), 0);
   if (ship.bombActive) {
-    // A bomb's life is counted in beat pulses (game/bombShot.ts), which detonate
-    // it. Its timer is only a backstop: a pulse always comes first, even fired
-    // just past a beat and armed a full beat later.
+    // A bomb never times out: it rests where drag leaves it until the player's
+    // next fire press detonates it (game/bombShot.ts).
     bullet.bomb = true;
-    bullet.bombPulsesLeft = BOMB_PULSES;
-    bullet.life = bullet.maxLife = (BOMB_PULSES + 2) * BEAT_GRID;
+    bullet.life = bullet.maxLife = Infinity;
     return bullet;
   }
   bullet.pierce = ship.pierceActive;

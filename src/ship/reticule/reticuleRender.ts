@@ -281,7 +281,7 @@ const reticuleSlotCount = (ship: Ship, beatGrid: number, superBoosted: boolean):
   ship.bombActive ? BOMB_SIGHT_SLOTS : Math.max(1, Math.floor(shotLife(ship, superBoosted) / beatGrid));
 
 // prong fans the aim into one angle per prongOffsets entry; doubletime adds a half-beat preview at
-// half distance (not for a bomb, which only pulses on whole beats); integer-k reticules
+// half distance (not for a bomb, whose ring only flashes on whole beats); integer-k reticules
 // mark every beat-slot the bullet actually crosses
 // (t = beatGrid*k < life), so the count adapts to longshot/pierce/superBoosted range and to
 // the rhythm-gate tempo (eighth-grid at combo ≥ 12 or under rapid). slotPositionIndices[k-1]
@@ -344,7 +344,7 @@ const onBeatCollisionRadius = (superBoosted: boolean): number =>
 
 // A bomb's sight also previews the blast: a dashed ring at BOMB_BLAST_RADIUS around
 // the first-beat slot, the same ring the shell itself will carry — anything inside
-// it when the mine first pulses is caught. Only the first: the later slots sit
+// it is caught by a detonation on the next beat. Only the first: the later slots sit
 // close enough that their rings would overlap into one blob, and by then the
 // thrown mine is showing its own live ring.
 const BOMB_PREVIEW_DASH = [6, 6];
