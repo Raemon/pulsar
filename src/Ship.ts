@@ -9,6 +9,7 @@ import { BEAT_GRID } from "./game/rhythmConstants";
 import { haloVertices, haloReach, hitDistanceToward, SHIP_BODY_RADIUS, SHIP_HALO_OFFSET } from "./ship/shipHitbox";
 import { tickShip } from "./ship/shipPhysics";
 import { fireBullets, applyPowerup } from "./ship/shipWeapons";
+import { MAGAZINE_SIZE } from "./ship/shipMagazine";
 import { setComboFromValue } from "./ship/shipComboHalo";
 import { renderShipBody } from "./ship/shipRender";
 import { renderShipReticules, tickHoverLockState, ReticuleHoverProbe } from "./ship/reticule/reticuleRender";
@@ -112,6 +113,16 @@ export class Ship {
   fireCooldown = 0;
   // one shot per beat by default; reticule previews where it lands at the next beat boundary.
   fireRate = BEAT_GRID;
+  // Two-shot magazine, drawn as a missile on each pylon. See ship/shipMagazine.ts.
+  shotsLoaded = MAGAZINE_SIZE;
+  // Quarter-note beat index the magazine refills on, armed by each shot.
+  magazineReloadBeat = 0;
+  // Cosmetic: 0→1 count-in fill of the empty pylons, stepping once per beat;
+  //   a 0→1 pop on the refill that drives the missiles' pulse; and a per-pylon
+  //   launch flare as each missile is spent.
+  magazineReloadFill = 1;
+  magazineRefillFlash = 0;
+  missileSpentFlash = new Array<number>(MAGAZINE_SIZE).fill(0);
   bulletSpeed = 620;
   bulletLife = 0.85;
   // prong/rapid/pierce/radar/longshot persist for the run; shield is one-shot.
@@ -219,11 +230,12 @@ export class Ship {
   tickComboHalo(_dt: number, _beatPulse: number) {}
 
   // orchestrates a single frame of player control, audio, and motion in one delegated call.
+  // beatTime is the perceived (latency-shifted) beat clock the on-beat gate judges against.
   update(
     dt: number, input: IInput, particles: ParticleSystem, bullets: Bullet[],
-    w: number, h: number, t: number, sound: Sound,
+    w: number, h: number, t: number, sound: Sound, beatTime: number,
   ) {
-    tickShip(this, dt, input, particles, bullets, w, h, t, sound);
+    tickShip(this, dt, input, particles, bullets, w, h, t, sound, beatTime);
   }
 
   // prong spreads + on-beat tagging happens in Game; the ship just emits the right bullet count.

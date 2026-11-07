@@ -865,7 +865,7 @@ const updatePlaying = (game: Game, dt: number) => {
   // energy thread — must run before ship.update so the charge is set before the
   // fire trigger reads it this frame.
   tickTorusCharge(game, dt);
-  game.ship.update(dt, game.input, game.particles, game.bullets, game.w, game.h, game.time, game.sound);
+  game.ship.update(dt, game.input, game.particles, game.bullets, game.w, game.h, game.time, game.sound, game.perceivedBeatTime);
   // A ship fold jumps the camera a full screen; keep entrance images pinned.
   if (game.ship.lastWrapDX !== 0 || game.ship.lastWrapDY !== 0) {
     shiftEntranceFrames(game, game.ship.lastWrapDX, game.ship.lastWrapDY);

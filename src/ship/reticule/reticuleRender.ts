@@ -703,8 +703,9 @@ export const renderShipReticules = (
   const hitboxPulse = cosineEnvelope(beatTime, RETICULE_HITBOX_PULSE_PERIOD_SEC, RETICULE_HITBOX_PULSE_MIN, RETICULE_HITBOX_PULSE_MAX);
   const radarPulse = cosineEnvelope(beatTime, RETICULE_RADAR_PULSE_PERIOD_SEC, RETICULE_RADAR_PULSE_MIN, RETICULE_RADAR_PULSE_MAX);
   const beatPulseBoost = computeBeatPulseBoost(beatTime, beatGrid);
-  // A live mine dims the sight too: the next press detonates it, not a throw.
-  const cooldownDim = ship.fireCooldown > 0 || ship.bombInPlay ? RETICULE_COOLDOWN_DIM : 1;
+  // A live mine dims the sight too: the next press detonates it, not a throw. So
+  //   does an empty magazine, which leaves the press nothing to fire.
+  const cooldownDim = ship.fireCooldown > 0 || ship.bombInPlay || ship.shotsLoaded === 0 ? RETICULE_COOLDOWN_DIM : 1;
   const baseHitAlpha = hitboxPulse * cooldownDim * beatPulseBoost;
   paintConeBackground(ctx, ship, apex, beatTime, beatGrid);
   paintRangeArcs(ctx, ship, apex, beatTime, radarPulse);
