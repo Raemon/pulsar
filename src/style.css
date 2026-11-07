@@ -247,6 +247,7 @@ html:has(#sound-root), body:has(> #sound-root) {
 .powerup-slot[data-kind="longshot"]{ color: hsl(270, 90%, 75%); }
 .powerup-slot[data-kind="sideEngines"]{ color: hsl(25, 95%, 70%); }
 .powerup-slot[data-kind="bomb"]    { color: hsl(0, 95%, 68%); }
+.powerup-slot[data-kind="warpCannon"] { color: hsl(250, 90%, 76%); }
 
 .powerup-slot.active {
   display: flex;

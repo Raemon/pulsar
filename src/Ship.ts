@@ -128,6 +128,10 @@ export class Ship {
   // Bomb upgrade: fire throws a mine that bounces off what it touches; the next
   //   fire press detonates it, blasting everything in range. See game/bombShot.ts.
   bombActive = false;
+  // Warp Cannon upgrade: shots become small wormholes that swallow what they
+  //   hit whole. See game/warpCannon.ts. Swaps with the bomb — one shell type
+  //   (a mine already thrown still detonates on the next press).
+  warpCannonActive = false;
   // Set by the fire trigger when a press should detonate the live bomb; the
   //   game-level bomb pass (which can reach the targets) consumes it.
   bombDetonateRequested = false;

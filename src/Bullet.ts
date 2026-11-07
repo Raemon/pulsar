@@ -1,5 +1,6 @@
 import { Vec, wrapMut, TAU } from "./vec";
 import { drawGlow } from "./glow";
+import { tickWarpRipples, type WarpRipple } from "./game/warpCannon";
 
 // Damage dealt by a non-rhythm bullet — enough to one-shot a small asteroid
 // but takes the full size table (4/2/1) of hits to chew through a large.
@@ -98,6 +99,13 @@ export class Bullet {
   // press (game/bombShot.ts); it swaps the tier palette from blue/gold/white to
   // red/orange/white-with-a-gold-halo.
   bomb = false;
+  // Set by Ship.fire under the Warp Cannon upgrade: the shot is a flying
+  // wormhole that swallows what it hits whole (game/warpCannon.ts), painted by
+  // renderWarpShotLenses / renderWarpShots rather than render() below. The
+  // wake ripples it sheds are cosmetic.
+  warp = false;
+  warpRipples: WarpRipple[] = [];
+  warpRippleClock = 0;
   // Beat index (perceivedBeatTime / BEAT_GRID) of the bomb ring's next flash;
   // -1 until bombShot seeds it from firedAtBeatTime.
   bombNextPulseBeat = -1;
@@ -222,6 +230,15 @@ export class Bullet {
       this.bombPulseAge += dt;
     }
     wrapMut(this.pos, w, h);
+    if (this.warp) tickWarpRipples(this, dt);
+  }
+
+  // Visibility across the post-reticule tail: 1 until fadeStartLife, then down
+  // to 0 at expiry.
+  rangeAlpha(): number {
+    return this.fadeStartLife > 0 && this.life < this.fadeStartLife
+      ? Math.max(0, this.life / this.fadeStartLife)
+      : 1;
   }
 
   // Bomb tier palette: red at tier 1, orange at tier 2. Tier 3 paints its head
@@ -261,11 +278,10 @@ export class Bullet {
   }
 
   render(ctx: CanvasRenderingContext2D) {
+    if (this.warp) return;
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    const rangeAlpha = this.fadeStartLife > 0 && this.life < this.fadeStartLife
-      ? Math.max(0, this.life / this.fadeStartLife)
-      : 1;
+    const rangeAlpha = this.rangeAlpha();
     // Super-boosted (combo ≥ 12): white — saturation 0 makes hue irrelevant.
     // Boosted on-beat: gold (hue 45) to match the tier-2 combo halo.
     // On-beat: deep saturated blue (hue 220) — sells "weightier" rhythm shot.

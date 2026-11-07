@@ -8,7 +8,8 @@ import { renderBassLightnings } from "./bassLightning";
 import { renderDriftBursts } from "./driftBurst";
 import { renderStreakOrbs, streakWindowClosed } from "./streakBurst";
 import { primaryReticulePosition } from "../ship/reticule/reticuleRender";
-import { renderWormholes } from "./wormhole";
+import { renderWormholes, type LensBackdrop } from "./wormhole";
+import { renderSwallows, renderWarpShots, renderWarpShotLenses } from "./warpCannon";
 import { computeConeFrame, toroidalDelta } from "../ship/reticule/coneGeometry";
 import { pickCenterMostTargetForFocus, ReticuleTarget, setReticuleWrapAnchor } from "../ship/reticule/trajectoryPreview";
 import { renderShipTrajectoryPreview } from "../ship/shipTrajectoryPreview";
@@ -123,13 +124,17 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   // Departure portals sit behind the comet/alien bodies so a warping-out body
   // dives into the visible mouth and shrinks down the throat in front of it.
   // They lens the starfield, so they get the same scroll + clock it was
-  // painted with this frame.
-  renderWormholes(ctx, game.wormholes, {
+  // painted with this frame. A Warp Cannon shot's lens goes down with them;
+  // bodies a shot swallowed fall in front of their portals the same way.
+  const lensBackdrop: LensBackdrop = {
     starfield: game.starfield,
     timeMs: game.time,
     scrollX: game.camScrollX,
     scrollY: game.camScrollY,
-  });
+  };
+  renderWormholes(ctx, game.wormholes, lensBackdrop);
+  renderWarpShotLenses(ctx, game.bullets, lensBackdrop, game.time);
+  renderSwallows(ctx, game.swallows, game.time);
   for (const c of game.comets) if (!c.entering) c.render(ctx);
   for (const s of game.shards) s.render(ctx);
   // bassteroids wear the ship's 4+/12+ combo halo — share the ship's eased
@@ -153,6 +158,7 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   for (const ab of game.alienBullets) ab.render(ctx);
   renderBossBeams(ctx, game.bossBeams, game.w, game.h);
   for (const b of game.bullets) b.render(ctx);
+  renderWarpShots(ctx, game.bullets, game.time);
   renderLasers(ctx, game.lasers);
   // every wave body brightens on the beat then tapers over ~100ms (paints over the sprites above).
   const beatFlash = currentBeatFlash(game);

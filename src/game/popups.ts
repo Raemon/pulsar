@@ -54,6 +54,7 @@ const POWERUP_LABEL: Record<PowerupKind, string> = {
   sideEngines: "SIDE ENGINES",
   lasershot: "LASER SHOT",
   bomb: "BOMB",
+  warpCannon: "WARP CANNON",
 };
 
 // anchors the multiplier feedback at the spot the player actually struck, not a corner pulse.

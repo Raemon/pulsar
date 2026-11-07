@@ -33,7 +33,9 @@ import {
   onAlienKilled,
   onAlienCracked,
   onCometKilled,
+  onAsteroidSwallowed,
 } from "./killEffects";
+import { canSwallow } from "./warpCannon";
 import { killShip } from "./lifecycle";
 import { shipTouches, type ContactTarget } from "../ship/shipHitbox";
 
@@ -185,8 +187,16 @@ const hitAsteroidWithBullets = (game: Game, a: Asteroid): Asteroid[] | null => {
       deflectBulletOff(game, b, a, dmg, driftTier > 0);
       return null;
     }
-    consumeBullet(b);
     logBulletHit(game, "HIT asteroid", b);
+    // A Warp Cannon shot that gets through the armour takes the whole body,
+    // whatever its HP. The swallow reads the shot's open mouth, so it goes
+    // before the hit consumes the shot.
+    if (b.warp && canSwallow(a)) {
+      onAsteroidSwallowed(game, a, b, onBeat);
+      consumeBullet(b);
+      return [];
+    }
+    consumeBullet(b);
     const { killed } = a.applyDamage(dmg, innerHit, b.pos);
     game.shake = Math.min(game.shake + (killed ? 0.4 : 0.2), 1.2);
     if (!killed) {
@@ -285,9 +295,15 @@ const tryKillAlienWithBullets = (game: Game, a: Alien): boolean => {
   for (const b of game.bullets) {
     if (!hitsOnContact(b)) continue;
     if (!a.collidesWith(b.pos, b.hitRadius())) continue;
-    consumeBullet(b);
     const onBeat = isHitOnBeat(game, b);
     logBulletHit(game, "HIT alien", b);
+    // Swallowed whole — before the hit consumes the shot (see the rock pass).
+    if (b.warp) {
+      onAlienKilled(game, a, b, onBeat, true);
+      consumeBullet(b);
+      return true;
+    }
+    consumeBullet(b);
     const { killed } = a.applyDamage();
     if (!killed) {
       a.applyKnockback(b.vel.x, b.vel.y, 1);
@@ -386,10 +402,12 @@ export const handleCometHits = (game: Game) => {
 const tryKillCometWithBullets = (game: Game, c: Comet): boolean => {
   const b = findFirstHittingBullet(game.bullets, c);
   if (!b) return false;
-  consumeBullet(b);
   const onBeat = isHitOnBeat(game, b);
   logBulletHit(game, "HIT comet", b);
-  onCometKilled(game, c, b, onBeat);
+  // A swallow reads the shot's open mouth, so the kill goes before the hit
+  // consumes the shot (see the rock pass).
+  onCometKilled(game, c, b, onBeat, b.warp);
+  consumeBullet(b);
   return true;
 };
 

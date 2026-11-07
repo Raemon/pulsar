@@ -2,7 +2,7 @@ import type { Game } from "../Game";
 import { Asteroid, isBurstGem, isGlassPrison, isMetalHull, isPhasedKind } from "../Asteroid";
 import { Alien } from "../Alien";
 import { AlienBullet } from "../AlienBullet";
-import { Comet } from "../Comet";
+import { Comet, COMET_HALO_REACH } from "../Comet";
 import { Bullet } from "../Bullet";
 import { shotRayDir } from "../ship/shipWeapons";
 import { Vec, nearestImageOf } from "../vec";
@@ -32,6 +32,7 @@ import { snapshotAsteroidKill, snapshotAlienKill, snapshotCometKill } from "./ki
 import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet, markVeteranPilot } from "./waveDirector";
 import { BASS_KIND_SOUND } from "./bassClock";
 import { maybeSpawnSkipPortal } from "./waveSkip";
+import { swallowIntoWarp, swallowOpenFrom } from "./warpCannon";
 import type { KillBucket } from "./killBuckets";
 
 // Last-gasp plasma bolt fired by an eye-core in the same frame it dies —
@@ -223,6 +224,32 @@ const restartChildBassDrones = (game: Game, children: Asteroid[]) => {
   }
 };
 
+// A dead rock's drone voices go quiet with it, however it died.
+const stopAsteroidDrones = (game: Game, a: Asteroid) => {
+  if (a.isBass()) game.sound.stopBassteroidDrone(a);
+  if (isPhasedKind(a.kind)) game.sound.stopWarbleDrone(a);
+};
+
+// Parade snapshot + kill tally for a dead rock, however it died.
+const recordAsteroidKill = (game: Game, a: Asteroid, isOnBeatHit: boolean, scoreEarned: number, comboAtKill: number) => {
+  // parade replays the bassteroid's *beat* voice (kick/pluck/boom/snap) rather than the
+  //   death-only bassEcho, so the trophy row plays "the sound this rock made", not how it died.
+  const paradeSound = a.isBass()
+    ? BASS_KIND_SOUND[a.kind as "bassA" | "bassB" | "bassC" | "bassD"]
+    : hitSoundFor(a);
+  const snap = snapshotAsteroidKill(a, paradeSound, scoreEarned);
+  if (snap) {
+    // only medium/small bass have drones (large bass relies on its split children), so
+    //   the parade only revives the drone bed for snapshots that had one in play.
+    if (a.isBass() && (a.size === "medium" || a.size === "small")) {
+      snap.bassDrone = { kind: a.kind as "bassA" | "bassB" | "bassC" | "bassD", size: a.size };
+    }
+    if (isOnBeatHit && comboAtKill >= 1) snap.rhythmHit = { combo: comboAtKill };
+    game.killedSnapshots.push(snap);
+  }
+  bumpKill(game, asteroidBucket(a));
+};
+
 // audio-free core lets bullet vs ram paths stage their own kill-sound order independently.
 //   scoreEarned is captured into the snapshot so the parade can flash "+N" beneath each sprite.
 //   impactPos is the bullet position at the moment of the kill (or undefined for ram kills);
@@ -259,25 +286,8 @@ const finishAsteroidKillCore = (
   } else {
     emitExplosion(game.particles, game.shards, a, isOnBeatHit);
   }
-  if (a.isBass()) game.sound.stopBassteroidDrone(a);
-  if (isPhasedKind(a.kind)) game.sound.stopWarbleDrone(a);
-  const asteroidHit = hitSoundFor(a);
-  // parade replays the bassteroid's *beat* voice (kick/pluck/boom/snap) rather than the
-  //   death-only bassEcho, so the trophy row plays "the sound this rock made", not how it died.
-  const paradeSound = a.isBass()
-    ? BASS_KIND_SOUND[a.kind as "bassA" | "bassB" | "bassC" | "bassD"]
-    : asteroidHit;
-  const snap = snapshotAsteroidKill(a, paradeSound, scoreEarned);
-  if (snap) {
-    // only medium/small bass have drones (large bass relies on its split children), so
-    //   the parade only revives the drone bed for snapshots that had one in play.
-    if (a.isBass() && (a.size === "medium" || a.size === "small")) {
-      snap.bassDrone = { kind: a.kind as "bassA" | "bassB" | "bassC" | "bassD", size: a.size };
-    }
-    if (isOnBeatHit && comboAtKill >= 1) snap.rhythmHit = { combo: comboAtKill };
-    game.killedSnapshots.push(snap);
-  }
-  bumpKill(game, asteroidBucket(a));
+  stopAsteroidDrones(game, a);
+  recordAsteroidKill(game, a, isOnBeatHit, scoreEarned, comboAtKill);
   if (a.kind === "asteroidWithGem") {
     // Eject the embedded gem at the dead rock's position; the fragment recipe
     // (handled inside split() below) takes care of the rubble cloud flying in
@@ -365,6 +375,27 @@ export const onAsteroidKilledByRam = (game: Game, a: Asteroid, shipVel: Vec): As
   return finishAsteroidKillCore(game, a, shipVel, false, 0, 0);
 };
 
+// A Warp Cannon shot swallows the rock whole, whatever its HP: it scores as a
+// kill — combo, rhythm multiply, drift bonus — on the rock plus every fragment
+// it would have broken into (wholeScore), and none of a break-up's aftermath
+// happens: no explosion, no shards, no children, no gems or captives freed.
+// The rock leaves play now; its fall into the portal is cosmetic.
+export const onAsteroidSwallowed = (game: Game, a: Asteroid, b: Bullet, isOnBeatHit: boolean) => {
+  applyHitToCombo(game, isOnBeatHit, b.pos, beatsAwayAtHit(game, b));
+  const scoreEarned = awardScoreForKill(game, b.pos, a.wholeScore(), isOnBeatHit, b.driftTierAtHit());
+  game.popups.push(popupScore(b.pos, scoreEarned));
+  const comboAtKill = isOnBeatHit ? game.beatCombo : 0;
+  if (isOnBeatHit) triggerBassLightning(game, a.pos, a);
+  game.shake = Math.min(game.shake + 0.3, 1.2);
+  stopAsteroidDrones(game, a);
+  // Drops a torus fragment out of its ring's live set (tickTorusGroup), and
+  // stops it drawing its share of the ring's thread as it falls.
+  a.alive = false;
+  a.torusGroup = null;
+  recordAsteroidKill(game, a, isOnBeatHit, scoreEarned, comboAtKill);
+  swallowIntoWarp(game, a, b, a.radius * 1.6, (g, t) => a.render(g, t));
+};
+
 // bassteroids take multiple hits to kill; chip points keep the player rewarded for
 // every rhythm-good hit along the way, not just the kill shot.
 const bassChipScore = (a: Asteroid): number => Math.max(1, Math.round(a.scoreValue() / 4));
@@ -416,18 +447,27 @@ export const onAsteroidCrackedByRam = (game: Game, a: Asteroid) => {
 };
 
 // no split path here — alien deaths fall into the "single body, fixed sound" pattern.
-export const onAlienKilled = (game: Game, al: Alien, b: Bullet, isOnBeatHit: boolean) => {
+// `swallowed`: a Warp Cannon shot took it whole, so it falls into the portal
+// instead of exploding.
+export const onAlienKilled = (game: Game, al: Alien, b: Bullet, isOnBeatHit: boolean, swallowed = false) => {
   applyHitToCombo(game, isOnBeatHit, b.pos, beatsAwayAtHit(game, b));
   const scoreEarned = awardScoreForKill(game, b.pos, al.scoreValue, isOnBeatHit, b.driftTierAtHit());
   const comboAtKill = isOnBeatHit ? game.beatCombo : 0;
   if (isOnBeatHit) triggerBassLightning(game, al.pos);
-  game.shake = Math.min(game.shake + 0.5, 1.4);
-  game.sound.play("alienExplode", 1, al.pos);
   game.sound.stopAlienDrone(al);
-  emitAlienExplosion(game.particles, al);
   // The kill tears open a lingering wave-skip portal — fly into it to end the
-  // wave and jump ahead. See game/waveSkip.ts.
-  maybeSpawnSkipPortal(game, al);
+  // wave and jump ahead. See game/waveSkip.ts. A swallowed alien falls into
+  // that same portal, torn where the shot struck.
+  if (swallowed) {
+    game.shake = Math.min(game.shake + 0.3, 1.2);
+    const skip = maybeSpawnSkipPortal(game, al, b.pos, swallowOpenFrom(b, al.radius));
+    swallowIntoWarp(game, al, b, al.radius * 2.2, (g, t) => al.render(g, t), skip);
+  } else {
+    game.shake = Math.min(game.shake + 0.5, 1.4);
+    game.sound.play("alienExplode", 1, al.pos);
+    emitAlienExplosion(game.particles, al);
+    maybeSpawnSkipPortal(game, al);
+  }
   const snap = snapshotAlienKill(al, "alienExplode", scoreEarned);
   if (snap) {
     if (isOnBeatHit && comboAtKill >= 1) snap.rhythmHit = { combo: comboAtKill };
@@ -448,7 +488,8 @@ export const onAlienCracked = (game: Game, isOnBeatHit: boolean, pos: Vec) => {
 // 1000 × beatCombo, so the comet rewards rhythm hard (a 6× halo lands 6000+).
 // Off-rhythm hits also get a sadder explosion variant so the audio tells the
 // player they wasted the celestial visitor.
-export const onCometKilled = (game: Game, c: Comet, b: Bullet, isOnBeatHit: boolean) => {
+// `swallowed`: a Warp Cannon shot took it whole — same payout, no burst.
+export const onCometKilled = (game: Game, c: Comet, b: Bullet, isOnBeatHit: boolean, swallowed = false) => {
   applyHitToCombo(game, isOnBeatHit, b.pos, beatsAwayAtHit(game, b));
   // Meteors are the cheaper flock: an on-beat hit pays 500 × combo vs the
   // comet's 1000 × combo, but there are many of them. Off-beat pays the same
@@ -465,14 +506,22 @@ export const onCometKilled = (game: Game, c: Comet, b: Bullet, isOnBeatHit: bool
     if (game.beatCombo >= 2) game.popups.push(popupCombo(b.pos, game.beatCombo));
     triggerBassLightning(game, c.pos);
   }
-  game.shake = Math.min(game.shake + 0.6, 1.6);
   const deathSound = isOnBeatHit ? "cometDestroyed" : "cometDestroyedSad";
-  // No pos: these are big centered "event" sounds — the live graph always
-  // played them dead-center at full volume, so the baked buffer must too (a
-  // pos would pan + distance-attenuate them via playBaked's spatial splice).
-  game.sound.play(deathSound, 1);
   game.sound.stopCometShimmer(c);
-  emitCometExplosion(game.particles, c);
+  if (swallowed) {
+    game.shake = Math.min(game.shake + 0.3, 1.2);
+    // Only the head falls in: its tail is drawn in world space along where it
+    // has been, which the lens can't carry, so it's dropped.
+    c.trail.length = 0;
+    swallowIntoWarp(game, c, b, COMET_HALO_REACH * c.scale, (g) => c.render(g));
+  } else {
+    game.shake = Math.min(game.shake + 0.6, 1.6);
+    // No pos: these are big centered "event" sounds — the live graph always
+    // played them dead-center at full volume, so the baked buffer must too (a
+    // pos would pan + distance-attenuate them via playBaked's spatial splice).
+    game.sound.play(deathSound, 1);
+    emitCometExplosion(game.particles, c);
+  }
   const snap = snapshotCometKill(c, deathSound, scoreEarned);
   if (snap) {
     if (isOnBeatHit && game.beatCombo >= 1) snap.rhythmHit = { combo: game.beatCombo };

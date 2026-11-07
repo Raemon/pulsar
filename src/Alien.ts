@@ -4,7 +4,7 @@ import { AlienBullet } from "./AlienBullet";
 import { Trail } from "./Trail";
 import { rng, cosmeticRng } from "./game/rng";
 import { ENTITY_CONFIG } from "./game/entityConfig";
-import { WARP_OUT_DURATION, warpAnchorOffset, renderThroughPortal, type Wormhole } from "./game/wormhole";
+import { planDive, diveAt, renderThroughPortal, type Dive, type Wormhole } from "./game/wormhole";
 
 // Three sizes, each with its own role in the rhythm:
 //   "big"    : 4 HP, fires every other beat (every 2× BEAT_GRID).
@@ -25,6 +25,8 @@ const SIZE_RADIUS = ENTITY_CONFIG.alien.radius;
 // Aliens are big and often warp out in a crowd (a wave skip sends them all at
 // once), so their lens buffer is held coarser than the ship's.
 const ALIEN_WARP_MAX_PX = 160;
+// How far ahead (in seconds of flight) a departing alien's portal opens.
+const WARP_LEAD_SEC = 0.25;
 const SIZE_HP = ENTITY_CONFIG.alien.hp;
 const SIZE_SCORE = ENTITY_CONFIG.alien.score;
 const SIZE_SPEED = ENTITY_CONFIG.alien.speed;
@@ -358,16 +360,13 @@ export class Alien {
   traveled = 0;
   maxTravel = Infinity;
   // Warp-out: an alien that reaches maxTravel dives through a departure portal
-  // instead of vanishing off the far edge. warpT runs 0→1 over
-  // WARP_OUT_DURATION; while it does, the body slides toward warpAnchor (the
-  // portal's throat) and is drawn through the portal's lens until it's gone.
-  // needsWormhole tells the Game to spawn exactly one portal (warpPortal, a
-  // render-only reference). null = not warping.
+  // instead of vanishing off the far edge. warpT runs 0→1 over warpDive.sec;
+  // while it does, the body plunges along warpDive into the portal's throat and
+  // is drawn through the portal's lens until it's gone. needsWormhole tells the
+  // Game to spawn exactly one portal (warpPortal, a render-only reference) at
+  // the dive's throat. null = not warping.
   warpT: number | null = null;
-  warpAnchorX = 0;
-  warpAnchorY = 0;
-  warpStartX = 0;
-  warpStartY = 0;
+  warpDive: Dive | null = null;
   needsWormhole = false;
   warpPortal: Wormhole | null = null;
   // Entrance state — the arrival mirror of warpT. See game/entrance.ts.
@@ -409,18 +408,19 @@ export class Alien {
     this.trail = new Trail(this.hue, trailRadius, 0.26, "theremin", trailRate);
   }
 
-  // Begin diving through a departure portal. Freezes the dive path: the body
-  // travels from here to warpAnchor (the portal's throat — the centre of its
-  // spherical mouth). Called once when
-  // the alien reaches maxTravel.
+  // Begin diving through a departure portal. The portal opens just ahead on
+  // the flight path, so the alien flies straight into it at its own speed
+  // rather than halting to sink in place. Called once when the alien reaches
+  // maxTravel.
   private beginWarpOut() {
     this.warpT = 0;
     this.needsWormhole = true;
-    this.warpStartX = this.pos.x;
-    this.warpStartY = this.pos.y;
-    const off = warpAnchorOffset(this.radius, Math.atan2(this.vel.y, this.vel.x));
-    this.warpAnchorX = this.pos.x + off.dx;
-    this.warpAnchorY = this.pos.y + off.dy;
+    const speed = Math.hypot(this.vel.x, this.vel.y);
+    const lead = speed > 1e-3 ? Math.min(speed * WARP_LEAD_SEC, this.radius * 1.2) / speed : 0;
+    this.warpDive = planDive(this.pos, this.vel, {
+      x: this.pos.x + this.vel.x * lead,
+      y: this.pos.y + this.vel.y * lead,
+    });
   }
 
   // Heading the portal aligns to — the alien's flight direction.
@@ -431,17 +431,16 @@ export class Alien {
   update(dt: number, w: number, h: number) {
     // Once warping out, run the dive instead of normal flight: ease the body
     // into the portal mouth and end it when it's fully swallowed.
-    if (this.warpT !== null) {
-      this.warpT += dt / WARP_OUT_DURATION;
+    if (this.warpT !== null && this.warpDive) {
+      this.warpT += dt / this.warpDive.sec;
       if (this.warpT >= 1) {
         this.alive = false;
         return;
       }
       this.weavePhase += dt * this.weaveSpeed;
-      const k = Math.min(1, this.warpT);
-      const ease = k * k;
-      this.pos.x = this.warpStartX + (this.warpAnchorX - this.warpStartX) * ease;
-      this.pos.y = this.warpStartY + (this.warpAnchorY - this.warpStartY) * ease;
+      const p = diveAt(this.warpDive, this.warpT);
+      this.pos.x = p.x;
+      this.pos.y = p.y;
       this.trail.update(dt, this.pos.x, this.pos.y);
       if (this.flashAmount > 0) this.flashAmount = Math.max(0, this.flashAmount - dt * 4);
       return;
