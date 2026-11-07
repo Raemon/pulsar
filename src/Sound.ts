@@ -303,11 +303,11 @@ export type SoundName =
   | "fireBeat"
   | "fireBomb"
   | "fireBombBeat"
-  // Weapon impacts. warpSwallow is keyed by the swallowed body's size (0..2),
-  // bombBlast by whether the detonation was on the beat (0/1), bombBounce by
-  // how hard the shell struck (0..2).
+  // Weapon impacts. warpSwallow is keyed by the swallowed body's size tier
+  // (0..2), bombBounce by the bounce's impact tier (0..2).
   | "warpSwallow"
   | "bombBlast"
+  | "bombBlastBeat"
   | "bombBounce"
   | "explosionLarge"
   | "explosionMedium"
@@ -409,6 +409,33 @@ export type SoundName =
 // The three explosion voices share one graph and differ only by the config
 // block they read, so the builder takes the name rather than three numbers.
 export type ExplosionName = "explosionLarge" | "explosionMedium" | "explosionSmall";
+
+// A percussive envelope: `attack` seconds up to `peak` (0 starts at peak), an
+// optional ease to peak × sustain.level by sustain.until, then silence `decay`
+// seconds after the start (t + at).
+type PercEnvelope = {
+  peak: number; attack?: number; decay: number; at?: number;
+  sustain?: { level: number; until: number };
+};
+
+// The playFire pluck's tuning: sine body, octave partial, bandpassed noise tick.
+// `instant` drops the attack ramps so the onset lands exactly on the keypress.
+type Pluck = {
+  bodyHz: number; bodyPeak: number; bodyDecay: number;
+  partialHz: number; partialPeak: number; partialDecay: number;
+  tickHz: number; tickQ: number; tickPeak: number; tickDecay: number;
+  instant?: boolean;
+};
+
+// Sparse clicks of random sign and size, thinning out toward the end: a crackle.
+const fillCrackle = (data: Float32Array) => {
+  for (let i = 0; i < data.length; i++) {
+    const thin = 1 - i / data.length;
+    if (Math.random() < 0.004 * thin * thin) data[i] = randomClick();
+  }
+};
+
+const randomClick = (): number => (Math.random() < 0.5 ? -1 : 1) * (0.4 + 0.6 * Math.random());
   // Note: "thrust" / "reverseThrust" / "sideThrust" are declared above (with
   // the rest of the play() switch names) but are ALSO baked one-shots now —
   // each is one committed seamless loop, pitchRatio unused (always 1). Built
@@ -1428,6 +1455,7 @@ export class Sound {
     warpSwallow: 2.0,
     // rumble out to 2.25s plus the 1.3s room
     bombBlast: 3.6,
+    bombBlastBeat: 3.6,
     bombBounce: 0.9,
     // convolver tail (1.3s IR) rings on past the 1.15s sub stop
     asteroidBoomBeat: 2.7,
@@ -1471,10 +1499,9 @@ export class Sound {
   };
 
   // One-shots whose graph holds a stereo node and so must render in a
-  // 2-channel offline context: asteroidBoomBeat and bombBlast, whose
-  // ConvolverNode runs a 2-channel IR whose channels are independent noise
-  // draws. Every other newly-baked voice is oscillators plus mono noise.
-  private static readonly STEREO_BAKES: ReadonlySet<SoundName> = new Set<SoundName>(["asteroidBoomBeat", "bombBlast"]);
+  // 2-channel offline context: any with a ConvolverNode, whose 2-channel IR
+  // holds independent noise per channel. The rest are oscillators and mono noise.
+  private static readonly STEREO_BAKES: ReadonlySet<SoundName> = new Set<SoundName>(["asteroidBoomBeat", "bombBlast", "bombBlastBeat"]);
 
   // Hardcoded fallbacks for the explosion trio's semantic config block.
   private static readonly EXPLOSION_DEFAULTS: Record<ExplosionName, { volume: number; lowpassStart: number; duration: number }> = {
@@ -1604,67 +1631,68 @@ export class Sound {
   // building straight into this.master while the mp3 is still in flight — so
   // there is exactly one definition of each sound and the bake cannot drift
   // away from what the game plays.
-  private oneShotGraph(name: SoundName, key: number): ((ctx: BaseAudioContext, dest: AudioNode) => void) | null {
+  private oneShotGraph(name: SoundName, key: number): ((ctx: BaseAudioContext, dest: AudioNode, t: number) => void) | null {
     switch (name) {
       case "cometDestroyed": return (c, d) => this.buildCometDestroyedGraph(c, d);
       case "cometDestroyedSad": return (c, d) => this.buildCometDestroyedSadGraph(c, d);
       case "bonusLife": return (c, d) => this.buildBonusLifeGraph(c, d);
-      case "fire": return (c, d) => this.buildFireGraph(c, d, 0);
-      case "fireBomb": return (c, d) => this.buildFireBombGraph(c, d, 0);
-      case "fireBombBeat": return (c, d) => this.buildFireBombBeatGraph(c, d, 0);
-      case "warpSwallow": return (c, d) => this.buildWarpSwallowGraph(c, d, 0, key);
-      case "bombBlast": return (c, d) => this.buildBombBlastGraph(c, d, 0, key === 1);
-      case "bombBounce": return (c, d) => this.buildBombBounceGraph(c, d, 0, key);
-      case "calibrationTap": return (c, d) => this.buildCalibrationTapGraph(c, d, 0);
-      case "death": return (c, d) => this.buildDeathGraph(c, d, 0);
-      case "bassHit": return (c, d) => this.buildBassHitGraph(c, d, 0);
-      case "bassEcho": return (c, d) => this.buildBassEchoGraph(c, d, 0);
-      case "comboTick": return (c, d) => this.buildComboTickGraph(c, d, 0);
-      case "tink": return (c, d) => this.buildTinkGraph(c, d, 0);
-      case "shieldPop": return (c, d) => this.buildShieldPopGraph(c, d, 0);
-      case "warble": return (c, d) => this.buildWarbleGraph(c, d, 0);
-      case "pulsarHum": return (c, d) => this.buildPulsarHumGraph(c, d, 0);
-      case "shockwaveCharge": return (c, d) => this.buildShockwaveChargeGraph(c, d, 0);
-      case "shockwaveBoom": return (c, d) => this.buildShockwaveBoomGraph(c, d, 0);
-      case "alienFireSmall": return (c, d) => this.buildAlienFireSmallGraph(c, d, 0);
-      case "alienHit": return (c, d) => this.buildAlienHitGraph(c, d, 0);
-      case "alienExplode": return (c, d) => this.buildAlienExplodeGraph(c, d, 0);
-      case "canisterAppear": return (c, d) => this.buildCanisterAppearGraph(c, d, 0);
-      case "canisterDestroyed": return (c, d) => this.buildCanisterDestroyedGraph(c, d, 0);
-      case "comboLost": return (c, d) => this.buildComboLostGraph(c, d, 0);
-      case "comboLostFire": return (c, d) => this.buildComboLostFireGraph(c, d, 0);
-      case "bossPulse": return (c, d) => this.buildBossPulseGraph(c, d, 0);
-      case "bossHit": return (c, d) => this.buildBossHitGraph(c, d, 0);
-      case "bossEyeOpenStinger": return (c, d) => this.buildBossEyeOpenStingerGraph(c, d, 0);
-      case "meteorShower": return (c, d) => this.buildMeteorShowerGraph(c, d, 0);
-      case "gemSwarm": return (c, d) => this.buildGemSwarmGraph(c, d, 0);
-      case "laserChargeFail": return (c, d) => this.buildLaserChargeFailGraph(c, d, 0);
+      case "fire": return (c, d, t) => this.buildFireGraph(c, d, t);
+      case "fireBomb": return (c, d, t) => this.buildFireBombGraph(c, d, t);
+      case "fireBombBeat": return (c, d, t) => this.buildFireBombBeatGraph(c, d, t);
+      case "bombBlast": return (c, d, t) => this.buildBombBlastGraph(c, d, t, false);
+      case "bombBlastBeat": return (c, d, t) => this.buildBombBlastGraph(c, d, t, true);
+      case "calibrationTap": return (c, d, t) => this.buildCalibrationTapGraph(c, d, t);
+      case "death": return (c, d, t) => this.buildDeathGraph(c, d, t);
+      case "bassHit": return (c, d, t) => this.buildBassHitGraph(c, d, t);
+      case "bassEcho": return (c, d, t) => this.buildBassEchoGraph(c, d, t);
+      case "comboTick": return (c, d, t) => this.buildComboTickGraph(c, d, t);
+      case "tink": return (c, d, t) => this.buildTinkGraph(c, d, t);
+      case "shieldPop": return (c, d, t) => this.buildShieldPopGraph(c, d, t);
+      case "warble": return (c, d, t) => this.buildWarbleGraph(c, d, t);
+      case "pulsarHum": return (c, d, t) => this.buildPulsarHumGraph(c, d, t);
+      case "shockwaveCharge": return (c, d, t) => this.buildShockwaveChargeGraph(c, d, t);
+      case "shockwaveBoom": return (c, d, t) => this.buildShockwaveBoomGraph(c, d, t);
+      case "alienFireSmall": return (c, d, t) => this.buildAlienFireSmallGraph(c, d, t);
+      case "alienHit": return (c, d, t) => this.buildAlienHitGraph(c, d, t);
+      case "alienExplode": return (c, d, t) => this.buildAlienExplodeGraph(c, d, t);
+      case "canisterAppear": return (c, d, t) => this.buildCanisterAppearGraph(c, d, t);
+      case "canisterDestroyed": return (c, d, t) => this.buildCanisterDestroyedGraph(c, d, t);
+      case "comboLost": return (c, d, t) => this.buildComboLostGraph(c, d, t);
+      case "comboLostFire": return (c, d, t) => this.buildComboLostFireGraph(c, d, t);
+      case "bossPulse": return (c, d, t) => this.buildBossPulseGraph(c, d, t);
+      case "bossHit": return (c, d, t) => this.buildBossHitGraph(c, d, t);
+      case "bossEyeOpenStinger": return (c, d, t) => this.buildBossEyeOpenStingerGraph(c, d, t);
+      case "meteorShower": return (c, d, t) => this.buildMeteorShowerGraph(c, d, t);
+      case "gemSwarm": return (c, d, t) => this.buildGemSwarmGraph(c, d, t);
+      case "laserChargeFail": return (c, d, t) => this.buildLaserChargeFailGraph(c, d, t);
       case "explosionLarge":
       case "explosionMedium":
       case "explosionSmall":
-        return (c, d) => this.buildExplosionGraph(c, d, 0, name);
+        return (c, d, t) => this.buildExplosionGraph(c, d, t, name);
       // Rendered flat; the ±3% per-hit wobble rides as a playbackRate.
-      case "asteroidBoomBeat": return (c, d) => this.buildAsteroidBoomBeatGraph(c, d, 0, 1);
-      case "bell": return (c, d) => this.buildBellGraph(c, d, 0, key);
-      case "scoreBlip": return (c, d) => this.buildScoreBlipGraph(c, d, 0, key);
-      case "comboSparkle": return (c, d) => this.buildComboSparkleGraph(c, d, 0, key);
-      case "crystalShatterLarge": return (c, d) => this.buildCrystalShatterGraph(c, d, 0, "large", key);
-      case "crystalShatterSmall": return (c, d) => this.buildCrystalShatterGraph(c, d, 0, "small", key);
-      case "summaryDownbeat": return (c, d) => this.buildSummaryDownbeatGraph(c, d, 0, key, false);
-      case "summaryDownbeatDucked": return (c, d) => this.buildSummaryDownbeatGraph(c, d, 0, key, true);
-      case "driftShotHit": return (c, d) => this.buildDriftShotHitGraph(c, d, 0, key);
-      case "laserCharge": return (c, d) => this.buildLaserChargeGraph(c, d, 0, key);
+      case "asteroidBoomBeat": return (c, d, t) => this.buildAsteroidBoomBeatGraph(c, d, t, 1);
+      case "bell": return (c, d, t) => this.buildBellGraph(c, d, t, key);
+      case "scoreBlip": return (c, d, t) => this.buildScoreBlipGraph(c, d, t, key);
+      case "comboSparkle": return (c, d, t) => this.buildComboSparkleGraph(c, d, t, key);
+      case "crystalShatterLarge": return (c, d, t) => this.buildCrystalShatterGraph(c, d, t, "large", key);
+      case "crystalShatterSmall": return (c, d, t) => this.buildCrystalShatterGraph(c, d, t, "small", key);
+      case "summaryDownbeat": return (c, d, t) => this.buildSummaryDownbeatGraph(c, d, t, key, false);
+      case "summaryDownbeatDucked": return (c, d, t) => this.buildSummaryDownbeatGraph(c, d, t, key, true);
+      case "driftShotHit": return (c, d, t) => this.buildDriftShotHitGraph(c, d, t, key);
+      case "laserCharge": return (c, d, t) => this.buildLaserChargeGraph(c, d, t, key);
+      case "warpSwallow": return (c, d, t) => this.buildWarpSwallowGraph(c, d, t, key);
+      case "bombBounce": return (c, d, t) => this.buildBombBounceGraph(c, d, t, key);
       // Only the full-length note is baked (durationScale 1); the key is the
       // fundamental in Hz.
-      case "comboChime": return (c, d) => this.buildComboChimeGraph(c, d, 0, key, 1);
+      case "comboChime": return (c, d, t) => this.buildComboChimeGraph(c, d, t, key, 1);
       case "alienFireBig":
       case "alienFireMedium": {
         // Sample-backed: with no WAV decoded there's nothing to render, and a
         // silent mp3 on disk would permanently mute the voice.
         if (!this.guitarSampleJazz || !this.guitarSampleGretsch) return null;
         return name === "alienFireBig"
-          ? (c, d) => this.buildAlienFireBigGraph(c, d, 0, key)
-          : (c, d) => this.buildAlienFireMediumGraph(c, d, 0, key);
+          ? (c, d, t) => this.buildAlienFireBigGraph(c, d, t, key)
+          : (c, d, t) => this.buildAlienFireMediumGraph(c, d, t, key);
       }
       default: return null;
     }
@@ -1802,7 +1830,7 @@ export class Sound {
       // the live path plays it into a stereo destination and keeps both.
       const channels = Sound.STEREO_BAKES.has(name) ? 2 : 1;
       const offline = new OACearly(channels, len, sr);
-      oneShot(offline, offline.destination);
+      oneShot(offline, offline.destination, 0);
       return offline.startRendering();
     }
 
@@ -2234,55 +2262,7 @@ export class Sound {
   }
 
   private buildCalibrationTapGraph(ctx: BaseAudioContext, dest: AudioNode, t: number) {
-    const bodyHz = cfgN("fire", "bodyHz", 392);
-    const bodyPeak = cfgN("fire", "bodyPeak", 0.16);
-    const bodyDecay = cfgN("fire", "bodyDecay", 0.11);
-    const partialHz = cfgN("fire", "partialHz", 784);
-    const partialPeak = cfgN("fire", "partialPeak", 0.07);
-    const partialDecay = cfgN("fire", "partialDecay", 0.05);
-    const tickHz = cfgN("fire", "tickHz", 1600);
-    const tickQ = cfgN("fire", "tickQ", 1.2);
-    const tickPeak = cfgN("fire", "tickPeak", 0.04);
-    const tickDecay = cfgN("fire", "tickDecay", 0.02);
-
-    const body = ctx.createOscillator();
-    const bodyGain = ctx.createGain();
-    body.type = "sine";
-    body.frequency.value = bodyHz;
-    bodyGain.gain.setValueAtTime(bodyPeak, t);
-    bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + bodyDecay);
-    body.connect(bodyGain);
-    bodyGain.connect(dest);
-    body.start(t);
-    body.stop(t + bodyDecay + 0.02);
-
-    const partial = ctx.createOscillator();
-    const partialGain = ctx.createGain();
-    partial.type = "sine";
-    partial.frequency.value = partialHz;
-    partialGain.gain.setValueAtTime(partialPeak, t);
-    partialGain.gain.exponentialRampToValueAtTime(0.0001, t + partialDecay);
-    partial.connect(partialGain);
-    partialGain.connect(dest);
-    partial.start(t);
-    partial.stop(t + partialDecay + 0.02);
-
-    const tickBuf = this.noiseBuffer(ctx, Math.max(tickDecay, 0.005));
-    if (!tickBuf) return;
-    const tick = ctx.createBufferSource();
-    tick.buffer = tickBuf;
-    const tickFilter = ctx.createBiquadFilter();
-    tickFilter.type = "bandpass";
-    tickFilter.frequency.value = tickHz;
-    tickFilter.Q.value = tickQ;
-    const tickGain = ctx.createGain();
-    tickGain.gain.setValueAtTime(tickPeak, t);
-    tickGain.gain.exponentialRampToValueAtTime(0.0001, t + tickDecay);
-    tick.connect(tickFilter);
-    tickFilter.connect(tickGain);
-    tickGain.connect(dest);
-    tick.start(t);
-    tick.stop(t + tickDecay + 0.005);
+    this.buildPluckGraph(ctx, dest, t, { ...this.firePluck(), instant: true });
   }
 
   setEnabled(on: boolean) {
@@ -6403,9 +6383,10 @@ export class Sound {
       case "fireBeat": this.playFireBeat(); break;
       case "fireBomb": this.playFireBomb(); break;
       case "fireBombBeat": this.playFireBombBeat(); break;
-      case "warpSwallow": this.playWarpSwallow(Math.round(pitchRatio)); break;
-      case "bombBlast": this.playBombBlast(Math.round(pitchRatio) === 1); break;
-      case "bombBounce": this.playBombBounce(Math.round(pitchRatio)); break;
+      case "warpSwallow":
+      case "bombBlast":
+      case "bombBlastBeat":
+      case "bombBounce": this.playOneShot(name, Math.round(pitchRatio)); break;
       case "explosionLarge": this.playExplosion("explosionLarge"); break;
       case "explosionMedium": this.playExplosion("explosionMedium"); break;
       case "explosionSmall": this.playExplosion("explosionSmall"); break;
@@ -7100,57 +7081,23 @@ export class Sound {
   }
 
   private buildFireGraph(ctx: BaseAudioContext, dest: AudioNode, t: number) {
-    const bodyHz = cfgN("fire", "bodyHz", 392);
-    const bodyPeak = cfgN("fire", "bodyPeak", 0.16);
-    const bodyDecay = cfgN("fire", "bodyDecay", 0.11);
-    const partialHz = cfgN("fire", "partialHz", 784);
-    const partialPeak = cfgN("fire", "partialPeak", 0.07);
-    const partialDecay = cfgN("fire", "partialDecay", 0.05);
-    const tickHz = cfgN("fire", "tickHz", 1600);
-    const tickQ = cfgN("fire", "tickQ", 1.2);
-    const tickPeak = cfgN("fire", "tickPeak", 0.04);
-    const tickDecay = cfgN("fire", "tickDecay", 0.02);
+    this.buildPluckGraph(ctx, dest, t, this.firePluck());
+  }
 
-    const body = ctx.createOscillator();
-    const bodyGain = ctx.createGain();
-    body.type = "sine";
-    body.frequency.value = bodyHz;
-    bodyGain.gain.setValueAtTime(0.0001, t);
-    bodyGain.gain.exponentialRampToValueAtTime(bodyPeak, t + 0.004);
-    bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + bodyDecay);
-    body.connect(bodyGain);
-    bodyGain.connect(dest);
-    body.start(t);
-    body.stop(t + bodyDecay + 0.02);
-
-    const partial = ctx.createOscillator();
-    const partialGain = ctx.createGain();
-    partial.type = "sine";
-    partial.frequency.value = partialHz;
-    partialGain.gain.setValueAtTime(0.0001, t);
-    partialGain.gain.exponentialRampToValueAtTime(partialPeak, t + 0.003);
-    partialGain.gain.exponentialRampToValueAtTime(0.0001, t + partialDecay);
-    partial.connect(partialGain);
-    partialGain.connect(dest);
-    partial.start(t);
-    partial.stop(t + partialDecay + 0.02);
-
-    const tickBuf = this.noiseBuffer(ctx, Math.max(tickDecay, 0.005));
-    if (!tickBuf) return;
-    const tick = ctx.createBufferSource();
-    tick.buffer = tickBuf;
-    const tickFilter = ctx.createBiquadFilter();
-    tickFilter.type = "bandpass";
-    tickFilter.frequency.value = tickHz;
-    tickFilter.Q.value = tickQ;
-    const tickGain = ctx.createGain();
-    tickGain.gain.setValueAtTime(tickPeak, t);
-    tickGain.gain.exponentialRampToValueAtTime(0.0001, t + tickDecay);
-    tick.connect(tickFilter);
-    tickFilter.connect(tickGain);
-    tickGain.connect(dest);
-    tick.start(t);
-    tick.stop(t + tickDecay + 0.005);
+  // fire's tuning, shared with the calibration tap so the two always match.
+  private firePluck(): Pluck {
+    return {
+      bodyHz: cfgN("fire", "bodyHz", 392),
+      bodyPeak: cfgN("fire", "bodyPeak", 0.16),
+      bodyDecay: cfgN("fire", "bodyDecay", 0.11),
+      partialHz: cfgN("fire", "partialHz", 784),
+      partialPeak: cfgN("fire", "partialPeak", 0.07),
+      partialDecay: cfgN("fire", "partialDecay", 0.05),
+      tickHz: cfgN("fire", "tickHz", 1600),
+      tickQ: cfgN("fire", "tickQ", 1.2),
+      tickPeak: cfgN("fire", "tickPeak", 0.04),
+      tickDecay: cfgN("fire", "tickDecay", 0.02),
+    };
   }
 
   // Deeper "thump" pluck for rhythm shots — same musical-pluck shape as
@@ -7214,19 +7161,7 @@ export class Sound {
     const fifthPeak = cfgN("fireBombBeat", "fifthPeak", 0.2);
     const fifthDecay = cfgN("fireBombBeat", "fifthDecay", 0.22);
 
-    const body = ctx.createOscillator();
-    const bodyGain = ctx.createGain();
-    body.type = "sine";
-    body.frequency.setValueAtTime(bodyHz, t);
-    body.frequency.exponentialRampToValueAtTime(bodyEndHz, t + bodyDecay);
-    bodyGain.gain.setValueAtTime(0.0001, t);
-    bodyGain.gain.exponentialRampToValueAtTime(bodyPeak, t + 0.006);
-    bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + bodyDecay);
-    body.connect(bodyGain);
-    bodyGain.connect(dest);
-    body.start(t);
-    body.stop(t + bodyDecay + 0.02);
-
+    this.percTone(ctx, dest, t, { hz: bodyHz, endHz: bodyEndHz, peak: bodyPeak, attack: 0.006, decay: bodyDecay });
     this.buildPluckGraph(ctx, dest, t, {
       bodyHz: fifthHz,
       bodyPeak: fifthPeak,
@@ -7241,379 +7176,331 @@ export class Sound {
     });
   }
 
-  // The playFire pluck — sine body, octave partial, bandpassed noise tick —
-  // as one reusable graph so the bomb voices restate only their tuning.
-  private buildPluckGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, p: {
-    bodyHz: number; bodyPeak: number; bodyDecay: number;
-    partialHz: number; partialPeak: number; partialDecay: number;
-    tickHz: number; tickQ: number; tickPeak: number; tickDecay: number;
-  }) {
-    const body = ctx.createOscillator();
-    const bodyGain = ctx.createGain();
-    body.type = "sine";
-    body.frequency.value = p.bodyHz;
-    bodyGain.gain.setValueAtTime(0.0001, t);
-    bodyGain.gain.exponentialRampToValueAtTime(p.bodyPeak, t + 0.005);
-    bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + p.bodyDecay);
-    body.connect(bodyGain);
-    bodyGain.connect(dest);
-    body.start(t);
-    body.stop(t + p.bodyDecay + 0.02);
-
-    const partial = ctx.createOscillator();
-    const partialGain = ctx.createGain();
-    partial.type = "sine";
-    partial.frequency.value = p.partialHz;
-    partialGain.gain.setValueAtTime(0.0001, t);
-    partialGain.gain.exponentialRampToValueAtTime(p.partialPeak, t + 0.004);
-    partialGain.gain.exponentialRampToValueAtTime(0.0001, t + p.partialDecay);
-    partial.connect(partialGain);
-    partialGain.connect(dest);
-    partial.start(t);
-    partial.stop(t + p.partialDecay + 0.02);
-
-    const tickBuf = this.noiseBuffer(ctx, Math.max(p.tickDecay, 0.005));
-    if (!tickBuf) return;
-    const tick = ctx.createBufferSource();
-    tick.buffer = tickBuf;
-    const tickFilter = ctx.createBiquadFilter();
-    tickFilter.type = "bandpass";
-    tickFilter.frequency.value = p.tickHz;
-    tickFilter.Q.value = p.tickQ;
-    const tickGain = ctx.createGain();
-    tickGain.gain.setValueAtTime(p.tickPeak, t);
-    tickGain.gain.exponentialRampToValueAtTime(0.0001, t + p.tickDecay);
-    tick.connect(tickFilter);
-    tickFilter.connect(tickGain);
-    tickGain.connect(dest);
-    tick.start(t);
-    tick.stop(t + p.tickDecay + 0.005);
+  private buildPluckGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, p: Pluck) {
+    const ramp = p.instant ? 0 : 1;
+    this.percTone(ctx, dest, t, { hz: p.bodyHz, peak: p.bodyPeak, attack: 0.004 * ramp, decay: p.bodyDecay });
+    this.percTone(ctx, dest, t, { hz: p.partialHz, peak: p.partialPeak, attack: 0.003 * ramp, decay: p.partialDecay });
+    this.percNoise(ctx, dest, t, {
+      filter: "bandpass", hz: p.tickHz, q: p.tickQ, peak: p.tickPeak, attack: 0, decay: p.tickDecay,
+    });
   }
 
-  // ── Weapon impacts: Warp Cannon swallow, bomb blast, bomb bounce ─────────
-  // Built from two percussive primitives — an enveloped oscillator with an
-  // optional pitch glide, and an enveloped burst of filtered noise with an
-  // optional filter glide — so each voice below reads as its layer list.
+  // ── Percussive primitives ────────────────────────────────────────────────
 
-  // Oscillator: attack to `peak`, exponential decay to silence by `decay`
-  // after its start (t + at), pitch gliding hz → endHz over `glide`.
-  private percTone(ctx: BaseAudioContext, dest: AudioNode, t: number, p: {
+  private percEnvelope(ctx: BaseAudioContext, dest: AudioNode, start: number, p: PercEnvelope): GainNode {
+    const env = ctx.createGain();
+    const attack = p.attack ?? 0.002;
+    env.gain.setValueAtTime(attack > 0 ? 0.0001 : p.peak, start);
+    if (attack > 0) env.gain.exponentialRampToValueAtTime(p.peak, start + attack);
+    if (p.sustain) {
+      const until = Math.min(p.sustain.until, p.decay * 0.9);
+      env.gain.exponentialRampToValueAtTime(p.peak * p.sustain.level, start + until);
+    }
+    env.gain.exponentialRampToValueAtTime(0.0001, start + p.decay);
+    env.connect(dest);
+    return env;
+  }
+
+  private glide(param: AudioParam, from: number, to: number | undefined, start: number, end: number) {
+    param.setValueAtTime(from, start);
+    if (to) param.exponentialRampToValueAtTime(to, end);
+  }
+
+  // An enveloped oscillator, its pitch gliding hz → endHz over `glide` (default: the decay).
+  private percTone(ctx: BaseAudioContext, dest: AudioNode, t: number, p: PercEnvelope & {
     type?: OscillatorType; hz: number; endHz?: number; glide?: number;
-    peak: number; attack?: number; decay: number; at?: number;
   }): OscillatorNode {
     const start = t + (p.at ?? 0);
     const osc = ctx.createOscillator();
     osc.type = p.type ?? "sine";
-    osc.frequency.setValueAtTime(p.hz, start);
-    if (p.endHz) osc.frequency.exponentialRampToValueAtTime(p.endHz, start + (p.glide ?? p.decay));
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(p.peak, start + (p.attack ?? 0.003));
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + p.decay);
-    osc.connect(gain);
-    gain.connect(dest);
+    this.glide(osc.frequency, p.hz, p.endHz, start, start + (p.glide ?? p.decay));
+    osc.connect(this.percEnvelope(ctx, dest, start, p));
     osc.start(start);
     osc.stop(start + p.decay + 0.02);
     return osc;
   }
 
-  // Filtered noise (or `buffer`, e.g. crackle): same envelope as percTone,
-  // the filter's frequency gliding hz → endHz across the decay. `hold` keeps a
-  // tail up: the level eases to peak × hold.level by hold.until, and only then
-  // falls away, so a rumble lingers instead of dying with the hit.
-  private percNoise(ctx: BaseAudioContext, dest: AudioNode, t: number, p: {
-    filter: BiquadFilterType; hz: number; endHz?: number; q?: number;
-    peak: number; attack?: number; decay: number; at?: number; buffer?: AudioBuffer | null;
-    hold?: { level: number; until: number };
+  // Enveloped filtered noise (or `buffer`), the filter gliding hz → endHz over the decay.
+  private percNoise(ctx: BaseAudioContext, dest: AudioNode, t: number, p: PercEnvelope & {
+    filter: BiquadFilterType; hz: number; endHz?: number; q?: number; buffer?: AudioBuffer;
   }) {
-    const buf = p.buffer ?? this.noiseBuffer(ctx, p.decay + 0.01);
-    if (!buf) return;
     const start = t + (p.at ?? 0);
     const src = ctx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = p.buffer ?? this.noiseBuffer(ctx, p.decay + 0.01);
     const filter = ctx.createBiquadFilter();
     filter.type = p.filter;
     filter.Q.value = p.q ?? 1;
-    filter.frequency.setValueAtTime(p.hz, start);
-    if (p.endHz) filter.frequency.exponentialRampToValueAtTime(p.endHz, start + p.decay);
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(p.peak, start + (p.attack ?? 0.002));
-    if (p.hold) gain.gain.exponentialRampToValueAtTime(p.peak * p.hold.level, start + p.hold.until);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + p.decay);
+    this.glide(filter.frequency, p.hz, p.endHz, start, start + p.decay);
     src.connect(filter);
-    filter.connect(gain);
-    gain.connect(dest);
+    filter.connect(this.percEnvelope(ctx, dest, start, p));
     src.start(start);
     src.stop(start + p.decay + 0.01);
   }
 
-  // Sparse clicks that thin out over `duration` — debris pattering down after
-  // a blast. Through a bandpass each click rings as a tiny tick.
-  private crackleBuffer(ctx: BaseAudioContext, duration: number): AudioBuffer | null {
-    const len = Math.max(1, Math.floor(ctx.sampleRate * duration));
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) {
-      const thin = 1 - i / len;
-      if (Math.random() < 0.004 * thin * thin) data[i] = (Math.random() < 0.5 ? -1 : 1) * (0.4 + 0.6 * Math.random());
-    }
+  // Sparse clicks thinning out over `duration`: debris pattering down. Cached
+  // for the live context like noiseBuffer; a bake draws its own.
+  private crackleCache: Map<number, AudioBuffer> = new Map();
+  private crackleBuffer(ctx: BaseAudioContext, duration: number): AudioBuffer {
+    const live = ctx === this.ctx;
+    const cached = live ? this.crackleCache.get(duration) : undefined;
+    if (cached) return cached;
+    const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * duration)), ctx.sampleRate);
+    fillCrackle(buf.getChannelData(0));
+    if (live) this.crackleCache.set(duration, buf);
     return buf;
   }
 
-  // Warp Cannon swallow, keyed by the body's size (0 small, 1 medium, 2 large).
-  // Space tears, the body falls through, the hole snaps shut:
-  //   tear     — a zap chirping 2.6 kHz → 220 Hz over a hard noise crack
-  //   implode  — a saturated sub that drops out from under the hit
-  //   vwoorp   — a detuned saw pair gliding two octaves down through a
-  //              resonant lowpass, its vibrato deepening as it falls, run
-  //              through a sweeping flanger: space bending around the hole
-  //   suction  — resonant noise swelling as its band falls: the inrush
-  //   gulp     — the mouth snapping shut, with an echo back from the far side
-  //   shimmer  — faint G/D partials sliding flat through the flanger
-  // Size moves pitch by a fourth (in key either way) and stretches the timing,
-  // so a big rock takes longer to go down, and lower.
+  // ── Weapon impacts: Warp Cannon swallow, bomb blast, bomb bounce ─────────
+
+  // For voices whose oneShotGraph builder takes its start time: the bake, else live.
+  private playOneShot(name: SoundName, key: number) {
+    if (this.playBaked(name, key)) return;
+    if (!this.ctx || !this.master) return;
+    this.oneShotGraph(name, key)?.(this.ctx, this.master, this.voiceTime(name));
+  }
+
+  // Warp Cannon swallow, by size tier: each step up drops a fourth and takes longer.
   private static readonly WARP_SWALLOW_PITCH = [4 / 3, 1, 3 / 4];
   private static readonly WARP_SWALLOW_STRETCH = [0.8, 1, 1.25];
 
-  private playWarpSwallow(size: number) {
-    const key = Math.max(0, Math.min(2, size));
-    if (this.playBaked("warpSwallow", key)) return;
-    if (!this.ctx || !this.master) return;
-    this.buildWarpSwallowGraph(this.ctx, this.master, this.voiceTime("warpSwallow"), key);
+  private buildWarpSwallowGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, tier: number) {
+    const pitch = Sound.WARP_SWALLOW_PITCH[tier];
+    const stretch = Sound.WARP_SWALLOW_STRETCH[tier];
+    const gulpAt = 0.52 * stretch;
+    const bent = this.spaceBendingFlanger(ctx, dest, this.farSideEcho(ctx, dest), t, gulpAt);
+    this.warpTear(ctx, dest, t, pitch);
+    this.warpImplode(ctx, dest, t, pitch, stretch);
+    this.warpVwoorp(ctx, bent, t, pitch, stretch);
+    this.warpSuction(ctx, dest, t, pitch, gulpAt);
+    this.warpGulp(ctx, bent, dest, t + gulpAt, pitch);
+    this.warpShimmer(ctx, bent, t, pitch, stretch);
   }
 
-  private buildWarpSwallowGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, size: number) {
-    const s = Sound.WARP_SWALLOW_PITCH[size] ?? 1;
-    const len = Sound.WARP_SWALLOW_STRETCH[size] ?? 1;
-    const gulpAt = 0.52 * len;
+  // A lowpassed feedback delay: the swallow echoing back from the far side. Returns its send.
+  private farSideEcho(ctx: BaseAudioContext, dest: AudioNode): GainNode {
+    const delay = ctx.createDelay(0.5);
+    delay.delayTime.value = 0.13;
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 1800;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.38;
+    delay.connect(tone);
+    tone.connect(feedback);
+    feedback.connect(delay);
+    tone.connect(dest);
+    const send = ctx.createGain();
+    send.gain.value = 0.35;
+    send.connect(delay);
+    return send;
+  }
 
-    // The far side's echo: a lowpassed feedback delay the vwoorp and gulp send into.
-    const echo = ctx.createDelay(0.5);
-    echo.delayTime.value = 0.13;
-    const echoTone = ctx.createBiquadFilter();
-    echoTone.type = "lowpass";
-    echoTone.frequency.value = 1800;
-    const echoFeedback = ctx.createGain();
-    echoFeedback.gain.value = 0.38;
-    echo.connect(echoTone);
-    echoTone.connect(echoFeedback);
-    echoFeedback.connect(echo);
-    echoTone.connect(dest);
-    const echoSend = ctx.createGain();
-    echoSend.gain.value = 0.35;
-    echoSend.connect(echo);
+  // A fed-back short delay swept long by `sweepEnd`, mixed with the dry. Returns its input.
+  private spaceBendingFlanger(ctx: BaseAudioContext, dest: AudioNode, echo: AudioNode, t: number, sweepEnd: number): GainNode {
+    const input = ctx.createGain();
+    const delay = ctx.createDelay(0.05);
+    // A delay inside a feedback loop can't go below one render quantum (~3 ms).
+    delay.delayTime.setValueAtTime(0.003, t);
+    delay.delayTime.linearRampToValueAtTime(0.009, t + sweepEnd);
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.6;
+    for (const out of [dest, echo, delay]) input.connect(out);
+    delay.connect(feedback);
+    feedback.connect(delay);
+    delay.connect(dest);
+    return input;
+  }
 
-    // The flanger: a short delay swept long, fed back on itself, mixed with the dry.
-    const flangeIn = ctx.createGain();
-    const flange = ctx.createDelay(0.05);
-    flange.delayTime.setValueAtTime(0.0015, t);
-    flange.delayTime.linearRampToValueAtTime(0.009, t + gulpAt);
-    const flangeFeedback = ctx.createGain();
-    flangeFeedback.gain.value = 0.6;
-    flangeIn.connect(dest);
-    flangeIn.connect(echoSend);
-    flangeIn.connect(flange);
-    flange.connect(flangeFeedback);
-    flangeFeedback.connect(flange);
-    flange.connect(dest);
-
-    // tear
-    this.percTone(ctx, dest, t, { hz: 2600 * s, endHz: 220 * s, glide: 0.07, peak: 0.22, attack: 0.002, decay: 0.1 });
+  private warpTear(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number) {
+    this.percTone(ctx, dest, t, { hz: 2600 * pitch, endHz: 220 * pitch, glide: 0.07, peak: 0.22, decay: 0.1 });
     this.percNoise(ctx, dest, t, { filter: "highpass", hz: 2500, q: 0.7, peak: 0.3, attack: 0.001, decay: 0.03 });
+  }
 
-    // implode
+  private warpImplode(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number, stretch: number) {
     const sat = this.boomSaturator(ctx, 2.2);
-    if (sat) sat.connect(dest);
-    this.percTone(ctx, sat ?? dest, t, { hz: 150 * s, endHz: 34 * s, glide: 0.4 * len, peak: 0.95, attack: 0.006, decay: 0.55 * len });
+    sat.connect(dest);
+    this.percTone(ctx, sat, t, {
+      hz: 150 * pitch, endHz: 34 * pitch, glide: 0.4 * stretch, peak: 0.95, attack: 0.006, decay: 0.55 * stretch,
+    });
+  }
 
-    // vwoorp
-    const vwoorpEnd = t + 0.58 * len;
+  // A detuned saw pair falling G4 → E2 through a resonant lowpass, its vibrato deepening.
+  private warpVwoorp(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number, stretch: number) {
+    const end = 0.58 * stretch;
     const tone = ctx.createBiquadFilter();
     tone.type = "lowpass";
     tone.Q.value = 6;
-    tone.frequency.setValueAtTime(3000 * s, t);
-    tone.frequency.exponentialRampToValueAtTime(300 * s, vwoorpEnd);
-    const toneGain = ctx.createGain();
-    toneGain.gain.setValueAtTime(0.0001, t);
-    toneGain.gain.exponentialRampToValueAtTime(0.16, t + 0.12 * len);
-    toneGain.gain.setValueAtTime(0.16, t + 0.4 * len);
-    toneGain.gain.exponentialRampToValueAtTime(0.0001, vwoorpEnd);
-    tone.connect(toneGain);
-    toneGain.connect(flangeIn);
-    const vibrato = ctx.createOscillator();
-    vibrato.frequency.value = 18;
-    const vibratoDepth = ctx.createGain();
-    vibratoDepth.gain.setValueAtTime(0, t);
-    vibratoDepth.gain.linearRampToValueAtTime(70, vwoorpEnd);
-    vibrato.connect(vibratoDepth);
+    this.glide(tone.frequency, 3000 * pitch, 300 * pitch, t, t + end);
+    tone.connect(dest);
+    const vibrato = this.deepeningVibrato(ctx, t, end);
     for (const cents of [-12, 12]) {
-      const saw = ctx.createOscillator();
-      saw.type = "sawtooth";
-      saw.detune.value = cents;
-      saw.frequency.setValueAtTime(392 * s, t);
-      saw.frequency.exponentialRampToValueAtTime(82 * s, vwoorpEnd);
-      vibratoDepth.connect(saw.detune);
-      saw.connect(tone);
-      saw.start(t);
-      saw.stop(vwoorpEnd + 0.02);
-    }
-    vibrato.start(t);
-    vibrato.stop(vwoorpEnd + 0.02);
-
-    // suction: swells in, then cut dead by the gulp
-    const suckBuf = this.noiseBuffer(ctx, gulpAt + 0.05);
-    if (suckBuf) {
-      const suck = ctx.createBufferSource();
-      suck.buffer = suckBuf;
-      const band = ctx.createBiquadFilter();
-      band.type = "bandpass";
-      band.Q.value = 4;
-      band.frequency.setValueAtTime(4200 * s, t);
-      band.frequency.exponentialRampToValueAtTime(160 * s, t + gulpAt);
-      const suckGain = ctx.createGain();
-      suckGain.gain.setValueAtTime(0.0001, t);
-      suckGain.gain.exponentialRampToValueAtTime(0.4, t + gulpAt * 0.85);
-      suckGain.gain.exponentialRampToValueAtTime(0.0001, t + gulpAt + 0.03);
-      suck.connect(band);
-      band.connect(suckGain);
-      suckGain.connect(dest);
-      suck.start(t);
-      suck.stop(t + gulpAt + 0.05);
-    }
-
-    // gulp
-    this.percTone(ctx, flangeIn, t, { at: gulpAt, hz: 280 * s, endHz: 50 * s, glide: 0.07, peak: 0.55, decay: 0.16 });
-    this.percNoise(ctx, dest, t, { at: gulpAt, filter: "lowpass", hz: 500, q: 1, peak: 0.3, decay: 0.05 });
-
-    // shimmer
-    [1568, 2349.3, 3136].forEach((hz, i) => {
-      this.percTone(ctx, flangeIn, t, {
-        hz: hz * s, endHz: hz * s * 0.94, glide: 0.8 * len,
-        peak: [0.03, 0.02, 0.012][i], attack: 0.02, decay: 0.9 * len,
+      const saw = this.percTone(ctx, tone, t, {
+        type: "sawtooth", hz: 392 * pitch, endHz: 82 * pitch, peak: 0.16,
+        attack: 0.12 * stretch, sustain: { level: 1, until: 0.4 * stretch }, decay: end,
       });
+      saw.detune.value = cents;
+      vibrato.connect(saw.detune);
+    }
+  }
+
+  // An 18 Hz wobble whose depth grows from nothing to 70 cents by `end`.
+  private deepeningVibrato(ctx: BaseAudioContext, t: number, end: number): GainNode {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 18;
+    const depth = ctx.createGain();
+    depth.gain.setValueAtTime(0, t);
+    depth.gain.linearRampToValueAtTime(70, t + end);
+    lfo.connect(depth);
+    lfo.start(t);
+    lfo.stop(t + end + 0.02);
+    return depth;
+  }
+
+  // Resonant noise swelling as its band falls, cut dead by the gulp: the inrush.
+  private warpSuction(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number, gulpAt: number) {
+    this.percNoise(ctx, dest, t, {
+      filter: "bandpass", hz: 4200 * pitch, endHz: 160 * pitch, q: 4, peak: 0.4, attack: 0.85 * gulpAt, decay: gulpAt + 0.03,
     });
   }
 
-  // Bomb detonation; key 1 when the detonating press was on the beat. A crack,
-  // a saturated sub kick and a C2 body that drop out under it, a roar of
-  // lowpassed noise closing down, a mid crunch, then debris crackle and a
-  // rolling rumble, all into a short room. On the beat it also lands a
-  // saturated C power chord — the C2/G2 the on-beat bomb shot fired on — a
-  // slapback of the kick, and a high sizzle, so a timed blast is the bigger
-  // one and sits in key.
-  private playBombBlast(onBeat: boolean) {
-    const key = onBeat ? 1 : 0;
-    if (this.playBaked("bombBlast", key)) return;
-    if (!this.ctx || !this.master) return;
-    this.buildBombBlastGraph(this.ctx, this.master, this.voiceTime("bombBlast"), onBeat);
+  private warpGulp(ctx: BaseAudioContext, bent: AudioNode, dest: AudioNode, t: number, pitch: number) {
+    this.percTone(ctx, bent, t, { hz: 280 * pitch, endHz: 50 * pitch, glide: 0.07, peak: 0.55, decay: 0.16 });
+    this.percNoise(ctx, dest, t, { filter: "lowpass", hz: 500, peak: 0.3, decay: 0.05 });
   }
 
-  private buildBombBlastGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, onBeat: boolean) {
-    const out = ctx.createGain();
-    out.gain.value = onBeat ? 1 : 0.7;
-    out.connect(dest);
-    dest = out;
-    const bus = ctx.createGain();
-    bus.connect(dest);
-    const room = ctx.createConvolver();
-    const ir = this.boomReverbIR(ctx);
-    if (ir) room.buffer = ir;
-    const roomGain = ctx.createGain();
-    roomGain.gain.value = 0.3;
-    bus.connect(room);
-    room.connect(roomGain);
-    roomGain.connect(dest);
-    const heavy = this.boomSaturator(ctx, 2.5);
-    if (heavy) heavy.connect(bus);
-    const gritty = this.boomSaturator(ctx, 1.6);
-    if (gritty) gritty.connect(bus);
+  private static readonly WARP_SHIMMER: ReadonlyArray<[hz: number, peak: number]> = [[1568, 0.03], [2349.3, 0.02], [3136, 0.012]];
 
+  private warpShimmer(ctx: BaseAudioContext, bent: AudioNode, t: number, pitch: number, stretch: number) {
+    for (const [hz, peak] of Sound.WARP_SHIMMER) {
+      this.percTone(ctx, bent, t, {
+        hz: hz * pitch, endHz: hz * pitch * 0.94, glide: 0.8 * stretch, peak, attack: 0.02, decay: 0.9 * stretch,
+      });
+    }
+  }
+
+  // Bomb detonation. On the beat it's louder and adds a power chord in the bomb shot's key.
+  private buildBombBlastGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, onBeat: boolean) {
+    const bus = ctx.createGain();
+    bus.gain.value = onBeat ? 1 : 0.7;
+    bus.connect(dest);
+    bus.connect(this.boomRoom(ctx, dest, 0.3));
+    const heavy = this.boomSaturator(ctx, 2.5);
+    heavy.connect(bus);
+    this.blastFront(ctx, bus, t);
+    this.blastKick(ctx, heavy, t, onBeat);
+    this.blastRoar(ctx, bus, t);
+    this.blastDebris(ctx, bus, t);
+    this.blastRumble(ctx, bus, t);
+    if (onBeat) this.blastOnBeat(ctx, heavy, bus, t);
+  }
+
+  // The noise transients of the blast front: crack, snap, crunch.
+  private blastFront(ctx: BaseAudioContext, bus: AudioNode, t: number) {
     this.percNoise(ctx, bus, t, { filter: "highpass", hz: 1800, q: 0.7, peak: 0.7, attack: 0.0008, decay: 0.03 });
     this.percNoise(ctx, bus, t, { filter: "bandpass", hz: 3200, endHz: 900, q: 1.2, peak: 0.35, decay: 0.09 });
-    this.percTone(ctx, heavy ?? bus, t, { hz: 120, endHz: 30, glide: 0.5, peak: onBeat ? 1.4 : 1.2, decay: onBeat ? 1.5 : 1.2 });
-    this.percTone(ctx, heavy ?? bus, t, { type: "triangle", hz: 65.41, endHz: 41.2, glide: 0.6, peak: 0.55, attack: 0.004, decay: 0.9 });
-    this.percNoise(ctx, gritty ?? bus, t, { filter: "lowpass", hz: 7000, endHz: 110, q: 0.8, peak: 0.75, attack: 0.004, decay: 1.4 });
     this.percNoise(ctx, bus, t, { filter: "bandpass", hz: 900, endHz: 400, q: 1.6, peak: 0.45, decay: 0.28 });
+  }
+
+  // A sub kick and a C2 body dropping out under the blast.
+  private blastKick(ctx: BaseAudioContext, heavy: AudioNode, t: number, onBeat: boolean) {
+    this.percTone(ctx, heavy, t, {
+      hz: 120, endHz: 30, glide: 0.5, peak: onBeat ? 1.4 : 1.2, attack: 0.003, decay: onBeat ? 1.5 : 1.2,
+    });
+    this.percTone(ctx, heavy, t, { type: "triangle", hz: 65.41, endHz: 41.2, glide: 0.6, peak: 0.55, attack: 0.004, decay: 0.9 });
+  }
+
+  private blastRoar(ctx: BaseAudioContext, bus: AudioNode, t: number) {
+    const gritty = this.boomSaturator(ctx, 1.6);
+    gritty.connect(bus);
+    this.percNoise(ctx, gritty, t, { filter: "lowpass", hz: 7000, endHz: 110, q: 0.8, peak: 0.75, attack: 0.004, decay: 1.4 });
+  }
+
+  private blastDebris(ctx: BaseAudioContext, bus: AudioNode, t: number) {
     this.percNoise(ctx, bus, t, {
       at: 0.05, filter: "bandpass", hz: 2600, q: 0.9, peak: 0.9, attack: 0.01, decay: 1.8,
-      hold: { level: 0.4, until: 1.1 }, buffer: this.crackleBuffer(ctx, 1.82),
+      sustain: { level: 0.4, until: 1.1 }, buffer: this.crackleBuffer(ctx, 1.82),
     });
+  }
 
-    // Rolling rumble: lowpassed noise with a slow tremolo on it.
-    const roll = ctx.createGain();
-    roll.gain.value = 0.7;
-    const rollLfo = ctx.createOscillator();
-    rollLfo.frequency.value = 7;
-    const rollDepth = ctx.createGain();
-    rollDepth.gain.value = 0.3;
-    rollLfo.connect(rollDepth);
-    rollDepth.connect(roll.gain);
-    roll.connect(bus);
-    this.percNoise(ctx, roll, t, {
+  private blastRumble(ctx: BaseAudioContext, bus: AudioNode, t: number) {
+    this.percNoise(ctx, this.tremolo(ctx, bus, t, 2.25, 7, 0.3), t, {
       filter: "lowpass", hz: 160, endHz: 70, q: 0.7, peak: 0.55, attack: 0.05, decay: 2.2,
-      hold: { level: 0.35, until: 1.2 },
+      sustain: { level: 0.35, until: 1.2 },
     });
-    rollLfo.start(t);
-    rollLfo.stop(t + 2.25);
+  }
 
-    if (!onBeat) return;
+  // A gain swinging ±depth around 1 − depth at rateHz for `dur`. Returns its input.
+  private tremolo(ctx: BaseAudioContext, dest: AudioNode, t: number, dur: number, rateHz: number, depth: number): GainNode {
+    const amp = ctx.createGain();
+    amp.gain.value = 1 - depth;
+    amp.connect(dest);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = rateHz;
+    const swing = ctx.createGain();
+    swing.gain.value = depth;
+    lfo.connect(swing);
+    swing.connect(amp.gain);
+    lfo.start(t);
+    lfo.stop(t + dur);
+    return amp;
+  }
+
+  // A C power chord on the on-beat bomb shot's C2/G2, a slapback kick, and a sizzle.
+  private blastOnBeat(ctx: BaseAudioContext, heavy: AudioNode, bus: AudioNode, t: number) {
     const chord = ctx.createBiquadFilter();
     chord.type = "lowpass";
     chord.Q.value = 3;
-    chord.frequency.setValueAtTime(1400, t);
-    chord.frequency.exponentialRampToValueAtTime(180, t + 0.9);
-    chord.connect(heavy ?? bus);
-    for (const hz of [65.41, 98, 130.81]) {
-      this.percTone(ctx, chord, t, { type: "sawtooth", hz, peak: 0.2, attack: 0.006, decay: 1.1 });
-    }
-    this.percTone(ctx, heavy ?? bus, t, { at: 0.18, hz: 90, endHz: 30, glide: 0.4, peak: 0.45, decay: 0.7 });
+    this.glide(chord.frequency, 1400, 180, t, t + 0.9);
+    chord.connect(heavy);
+    for (const hz of [65.41, 98, 130.81]) this.percTone(ctx, chord, t, { type: "sawtooth", hz, peak: 0.2, attack: 0.006, decay: 1.1 });
+    this.percTone(ctx, heavy, t, { at: 0.18, hz: 90, endHz: 30, glide: 0.4, peak: 0.45, decay: 0.7 });
     this.percNoise(ctx, bus, t, { filter: "highpass", hz: 5000, q: 0.7, peak: 0.08, attack: 0.01, decay: 1.0 });
   }
 
-  // Bomb shell rebounding off a body, keyed by how hard it struck (0 glancing,
-  // 1 solid, 2 full). A dense iron shell, not a glass bead: a contact click,
-  // a low thud that drops in pitch, a wooden knock, and the shell's own clang
-  // — the inharmonic modes of a thick metal body (1 : 2.76 : 5.40 : 8.93) over
-  // G3, its fundamental doubled a few cents sharp so it beats like a struck
-  // drum of steel. Harder hits ring brighter and longer; a full one adds a
-  // sub thump and a rattle of grit.
+  // Bomb shell rebounding, by impact tier (glancing, solid, full): an iron clonk.
   private static readonly BOMB_BOUNCE_LEVEL = [0.45, 0.75, 1];
+  // Modes of a thick metal shell over G3; the ~22¢-sharp double beats against the fundamental.
+  private static readonly BOMB_CLANG_MODES: ReadonlyArray<{ ratio: number; peak: number; decay: number }> = [
+    { ratio: 1, peak: 0.22, decay: 0.6 },
+    { ratio: 1.013, peak: 0.12, decay: 0.55 },
+    { ratio: 2.76, peak: 0.15, decay: 0.38 },
+    { ratio: 5.4, peak: 0.08, decay: 0.22 },
+    { ratio: 8.93, peak: 0.04, decay: 0.12 },
+  ];
 
-  private playBombBounce(impact: number) {
-    const key = Math.max(0, Math.min(2, impact));
-    if (this.playBaked("bombBounce", key)) return;
-    if (!this.ctx || !this.master) return;
-    this.buildBombBounceGraph(this.ctx, this.master, this.voiceTime("bombBounce"), key);
+  private buildBombBounceGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, tier: number) {
+    // Heavy, not loud: even a full bounce sits under a rock exploding.
+    const quiet = ctx.createGain();
+    quiet.gain.value = 0.5;
+    quiet.connect(dest);
+    const sat = this.boomSaturator(ctx, 1.8);
+    sat.connect(quiet);
+    const level = Sound.BOMB_BOUNCE_LEVEL[tier];
+    this.bombThud(ctx, quiet, sat, t, level);
+    this.bombClang(ctx, quiet, t, tier, level);
+    if (tier === 2) this.bombRattle(ctx, quiet, sat, t);
   }
 
-  private buildBombBounceGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, impact: number) {
-    // Heavy, not loud: even a full bounce sits under a rock exploding.
-    const out = ctx.createGain();
-    out.gain.value = 0.5;
-    out.connect(dest);
-    dest = out;
-    const k = Sound.BOMB_BOUNCE_LEVEL[impact] ?? 1;
-    const ring = 0.7 + 0.3 * k;
-    this.percNoise(ctx, dest, t, { filter: "highpass", hz: 3000, q: 0.7, peak: 0.12 * k, attack: 0.0005, decay: 0.008 });
-    const sat = this.boomSaturator(ctx, 1.8);
-    if (sat) sat.connect(dest);
-    this.percTone(ctx, sat ?? dest, t, { hz: 190, endHz: 62, glide: 0.07, peak: 0.75 * k, attack: 0.002, decay: 0.2 + 0.1 * k });
-    this.percNoise(ctx, dest, t, { filter: "bandpass", hz: 420, endHz: 250, q: 2.2, peak: 0.55 * k, decay: 0.08 });
-    const modes = impact === 0 ? 2 : 4;
-    const f0 = 196;
-    const ratios = [1, 2.76, 5.4, 8.93];
-    const peaks = [0.22, 0.15, 0.08, 0.04];
-    const decays = [0.6, 0.38, 0.22, 0.12];
-    for (let i = 0; i < modes; i++) {
-      this.percTone(ctx, dest, t, { hz: f0 * ratios[i], peak: peaks[i] * k, attack: 0.002, decay: decays[i] * ring });
+  // Contact click, a thud dropping in pitch, and a wooden knock.
+  private bombThud(ctx: BaseAudioContext, dest: AudioNode, sat: AudioNode, t: number, level: number) {
+    this.percNoise(ctx, dest, t, { filter: "highpass", hz: 3000, q: 0.7, peak: 0.12 * level, attack: 0.0005, decay: 0.008 });
+    this.percTone(ctx, sat, t, { hz: 190, endHz: 62, glide: 0.07, peak: 0.75 * level, decay: 0.2 + 0.1 * level });
+    this.percNoise(ctx, dest, t, { filter: "bandpass", hz: 420, endHz: 250, q: 2.2, peak: 0.55 * level, decay: 0.08 });
+  }
+
+  // Harder hits ring more modes, brighter and longer.
+  private bombClang(ctx: BaseAudioContext, dest: AudioNode, t: number, tier: number, level: number) {
+    const ringLength = 0.7 + 0.3 * level;
+    for (const mode of Sound.BOMB_CLANG_MODES.slice(0, tier === 0 ? 3 : 5)) {
+      this.percTone(ctx, dest, t, { hz: 196 * mode.ratio, peak: mode.peak * level, decay: mode.decay * ringLength });
     }
-    this.percTone(ctx, dest, t, { hz: f0 * 1.013, peak: 0.12 * k, attack: 0.002, decay: 0.55 * ring });
-    if (impact < 2) return;
-    this.percTone(ctx, sat ?? dest, t, { hz: 70, endHz: 40, glide: 0.15, peak: 0.6, decay: 0.25 });
+  }
+
+  // A full-force hit's sub thump and rattle of grit.
+  private bombRattle(ctx: BaseAudioContext, dest: AudioNode, sat: AudioNode, t: number) {
+    this.percTone(ctx, sat, t, { hz: 70, endHz: 40, glide: 0.15, peak: 0.6, decay: 0.25 });
     this.percNoise(ctx, dest, t, {
-      at: 0.01, filter: "bandpass", hz: 1800, q: 1, peak: 0.5, decay: 0.12,
-      buffer: this.crackleBuffer(ctx, 0.13),
+      at: 0.01, filter: "bandpass", hz: 1800, q: 1, peak: 0.5, decay: 0.12, buffer: this.crackleBuffer(ctx, 0.13),
     });
   }
 
@@ -7706,7 +7593,18 @@ export class Sound {
     return buf;
   }
 
-  private boomSaturator(ctx: BaseAudioContext, amount: number): WaveShaperNode | null {
+  // The boom's short room: a convolution send at `wet` into `dest`. Returns its input.
+  private boomRoom(ctx: BaseAudioContext, dest: AudioNode, wet: number): ConvolverNode {
+    const room = ctx.createConvolver();
+    room.buffer = this.boomReverbIR(ctx);
+    const wetGain = ctx.createGain();
+    wetGain.gain.value = wet;
+    room.connect(wetGain);
+    wetGain.connect(dest);
+    return room;
+  }
+
+  private boomSaturator(ctx: BaseAudioContext, amount: number): WaveShaperNode {
     const ws = ctx.createWaveShaper();
     const n = 1024;
     const curve = new Float32Array(n);
@@ -7734,13 +7632,7 @@ export class Sound {
     const tail = 1.0;
 
 
-    const convolver = ctx.createConvolver();
-    const ir = this.boomReverbIR(ctx);
-    if (ir) convolver.buffer = ir;
-    const wetGain = ctx.createGain();
-    wetGain.gain.value = 0.32;
-    convolver.connect(wetGain);
-    wetGain.connect(dest);
+    const convolver = this.boomRoom(ctx, dest, 0.32);
 
     const lowShelf = ctx.createBiquadFilter();
     lowShelf.type = "lowshelf";
@@ -7759,12 +7651,8 @@ export class Sound {
     bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + tail);
     const bodySat = this.boomSaturator(ctx, 2.0);
     body.connect(bodyGain);
-    if (bodySat) {
-      bodyGain.connect(bodySat);
-      bodySat.connect(lowShelf);
-    } else {
-      bodyGain.connect(lowShelf);
-    }
+    bodyGain.connect(bodySat);
+    bodySat.connect(lowShelf);
     body.start(t);
     body.stop(t + tail);
 

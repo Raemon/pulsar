@@ -494,10 +494,14 @@ export class Alien {
 
   // same hp-as-momentum proxy as asteroids — a chip hit shoves a small
   // alien noticeably, barely budges a big one.
+  knockbackMass(): number {
+    return Math.max(1, this.maxHp);
+  }
+
   applyKnockback(dirX: number, dirY: number, amount: number, referenceSpeed: number = 120) {
     const len = Math.hypot(dirX, dirY);
     if (len === 0) return;
-    const fraction = Math.min(1, amount / Math.max(1, this.maxHp));
+    const fraction = Math.min(1, amount / this.knockbackMass());
     const dv = fraction * referenceSpeed;
     this.vel.x += (dirX / len) * dv;
     this.vel.y += (dirY / len) * dv;

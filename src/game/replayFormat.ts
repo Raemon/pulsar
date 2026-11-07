@@ -51,9 +51,10 @@ export const REPLAY_FORMAT_VERSION = 55;
 //   and makes every portal dive carry the body's own speed into the throat
 //   (the ship's skip dive; aliens now fly into a portal opened just ahead of
 //   them), so v53 runs re-sim into different runs.
-// v55 makes a bomb's bounce a collision between masses: the shell shoves the
-//   rock or saucer it hits (by their relative sizes) and keeps less of its own
-//   rebound, so a v54 run where a mine touched something re-sims differently.
+// v55 makes a bomb's bounce a collision between knockback masses (the shell
+//   shoves the rock or saucer it hits, capped) with less rebound, and lets a body
+//   leaning on a mine carry it along, so a v54 run where a mine touched
+//   something re-sims differently.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

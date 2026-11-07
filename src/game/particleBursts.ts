@@ -22,16 +22,22 @@ export type BurstSpec = {
   hue: number;
   hueSpread: [number, number];
   drag: number;
-  angleMode: "random" | "uniform";
+  // "fan": aimed at `aim`, spread ±angleJitter around it.
+  angleMode: "random" | "uniform" | "fan";
   angleJitter: number;
+  aim?: number;
+};
+
+const burstAngle = (s: BurstSpec, i: number): number => {
+  if (s.angleMode === "uniform") return (i / s.count) * TAU + rand(-s.angleJitter, s.angleJitter);
+  if (s.angleMode === "fan") return (s.aim ?? 0) + rand(-s.angleJitter, s.angleJitter);
+  return rand(0, TAU);
 };
 
 // one emit-loop replaces ~8 duplicated Array.from + emit blocks across kill/pop sites.
 export const emitBurst = (particles: ParticleSystem, s: BurstSpec) => {
   for (let i = 0; i < s.count; i++) {
-    const angle = s.angleMode === "uniform"
-      ? (i / s.count) * TAU + rand(-s.angleJitter, s.angleJitter)
-      : rand(0, TAU);
+    const angle = burstAngle(s, i);
     const speed = rand(s.speedRange[0], s.speedRange[1]);
     particles.emit({
       pos: { ...s.pos },
@@ -87,57 +93,41 @@ export const emitExplosion = (particles: ParticleSystem, shards: Shard[], a: Ast
 // non-damaging clang. `impact` (0..1) scales the spray width and brightness so
 // a heavier blocked hit visibly hits harder.
 export const emitBounceSparks = (particles: ParticleSystem, pos: Vec, normal: Vec, hue: number, impact = 0.5) => {
-  const baseAngle = Math.atan2(normal.y, normal.x);
-  const count = 9 + Math.round(impact * 8);
-  for (let i = 0; i < count; i++) {
-    const angle = baseAngle + rand(-0.8, 0.8);
-    particles.emit({
-      pos: { ...pos },
-      vel: fromAngle(angle, rand(140, 320 + impact * 200)),
-      life: rand(0.14, 0.34),
-      maxLife: 0.34,
-      size: rand(1.4, 2.6),
-      hue: hue + rand(-10, 14),
-      shrink: 1,
-      drag: 4.5,
-    });
-  }
+  emitBurst(particles, {
+    pos, count: 9 + Math.round(impact * 8),
+    speedRange: [140, 320 + impact * 200],
+    lifeRange: [0.14, 0.34], maxLife: 0.34,
+    sizeRange: [1.4, 2.6],
+    hue, hueSpread: [-10, 14],
+    drag: 4.5,
+    angleMode: "fan", aim: Math.atan2(normal.y, normal.x), angleJitter: 0.8,
+  });
   // Contact flash — a tight ring of bright flecks at the point of impact, very
   // short-lived and densely overlapping so additive blending stacks them to a
   // white-hot core. Sells the metallic "clang" without dust/debris.
-  const flecks = 5 + Math.round(impact * 6);
-  for (let i = 0; i < flecks; i++) {
-    particles.emit({
-      pos: { ...pos },
-      vel: fromAngle(rand(0, TAU), rand(40, 120)),
-      life: rand(0.06, 0.16),
-      maxLife: 0.16,
-      size: rand(1.6, 3.0),
-      hue: hue + rand(-6, 6),
-      shrink: 1,
-      drag: 7.0,
-    });
-  }
+  emitBurst(particles, {
+    pos, count: 5 + Math.round(impact * 6),
+    speedRange: [40, 120],
+    lifeRange: [0.06, 0.16], maxLife: 0.16,
+    sizeRange: [1.6, 3.0],
+    hue, hueSpread: [-6, 6],
+    drag: 7.0,
+    angleMode: "random", angleJitter: 0,
+  });
 };
 
-// The heavy half of a bomb's bounce: fat, slow chunks sprayed out sideways
-// along the struck surface (either side of the normal), lingering after the
-// quick sparks have gone — what a dense shell knocks loose, not a glint.
-export const emitBounceDebris = (particles: ParticleSystem, pos: Vec, normal: Vec, hue: number, impact = 0.5) => {
+// A bomb's bounce: slow chunks sprayed sideways along the struck surface.
+export const emitBounceDebris = (particles: ParticleSystem, pos: Vec, normal: Vec, hue: number, impact: number) => {
   const baseAngle = Math.atan2(normal.y, normal.x);
-  const count = 3 + Math.round(impact * 9);
-  for (let i = 0; i < count; i++) {
-    const side = i % 2 === 0 ? 1 : -1;
-    const angle = baseAngle + side * rand(0.9, 1.5);
-    particles.emit({
-      pos: { ...pos },
-      vel: fromAngle(angle, rand(50, 110 + impact * 130)),
-      life: rand(0.35, 0.55 + impact * 0.25),
-      maxLife: 0.8,
-      size: rand(2.4, 3.4 + impact * 1.4),
-      hue: hue + rand(10, 30),
-      shrink: 1,
+  for (const side of [1, -1]) {
+    emitBurst(particles, {
+      pos, count: 2 + Math.round(impact * 5),
+      speedRange: [50, 110 + impact * 130],
+      lifeRange: [0.35, 0.55 + impact * 0.25], maxLife: 0.8,
+      sizeRange: [2.4, 3.4 + impact * 1.4],
+      hue, hueSpread: [-8, 8],
       drag: 3.2,
+      angleMode: "fan", aim: baseAngle + side * 1.2, angleJitter: 0.3,
     });
   }
 };
@@ -374,35 +364,26 @@ export const emitShockwaveSparks = (particles: ParticleSystem, pos: Vec) => {
 export const emitLaserImpact = (particles: ParticleSystem, pos: Vec, dir: Vec, tier: number) => {
   const back = Math.atan2(-dir.y, -dir.x); // spray back toward the muzzle
   // White-hot contact flash — dense, short, slow so additive stacking whites out.
-  const flecks = 7 + Math.round(tier * 10);
-  for (let i = 0; i < flecks; i++) {
-    particles.emit({
-      pos: { ...pos },
-      vel: fromAngle(rand(0, TAU), rand(30, 110 + tier * 90)),
-      life: rand(0.06, 0.18),
-      maxLife: 0.18,
-      size: rand(2.0, 3.4 + tier * 1.4),
-      hue: 190 + rand(-8, 8),
-      shrink: 1,
-      drag: 6.5,
-    });
-  }
+  emitBurst(particles, {
+    pos, count: 7 + Math.round(tier * 10),
+    speedRange: [30, 110 + tier * 90],
+    lifeRange: [0.06, 0.18], maxLife: 0.18,
+    sizeRange: [2.0, 3.4 + tier * 1.4],
+    hue: 190, hueSpread: [-8, 8],
+    drag: 6.5,
+    angleMode: "random", angleJitter: 0,
+  });
   // Plasma spray — a fan of fast cyan-white sparks kicked back along the beam,
   // wider and faster with charge so the gout reads as "the beam blew a chunk off".
-  const spray = 10 + Math.round(tier * 18);
-  const spread = 0.7 + tier * 0.5;
-  for (let i = 0; i < spray; i++) {
-    particles.emit({
-      pos: { ...pos },
-      vel: fromAngle(back + rand(-spread, spread), rand(160, 360 + tier * 320)),
-      life: rand(0.18, 0.5 + tier * 0.3),
-      maxLife: 0.5 + tier * 0.3,
-      size: rand(1.4, 2.8 + tier * 1.2),
-      hue: 195 + rand(-12, 18),
-      shrink: 1,
-      drag: 2.6,
-    });
-  }
+  emitBurst(particles, {
+    pos, count: 10 + Math.round(tier * 18),
+    speedRange: [160, 360 + tier * 320],
+    lifeRange: [0.18, 0.5 + tier * 0.3], maxLife: 0.5 + tier * 0.3,
+    sizeRange: [1.4, 2.8 + tier * 1.2],
+    hue: 195, hueSpread: [-12, 18],
+    drag: 2.6,
+    angleMode: "fan", aim: back, angleJitter: 0.7 + tier * 0.5,
+  });
 };
 
 // A bomb's detonation: an even ring of sparks that coasts out to (about) the

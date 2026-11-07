@@ -167,7 +167,8 @@ export const SOUND_LOAD_SCHEDULE: readonly SoundLoadEntry[] = [
   { name: "fireBomb", keys: [1], wave: CFG.canister.firstWave },
   { name: "fireBombBeat", keys: [1], wave: CFG.canister.firstWave },
   // The bomb's blast and bounce, and the Warp Cannon's swallow, likewise.
-  { name: "bombBlast", keys: [0, 1], wave: CFG.canister.firstWave },
+  { name: "bombBlast", keys: [1], wave: CFG.canister.firstWave },
+  { name: "bombBlastBeat", keys: [1], wave: CFG.canister.firstWave },
   { name: "bombBounce", keys: [0, 1, 2], wave: CFG.canister.firstWave },
   { name: "warpSwallow", keys: [0, 1, 2], wave: CFG.canister.firstWave },
   { name: "shieldPop", keys: [1], wave: CFG.canister.firstWave },

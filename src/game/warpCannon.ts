@@ -2,6 +2,7 @@ import type { Game } from "../Game";
 import type { Bullet } from "../Bullet";
 import type { Asteroid } from "../Asteroid";
 import { Vec, TAU } from "../vec";
+import { ENTITY_CONFIG } from "./entityConfig";
 import {
   type Wormhole,
   type LensBackdrop,
@@ -196,17 +197,17 @@ const SWALLOW_MAX_PX = 200;
 
 // Bosses and the Sepulchre's bier party are encounters, not rocks: too massive
 // to swallow, a Warp Cannon shot lands on them as an ordinary hit.
-export const canSwallow = (a: Asteroid): boolean => !a.isBossFamily() && !a.isSepulchreFamily();
+export const canSwallow = (a: Asteroid): boolean => !a.isEncounter();
 
 // Mouth-open fraction a portal sized for `bodyRadius` is born at so it grows
 // straight out of the shot's own mouth. Take it before the hit consumes the shot.
 export const swallowOpenFrom = (shot: Bullet, bodyRadius: number): number =>
   Math.min(1, (shotOpen(shot) * shotLensScale(shot)) / portalLongAxis(bodyRadius));
 
-// The swallow's voice is keyed by the body's size: a small rock or a meteor
-// goes down high and quick, a medium rock, a comet or a small saucer in the
-// middle, a large rock or a bigger saucer low and slow.
-const swallowSoundSize = (radius: number): number => (radius < 22 ? 0 : radius < 40 ? 1 : 2);
+// The swallow's voice tier: the body's radius against the rock sizes, split halfway.
+const ROCK_RADIUS = ENTITY_CONFIG.asteroid.radius;
+const swallowSizeTier = (radius: number): number =>
+  radius < (ROCK_RADIUS.small + ROCK_RADIUS.medium) / 2 ? 0 : radius < (ROCK_RADIUS.medium + ROCK_RADIUS.large) / 2 ? 1 : 2;
 
 // Drop `body` into `portal` — or, by default, a fresh one torn open where the
 // shot struck. Call before the hit consumes the shot (see swallowOpenFrom).
@@ -214,7 +215,7 @@ export const swallowIntoWarp = (
   game: Game, body: { pos: Vec; vel: Vec; radius: number }, shot: Bullet,
   reach: number, draw: Swallow["draw"], portal: Wormhole | null = null,
 ): void => {
-  game.sound.play("warpSwallow", swallowSoundSize(body.radius), shot.pos);
+  game.sound.play("warpSwallow", swallowSizeTier(body.radius), shot.pos);
   if (!portal) {
     portal = spawnWormhole(
       game.wormholes, shot.pos, body.radius, Math.atan2(shot.vel.y, shot.vel.x),
