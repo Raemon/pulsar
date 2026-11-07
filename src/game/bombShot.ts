@@ -30,6 +30,7 @@ const BOMB_MASS = ENTITY_CONFIG.asteroid.hp.medium;
 const MAX_SHOVE_SPEED = 140;
 // Slower contact is a body leaning on the mine (drag re-closes the gap every frame).
 const RESTING_CONTACT_SPEED = 25;
+// Closing speed at which a bounce sounds and shows at full strength.
 const BOUNCE_FULL_IMPACT_SPEED = 400;
 const FULL_BOUNCE_SHAKE = 0.1;
 
@@ -58,13 +59,15 @@ const impactTier = (impact: number): number => (impact < 0.3 ? 0 : impact < 0.7 
 // A body leaning on the mine just carries it along: no exchange, no sound.
 const rideAlong = (b: Bullet, normal: Vec, closing: number) => addScaledMut(b.vel, normal, -closing);
 
-// Restitution split by mass; a body that can't be shoved is a wall.
+// Restitution split by mass; a body that can't be shoved is a wall. The shell
+// takes whatever a capped shove didn't, so the pair always parts after one bounce.
 const exchangeMomentum = (b: Bullet, body: Asteroid | Alien | undefined, normal: Vec, closing: number) => {
   const exchange = (1 + BOMB_RESTITUTION) * closing;
   if (!body) return addScaledMut(b.vel, normal, -exchange);
-  const shellShare = body.knockbackMass() / (BOMB_MASS + body.knockbackMass());
-  addScaledMut(b.vel, normal, -exchange * shellShare);
-  addScaledMut(body.vel, normal, Math.max(exchange * (1 - shellShare), -MAX_SHOVE_SPEED));
+  const bodyShare = BOMB_MASS / (BOMB_MASS + body.knockbackMass());
+  const shove = Math.max(exchange * bodyShare, -MAX_SHOVE_SPEED);
+  addScaledMut(body.vel, normal, shove);
+  addScaledMut(b.vel, normal, shove - exchange);
 };
 
 // Cosmetic only, never read back by the sim.
@@ -89,8 +92,7 @@ const bounceOff = (game: Game, b: Bullet, target: StrikeTarget) => {
 };
 
 const bounceBomb = (game: Game, b: Bullet, targets: StrikeTarget[]) => {
-  const touched = targets.find((t) => t.collidesWith(b.pos, b.hitRadius()));
-  if (touched) bounceOff(game, b, touched);
+  for (const t of targets) if (t.collidesWith(b.pos, b.hitRadius())) bounceOff(game, b, t);
 };
 
 // The blast scores on-beat when the detonating press was — a second kill in the

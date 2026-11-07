@@ -5076,7 +5076,8 @@ export class Asteroid {
     return this.isBossFamily() || this.isSepulchreFamily();
   }
 
-  // Whether its own velocity moves it: encounters and torus fragments are placed for it.
+  // Whether a bounce may shove it: not an encounter, and not a torus fragment
+  // (those ride their ring and ignore their own velocity).
   driftsFreely(): boolean {
     return !this.isEncounter() && !isTorusFragment(this.kind);
   }

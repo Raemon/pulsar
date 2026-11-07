@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 55;
+export const REPLAY_FORMAT_VERSION = 56;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -55,6 +55,9 @@ export const REPLAY_FORMAT_VERSION = 55;
 //   shoves the rock or saucer it hits, capped) with less rebound, and lets a body
 //   leaning on a mine carry it along, so a v54 run where a mine touched
 //   something re-sims differently.
+// v56 has a capped shove leave the shell the rest of the exchange (no second
+//   bounce the next frame) and resolves a mine against every body it touches,
+//   so a v55 run where a mine was thrown point-blank or squeezed re-sims differently.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

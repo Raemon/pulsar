@@ -409,6 +409,11 @@ export type SoundName =
 // The three explosion voices share one graph and differ only by the config
 // block they read, so the builder takes the name rather than three numbers.
 export type ExplosionName = "explosionLarge" | "explosionMedium" | "explosionSmall";
+  // Note: "thrust" / "reverseThrust" / "sideThrust" are declared above (with
+  // the rest of the play() switch names) but are ALSO baked one-shots now —
+  // each is one committed seamless loop, pitchRatio unused (always 1). Built
+  // by buildThrustGraph / buildReverseThrustGraph / buildSideThrustGraph,
+  // not the Tone path.
 
 // A percussive envelope: `attack` seconds up to `peak` (0 starts at peak), an
 // optional ease to peak × sustain.level by sustain.until, then silence `decay`
@@ -417,6 +422,9 @@ type PercEnvelope = {
   peak: number; attack?: number; decay: number; at?: number;
   sustain?: { level: number; until: number };
 };
+
+// Voices played through Sound.playOneShot.
+type OneShotVoice = "warpSwallow" | "bombBlast" | "bombBlastBeat" | "bombBounce";
 
 // The playFire pluck's tuning: sine body, octave partial, bandpassed noise tick.
 // `instant` drops the attack ramps so the onset lands exactly on the keypress.
@@ -431,16 +439,9 @@ type Pluck = {
 const fillCrackle = (data: Float32Array) => {
   for (let i = 0; i < data.length; i++) {
     const thin = 1 - i / data.length;
-    if (Math.random() < 0.004 * thin * thin) data[i] = randomClick();
+    if (Math.random() < 0.004 * thin * thin) data[i] = (Math.random() < 0.5 ? -1 : 1) * (0.4 + 0.6 * Math.random());
   }
 };
-
-const randomClick = (): number => (Math.random() < 0.5 ? -1 : 1) * (0.4 + 0.6 * Math.random());
-  // Note: "thrust" / "reverseThrust" / "sideThrust" are declared above (with
-  // the rest of the play() switch names) but are ALSO baked one-shots now —
-  // each is one committed seamless loop, pitchRatio unused (always 1). Built
-  // by buildThrustGraph / buildReverseThrustGraph / buildSideThrustGraph,
-  // not the Tone path.
 
 // Combo-milestone vocal pools. Each milestone (x6, x12) has its own folder
 // under /sounds/vocals/in-use/. When the player hits the milestone, one file
@@ -1623,9 +1624,10 @@ export class Sound {
   // envelope+release+reverb tail.
   // Registry of the pure-WebAudio one-shot graphs — every voice that is a
   // deterministic function of (name, key) and needs neither Tone nor the
-  // reverb bus. Returns a closure that builds the voice at time origin 0 into
-  // `dest`, or null when this pair has no offline recipe (Tone-engine voices,
-  // the ElevenLabs mp3s, and the seamless drone loops all take other paths).
+  // reverb bus. Returns a closure that builds the voice into `dest` starting at
+  // `t` (the bake passes 0), or null when this pair has no offline recipe
+  // (Tone-engine voices, the ElevenLabs mp3s, and the seamless drone loops all
+  // take other paths). The bake-only comet and bonus-life voices ignore `t`.
   //
   // The same builders run live — see each play* wrapper, which falls back to
   // building straight into this.master while the mp3 is still in flight — so
@@ -6384,9 +6386,9 @@ export class Sound {
       case "fireBomb": this.playFireBomb(); break;
       case "fireBombBeat": this.playFireBombBeat(); break;
       case "warpSwallow":
+      case "bombBounce": this.playOneShot(name, Math.max(0, Math.min(2, Math.round(pitchRatio)))); break;
       case "bombBlast":
-      case "bombBlastBeat":
-      case "bombBounce": this.playOneShot(name, Math.round(pitchRatio)); break;
+      case "bombBlastBeat": this.playOneShot(name, 1); break;
       case "explosionLarge": this.playExplosion("explosionLarge"); break;
       case "explosionMedium": this.playExplosion("explosionMedium"); break;
       case "explosionSmall": this.playExplosion("explosionSmall"); break;
@@ -7252,8 +7254,9 @@ export class Sound {
 
   // ── Weapon impacts: Warp Cannon swallow, bomb blast, bomb bounce ─────────
 
-  // For voices whose oneShotGraph builder takes its start time: the bake, else live.
-  private playOneShot(name: SoundName, key: number) {
+  // The bake, else the live graph. Only for voices whose oneShotGraph builder
+  // honours its start time; widen OneShotVoice as more are moved over.
+  private playOneShot(name: OneShotVoice, key: number) {
     if (this.playBaked(name, key)) return;
     if (!this.ctx || !this.master) return;
     this.oneShotGraph(name, key)?.(this.ctx, this.master, this.voiceTime(name));
@@ -7574,7 +7577,7 @@ export class Sound {
   // Decaying-noise IR for the boom's convolution reverb. Cached for the live
   // context; an offline bake builds its own (a buffer belongs to the context
   // that created it).
-  private boomReverbIR(ctx: BaseAudioContext): AudioBuffer | null {
+  private boomReverbIR(ctx: BaseAudioContext): AudioBuffer {
     const live = ctx === this.ctx;
     if (live && this.boomConvolverIR) return this.boomConvolverIR;
     const sr = ctx.sampleRate;

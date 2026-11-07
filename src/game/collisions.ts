@@ -142,7 +142,7 @@ const deflectBulletOff = (game: Game, b: Bullet, a: Asteroid, blockedDmg: number
   b.trail.length = 0;
   // impact reads the blocked momentum the same way applyKnockback does (vs the
   // rock's mass) so the spark spray scales with how hard the shot rang it.
-  const impact = Math.min(1, blockedDmg / Math.max(1, a.maxHp));
+  const impact = Math.min(1, blockedDmg / a.knockbackMass());
   a.flashAmount = Math.max(a.flashAmount, 0.5 * impact);
   game.sound.play("tink", 0.5 + 0.4 * impact, a.pos);
   emitBounceSparks(game.particles, b.pos, { x: nx, y: ny }, a.hue, impact);

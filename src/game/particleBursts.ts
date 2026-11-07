@@ -12,7 +12,13 @@ import { Gem } from "../Gem";
 import { Shard, shatterAsteroid } from "../Shard";
 
 // every burst in the game shares this shape; differences live in tuning, not code structure.
-export type BurstSpec = {
+export type BurstSpec = BurstShape & (
+  | { angleMode: "random" | "uniform"; angleJitter: number }
+  // "fan": aimed at `aim`, spread ±angleJitter around it.
+  | { angleMode: "fan"; aim: number; angleJitter: number }
+);
+
+type BurstShape = {
   pos: Vec;
   count: number;
   speedRange: [number, number];
@@ -22,15 +28,11 @@ export type BurstSpec = {
   hue: number;
   hueSpread: [number, number];
   drag: number;
-  // "fan": aimed at `aim`, spread ±angleJitter around it.
-  angleMode: "random" | "uniform" | "fan";
-  angleJitter: number;
-  aim?: number;
 };
 
 const burstAngle = (s: BurstSpec, i: number): number => {
   if (s.angleMode === "uniform") return (i / s.count) * TAU + rand(-s.angleJitter, s.angleJitter);
-  if (s.angleMode === "fan") return (s.aim ?? 0) + rand(-s.angleJitter, s.angleJitter);
+  if (s.angleMode === "fan") return s.aim + rand(-s.angleJitter, s.angleJitter);
   return rand(0, TAU);
 };
 
