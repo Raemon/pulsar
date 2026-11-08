@@ -22,9 +22,9 @@ const TRAIL_SPACING = 2.2;
 const SOCKET_R = 3;
 const LAUNCH_SLIDE_PX = 9;
 
-// Count-in to a reload: an empty socket ticks on each beat of it, harder on the last; through
-// that last beat a ring contracts and motes spiral in, landing on the reload beat itself.
-const TICK_STRENGTH_BY_BEATS_LEFT = [1, 0.6];
+// The beat before a round is ready, its socket ticks, a ring contracts and motes spiral in,
+// landing on the reload beat itself. The beats before that stay quiet.
+const TICK_STRENGTH_BY_BEATS_LEFT = [1];
 const TICK_BEATS = 0.35;
 const APPROACH_R = 9;
 const MOTES = 5;

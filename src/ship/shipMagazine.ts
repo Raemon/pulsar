@@ -1,10 +1,10 @@
 import type { Ship } from "../Ship";
 import { BEAT_GRID, BEAT_WINDOW } from "../game/rhythmConstants";
 
-// Two shots, each reloading on its own three beats after it was fired. The laser and a banked
-// super-laser fire outside the magazine.
+// Two shots, each reloading on its own: two silent beats after firing, a beat of visible
+// recharge, then ready. The laser and a banked super-laser fire outside the magazine.
 export const MAGAZINE_SIZE = 2;
-export const MAGAZINE_RELOAD_BEATS = 3;
+export const MAGAZINE_RELOAD_BEATS = 4;
 
 const SPENT_FLASH_SEC = 0.16;
 

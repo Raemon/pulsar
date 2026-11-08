@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 57;
+export const REPLAY_FORMAT_VERSION = 58;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -62,6 +62,8 @@ export const REPLAY_FORMAT_VERSION = 57;
 //   a shot that reloads three beats later, and a trigger held on an empty magazine
 //   must be released to fire again, so a v56 run that fired faster than that or
 //   held fire through a reload re-sims without those shots.
+// v58 lengthens each shot's reload to four beats (two silent, one recharging, then
+//   ready), so a v57 run that refired a round on its third beat re-sims without it.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

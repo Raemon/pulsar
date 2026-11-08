@@ -7,8 +7,8 @@
       {
         "heading": "New",
         "items": [
-          "Your ship carries two shots, shown as glowing rounds on either side of the hull. Each one reloads on its own three beats after you fire it.",
-          "Reloads count in on the beat: an empty socket ticks, then a ring closes in and the round pops back exactly on the beat it's ready."
+          "Your ship carries two shots, shown as glowing rounds on either side of the hull. Each one reloads on its own: fire on beat 1 and it's ready again on beat 5.",
+          "The beat before a round is ready, a ring closes in on its empty socket and it pops back exactly on the beat."
         ]
       },
       {
