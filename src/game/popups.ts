@@ -45,7 +45,6 @@ const BONUS_LIFE_POPUP_LIFE = 2.2;
 
 const POWERUP_LABEL: Record<PowerupKind, string> = {
   prong: "PRONG",
-  rapid: "RAPID FIRE",
   pierce: "PIERCE",
   shield: "SHIELD",
   slow: "SLOW-MO",

@@ -3,7 +3,7 @@ import type { Asteroid } from "../Asteroid";
 import { Vec, toroidalDelta, nearestImageOf } from "../vec";
 // Bolt jag/seed visuals only — cosmetic stream so it can't desync replays.
 import { cosmeticRng as rng } from "./rng";
-import { comboGrid } from "./rhythmGate";
+import { BEAT_GRID } from "./rhythmConstants";
 import { BASS_MEASURE_LENGTH } from "../Asteroid";
 import { resonanceValueOf } from "./resonanceBonus";
 import { popupBassEcho } from "./popups";
@@ -98,7 +98,7 @@ const newBolt = (source: Asteroid, target: Vec): BassLightning => {
 // on-beat kill. `killed` excludes the dying rock from arcing to itself.
 export const triggerBassLightning = (game: Game, targetPos: Vec, killed?: Asteroid) => {
   if (game.beatCombo < COMBO_REQUIRED) return;
-  const grid = comboGrid(game);
+  const grid = BEAT_GRID;
   const beatCenter = Math.round(game.perceivedBeatTime / grid) * grid;
   const sources: Asteroid[] = [];
   for (const a of game.asteroids) {

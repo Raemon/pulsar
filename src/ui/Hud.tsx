@@ -49,11 +49,6 @@ export const Hud = () => (
           <path d="M7 4 L7 11 L9 13 M17 4 L17 11 L15 13 M9 13 L15 13 M12 13 L12 21 M9 19 L15 19" />
         </svg>
       </Powerup>
-      <Powerup kind="rapid" title="Rapid Fire — eighth-note cadence">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 12 L10 12 M6 7 L12 12 L6 17 M12 7 L18 12 L12 17 M18 7 L20 9" />
-        </svg>
-      </Powerup>
       <Powerup kind="pierce" title="Pierce — bullets cut through">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="8" cy="12" r="2.5" />

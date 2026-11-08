@@ -121,6 +121,7 @@ export const OBJECTS: GameObject[] = [
     about: "bomb upgrade, off the rhythm grid",
     actions: [
       { verb: "fires", sound: "fireBomb", trigger: beat(1, 0.5) },
+      { verb: "detonates", sound: "bombBlast", trigger: beat(4, 0.5) },
     ],
   },
   {
@@ -129,12 +130,14 @@ export const OBJECTS: GameObject[] = [
     about: "bomb upgrade, on the grid — two octaves under the normal shot",
     actions: [
       { verb: "fires", sound: "fireBombBeat", trigger: beat(1) },
+      { verb: "bounces (solid)", sound: "bombBounce", trigger: beat(2, 0.5) },
+      { verb: "detonates", sound: "bombBlastBeat", trigger: beat(4) },
     ],
   },
   {
     id: "bullet-prong",
     label: "prong bullets",
-    about: "rapid+prong powerup spread",
+    about: "prong powerup spread",
     actions: [
       // No unique sound — it's still fireBeat — but the visual difference
       // earns its own row so the page covers the prong variant explicitly.
@@ -153,6 +156,7 @@ export const OBJECTS: GameObject[] = [
       // The on-beat kill replaces the noise explosion with a taiko boom.
       // Rendered as a "kill" so the visual matches the audio event.
       { verb: "killed on-beat (taiko boom)", sound: "asteroidBoomBeat", trigger: beat(4) },
+      { verb: "warp-swallowed (medium)", sound: "warpSwallow", trigger: beat(4) },
     ],
   },
 
@@ -386,7 +390,7 @@ const MENTIONED_SOUNDS = [
   // ship
   "death", "thrust", "reverseThrust", "sideThrust", "shieldPop", "bonusLife",
   // bullets
-  "fire", "fireBeat", "fireBomb", "fireBombBeat", "comboTick",
+  "fire", "fireBeat", "fireBomb", "fireBombBeat", "bombBounce", "bombBlast", "bombBlastBeat", "warpSwallow", "comboTick",
   // asteroids
   "explosionSmall", "explosionMedium", "explosionLarge", "asteroidBoomBeat",
   "bassKick", "bassPluck", "bassBoom", "bassSnap", "bassHit", "bassEcho",

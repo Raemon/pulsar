@@ -15,7 +15,7 @@ import {
 } from "../Gem";
 import { FuelOrb, spawnFuelOrbAt } from "../FuelOrb";
 import { FUEL_MODE_ENABLED, FUEL_ORB_RESTORE } from "./fuel";
-import { isInBeatWindow, beatOffsetFor, logBeatEvent, spawnBeatDebugPopup, rebaseBeatEval } from "./rhythmGate";
+import { isInBeatWindow, beatOffsetFor, logBeatEvent, spawnBeatDebugPopup } from "./rhythmGate";
 import { SLOW_MO_DURATION } from "./slowMo";
 import { syncHud } from "./hud";
 import { emitShieldPop, emitCanisterPickup, emitCanisterPop, emitGemPickup, emitFuelOrbPickup, emitBounceSparks, emitAlienBulletPop } from "./particleBursts";
@@ -142,7 +142,7 @@ const deflectBulletOff = (game: Game, b: Bullet, a: Asteroid, blockedDmg: number
   b.trail.length = 0;
   // impact reads the blocked momentum the same way applyKnockback does (vs the
   // rock's mass) so the spark spray scales with how hard the shot rang it.
-  const impact = Math.min(1, blockedDmg / Math.max(1, a.maxHp));
+  const impact = Math.min(1, blockedDmg / a.knockbackMass());
   a.flashAmount = Math.max(a.flashAmount, 0.5 * impact);
   game.sound.play("tink", 0.5 + 0.4 * impact, a.pos);
   emitBounceSparks(game.particles, b.pos, { x: nx, y: ny }, a.hue, impact);
@@ -469,11 +469,7 @@ const collectCanister = (game: Game, c: Canister) => {
   if (c.kind === "slow") {
     game.slowMoTimer = SLOW_MO_DURATION;
   } else {
-    // rapid flips grid quarters→eighths; rebase against the new grid so closures keep
-    // marching forward. (skip if combo is already ≥ 16 — grid was already on eighths.)
-    const willChangeGrid = c.kind === "rapid" && !game.ship.rapidActive && game.beatCombo < 16;
     game.ship.applyPowerup(c.kind);
-    if (willChangeGrid) rebaseBeatEval(game);
   }
   emitCanisterPickup(game.particles, c);
 };

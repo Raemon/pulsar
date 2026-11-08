@@ -97,11 +97,10 @@ const ASTEROID_TILES: Record<AsteroidKind, AsteroidTile | null> = {
 };
 
 // Labels for every powerup the type allows; the palette only renders the ones
-//   in POWERUP_KINDS (the live drop pool), so a retired powerup (rapid/pierce,
+//   in POWERUP_KINDS (the live drop pool), so a retired powerup (pierce,
 //   kept in the type for their still-wired effects) drops out automatically.
 const POWERUP_LABELS: Record<PowerupKind, string> = {
   prong: "Prong",
-  rapid: "Rapid Fire",
   pierce: "Pierce",
   shield: "Shield",
   slow: "Slow-Mo",
@@ -279,7 +278,6 @@ const iconFor = (id: string): string => {
   if (id === "alienBig") return `<svg viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="9" ry="3" fill="none" stroke="${c}" stroke-width="1.7"/><path d="M6 13 Q12 5 18 13" fill="none" stroke="${c}" stroke-width="1.7"/></svg>`;
   if (id === "canister") return `<svg viewBox="0 0 24 24"><polygon points="12,3 21,12 12,21 3,12" fill="none" stroke="${c}" stroke-width="1.5"/><text x="12" y="15" text-anchor="middle" font-size="9" fill="${c}" font-family="sans-serif" font-weight="bold">?</text></svg>`;
   if (id === "prong") return `<svg viewBox="0 0 24 24"><path d="M7 4 L7 11 L9 13 M17 4 L17 11 L15 13 M9 13 L15 13 M12 13 L12 21 M9 19 L15 19" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  if (id === "rapid") return `<svg viewBox="0 0 24 24"><path d="M4 12 L10 12 M6 7 L12 12 L6 17 M12 7 L18 12 L12 17 M18 7 L20 9" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   if (id === "pierce") return `<svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="2.5" fill="none" stroke="${c}" stroke-width="1.7"/><circle cx="16" cy="12" r="2.5" fill="none" stroke="${c}" stroke-width="1.7"/><path d="M2 12 L22 12 M19 9 L22 12 L19 15" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   if (id === "shield") return `<svg viewBox="0 0 24 24"><path d="M12 3 L20 6 L20 12 Q20 17 12 21 Q4 17 4 12 L4 6 Z" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   if (id === "slow") return `<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7" fill="none" stroke="${c}" stroke-width="1.7"/><path d="M12 13 L12 8 M12 13 L16 15 M9 3 L15 3 M12 3 L12 6" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;

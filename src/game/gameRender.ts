@@ -1,7 +1,7 @@
 import type { Game } from "../Game";
 import type { Vec } from "../vec";
 import { BEAT_GRID } from "./rhythmConstants";
-import { currentBeatPulse, currentBeatFlash, comboGrid } from "./rhythmGate";
+import { currentBeatPulse, currentBeatFlash } from "./rhythmGate";
 import { renderTrails } from "./trailsRender";
 import { renderPopups } from "./popups";
 import { renderBassLightnings } from "./bassLightning";
@@ -294,7 +294,6 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
   // orbs, trajectory preview, and laser chrome hide for the whole sequence
   // (the alive gates cover most of it — this also spans the emerge scale-in).
   const warping = game.waveSkip !== null;
-  const doubletime = comboGrid(game) < BEAT_GRID;
   // highlight the reticule + first-beat dot while the tutorial wants the player on a
   //   target: the drift/hover gate (3), the fire-and-hit sub-line (4), and build-to-4x (5).
   const tutorialHighlight =
@@ -309,9 +308,9 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
   // gold crystals are stationary (or near-stationary) "First Dot" probes — they need a direct
   // proximity pass since the trajectory walk skips speed<1 targets.
   if (!warping) {
-    game.ship.renderReticules(ctx, BEAT_GRID, game.w, game.h, targets, game.perceivedBeatTime, doubletime, tutorialHighlight, game.sound, game.beatTime, superBoosted, game.gems, aimHintRender(game));
+    game.ship.renderReticules(ctx, BEAT_GRID, game.w, game.h, targets, game.perceivedBeatTime, tutorialHighlight, game.sound, game.beatTime, superBoosted, game.gems, aimHintRender(game));
     // Streak orbs orbit the primary "next-beat" reticule.
-    const reticuleCenter = primaryReticulePosition(game.ship, BEAT_GRID, game.w, game.h, doubletime, superBoosted);
+    const reticuleCenter = primaryReticulePosition(game.ship, BEAT_GRID, game.w, game.h, superBoosted);
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     renderStreakOrbs(ctx, game, reticuleCenter);

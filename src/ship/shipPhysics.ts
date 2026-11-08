@@ -6,6 +6,7 @@ import { Bullet } from "../Bullet";
 import { Sound } from "../Sound";
 import { emitThrust, emitReverseThrust, emitSideThrust } from "./shipParticles";
 import { fireBullets, shotTravel, hasLiveBomb } from "./shipWeapons";
+import { tickMagazine, spendShot, magazineBlocksFire } from "./shipMagazine";
 import { isDown } from "../game/controlBindings";
 import { FUEL_MODE_ENABLED, FUEL_THRUST_DRAIN, FUEL_SIDE_DRAIN, FUEL_RECHARGE, FUEL_RECHARGE_INTERVAL } from "../game/fuel";
 import { BEAT_GRID } from "../game/rhythmConstants";
@@ -294,20 +295,19 @@ const updateSideThrust = (ship: Ship, input: IInput, particles: ParticleSystem, 
   else if (!isActive && wasActive) sound.stopSideThrust();
 };
 
-// rapid powerup halves the cooldown.
 const armFireCooldown = (ship: Ship) => {
-  const RAPID_FIRE_RATE_MULTIPLIER = 0.5;
-  ship.fireCooldown = ship.rapidActive ? ship.fireRate * RAPID_FIRE_RATE_MULTIPLIER : ship.fireRate;
+  ship.fireCooldown = ship.fireRate;
 };
 
 // lasershot replaces the per-press bullet emit with hold-to-charge / release-to-fire
 // driven by game/laserShot.ts.tickLaserShot — gate the bullet path off entirely here.
-const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[]) => {
+const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[], perceivedBeatTime: number) => {
   // The press edge comes from held state, which replays record; justPressed
   // isn't recorded, so a tap shorter than a frame would desync a re-sim.
   const down = isDown(input, "fire");
   const pressed = down && !ship.fireWasDown;
   ship.fireWasDown = down;
+  ship.triggerHeldDry = down && (ship.triggerHeldDry || magazineBlocksFire(ship));
   // A live bomb makes fire its detonator: the next press blows it (in
   // game/bombShot.ts, which can reach the targets) and throws nothing, so only
   // one is ever in play. The cooldown keeps a banked super-laser from also
@@ -325,18 +325,22 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[]) => {
   // bolt. The bullet path is suppressed here; the game-level tickSuperLaserFire
   // owns the actual fire (it needs game state the ship module can't see).
   if (ship.superLaserCharged) return;
+  // Without this, a trigger held through the reload would autofire on the refill beat.
+  if (ship.triggerHeldDry) return;
   // A bomb throws on a press, never a hold or a cooldown, so each press does
   // exactly one thing: throw, then blow.
   if (ship.bombActive) {
-    if (pressed) {
-      fireBullets(ship, bullets);
-      armFireCooldown(ship);
-    }
+    if (pressed) fireShot(ship, bullets, perceivedBeatTime);
     return;
   }
   if (!down) return;
   if (ship.fireCooldown > 0) return;
+  fireShot(ship, bullets, perceivedBeatTime);
+};
+
+const fireShot = (ship: Ship, bullets: Bullet[], perceivedBeatTime: number) => {
   fireBullets(ship, bullets);
+  spendShot(ship, perceivedBeatTime);
   armFireCooldown(ship);
 };
 
@@ -367,7 +371,7 @@ const integrateMotion = (ship: Ship, dt: number, w: number, h: number) => {
 export const tickShip = (
   ship: Ship, dt: number, input: IInput,
   particles: ParticleSystem, bullets: Bullet[],
-  w: number, h: number, t: number, sound: Sound,
+  w: number, h: number, t: number, sound: Sound, perceivedBeatTime: number,
 ) => {
   ship.lastWrapDX = 0;
   ship.lastWrapDY = 0;
@@ -381,6 +385,8 @@ export const tickShip = (
   updateReverseThrust(ship, input, particles, sound, dt, t);
   updateSideThrust(ship, input, particles, sound, dt, t);
   rechargeFuel(ship, dt);
-  updateFireTrigger(ship, input, bullets);
+  // Before the trigger, so a press on the refill beat fires.
+  tickMagazine(ship, dt, perceivedBeatTime);
+  updateFireTrigger(ship, input, bullets, perceivedBeatTime);
   integrateMotion(ship, dt, w, h);
 };

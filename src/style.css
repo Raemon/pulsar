@@ -239,7 +239,6 @@ html:has(#sound-root), body:has(> #sound-root) {
 }
 
 .powerup-slot[data-kind="prong"] { color: hsl(180, 90%, 70%); }
-.powerup-slot[data-kind="rapid"]   { color: hsl(300, 90%, 75%); }
 .powerup-slot[data-kind="pierce"]  { color: hsl(60, 95%, 70%); }
 .powerup-slot[data-kind="shield"]  { color: hsl(200, 90%, 72%); }
 .powerup-slot[data-kind="slow"]    { color: hsl(130, 80%, 70%); }

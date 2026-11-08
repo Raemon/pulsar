@@ -9,6 +9,7 @@ import {
   paintAimDiscs,
 } from "./aimDisc";
 import { prongOffsets, shotLife, shotTravel, shotVelInherit, shotPositionAt, BOMB_SIGHT_SLOTS } from "../shipWeapons";
+import { magazineBlocksFire } from "../shipMagazine";
 import { BULLET_SIGHT_RADIUS_ON_BEAT } from "./trajectoryPreview";
 import { bulletCollisionRadius, BOMB_BLAST_RADIUS } from "../../Bullet";
 import { toroidalDelta } from "./coneGeometry";
@@ -34,10 +35,6 @@ const RETICULE_COOLDOWN_DIM = 0.3;
 const RETICULE_RADAR_PULSE_MAX = 1;
 const RETICULE_RADAR_PULSE_MIN = 0.7;
 const RETICULE_RADAR_PULSE_PERIOD_SEC = 3.0;
-
-// doubletime (rapid powerup) fires every half-beat, so the off-beat bullet
-// only travels half as far before the next beat.
-const HALF_BEAT_FRACTION = 0.5;
 
 // guidance arrow: a small filled triangle orbiting the reticule that points toward the nearest
 // first-beat rhythm dot. Sits just outside the on-beat disc so it reads as part of the sight
@@ -280,34 +277,27 @@ const computeReticulePosition = (ship: Ship, beatGrid: number, headingOffset: nu
 const reticuleSlotCount = (ship: Ship, beatGrid: number, superBoosted: boolean): number =>
   ship.bombActive ? BOMB_SIGHT_SLOTS : Math.max(1, Math.floor(shotLife(ship, superBoosted) / beatGrid));
 
-// prong fans the aim into one angle per prongOffsets entry; doubletime adds a half-beat preview at
-// half distance (not for a bomb, whose ring only flashes on whole beats); integer-k reticules
-// mark every beat-slot the bullet actually crosses
-// (t = beatGrid*k < life), so the count adapts to longshot/pierce/superBoosted range and to
-// the rhythm-gate tempo (eighth-grid at combo ≥ 12 or under rapid). slotPositionIndices[k-1]
-// lists every position index that anchors the k-beat slot — one entry per prong angle.
+// prong fans the aim into one angle per prongOffsets entry; reticule k marks the beat-slot the
+// bullet crosses at t = beatGrid*k < life, so the count adapts to longshot/pierce/superBoosted
+// range. slotPositionIndices[k-1] lists every position index that anchors the k-beat slot — one
+// entry per prong angle.
 // The slot's hover ring locks the moment the trajectory dot grazes ANY of them.
 type ReticulePositions = { positions: Vec[]; primaryIndex: number; slotPositionIndices: number[][] };
 const computeReticulePositions = (
-  ship: Ship, beatGrid: number, doubletime: boolean, superBoosted: boolean,
+  ship: Ship, beatGrid: number, superBoosted: boolean,
 ): ReticulePositions => {
   const angleOffsets = prongOffsets(ship.prongCount);
   const primaryOffset = angleOffsets[0];
   const slotCount = reticuleSlotCount(ship, beatGrid, superBoosted);
-  const integerFractions: number[] = [];
-  for (let k = 1; k <= slotCount; k++) integerFractions.push(k);
-  const beatFractions = doubletime && !ship.bombActive ? [HALF_BEAT_FRACTION, ...integerFractions] : integerFractions;
   const positions: Vec[] = [];
   let primaryIndex = -1;
   const slotPositionIndices: number[][] = Array.from({ length: slotCount }, () => []);
-  for (const frac of beatFractions) {
+  for (let k = 1; k <= slotCount; k++) {
     for (const off of angleOffsets) {
       const idx = positions.length;
-      positions.push(computeReticulePosition(ship, beatGrid, off, frac));
-      if (off === primaryOffset && frac === 1) primaryIndex = idx;
-      if (Number.isInteger(frac) && frac >= 1 && frac <= slotCount) {
-        slotPositionIndices[frac - 1].push(idx);
-      }
+      positions.push(computeReticulePosition(ship, beatGrid, off, k));
+      if (off === primaryOffset && k === 1) primaryIndex = idx;
+      slotPositionIndices[k - 1].push(idx);
     }
   }
   return { positions, primaryIndex, slotPositionIndices };
@@ -316,9 +306,9 @@ const computeReticulePositions = (
 // Folded screen position of the primary ("shoot now to hit next beat") reticule —
 //   the anchor the streak orbs orbit. Falls back to the ship apex if no slot exists.
 export const primaryReticulePosition = (
-  ship: Ship, beatGrid: number, w: number, h: number, doubletime: boolean, superBoosted: boolean,
+  ship: Ship, beatGrid: number, w: number, h: number, superBoosted: boolean,
 ): Vec => {
-  const { positions, primaryIndex } = computeReticulePositions(ship, beatGrid, doubletime, superBoosted);
+  const { positions, primaryIndex } = computeReticulePositions(ship, beatGrid, superBoosted);
   const raw = primaryIndex >= 0 ? positions[primaryIndex]
     : positions.length > 0 ? positions[0] : ship.pos;
   return wrapReticuleVec(raw, w, h);
@@ -661,7 +651,7 @@ const HOVER_HUM_RAMP_SEC = 2.5;
 export const renderShipReticules = (
   ship: Ship, state: ReticuleState,
   ctx: CanvasRenderingContext2D, beatGrid: number, w: number, h: number,
-  targets: ReadonlyArray<ReticuleTarget>, beatTime: number, doubletime: boolean,
+  targets: ReadonlyArray<ReticuleTarget>, beatTime: number,
   tutorialHighlight: boolean = false,
   sound: Sound | null = null,
   // beatTime here is the latency-shifted (perceived) clock that all the visuals ride.
@@ -680,7 +670,7 @@ export const renderShipReticules = (
   // meaning under the laser, which fires a straight beam — gameRender draws the
   // laser's own dash-line reticule (renderLaserReticule) instead.
   if (ship.lasershotActive) return;
-  const { positions: reticulePositions, primaryIndex, slotPositionIndices } = computeReticulePositions(ship, beatGrid, doubletime, superBoosted);
+  const { positions: reticulePositions, primaryIndex, slotPositionIndices } = computeReticulePositions(ship, beatGrid, superBoosted);
   // trajectory preview anchors on the "shoot now to hit next beat" spot. primaryIndex always
   // exists now (anchors on the first prong offset under prong), but keep the fallback for safety.
   const primaryReticule = primaryIndex >= 0
@@ -704,7 +694,8 @@ export const renderShipReticules = (
   const radarPulse = cosineEnvelope(beatTime, RETICULE_RADAR_PULSE_PERIOD_SEC, RETICULE_RADAR_PULSE_MIN, RETICULE_RADAR_PULSE_MAX);
   const beatPulseBoost = computeBeatPulseBoost(beatTime, beatGrid);
   // A live mine dims the sight too: the next press detonates it, not a throw.
-  const cooldownDim = ship.fireCooldown > 0 || ship.bombInPlay ? RETICULE_COOLDOWN_DIM : 1;
+  const nextPressWontShoot = ship.fireCooldown > 0 || ship.bombInPlay || magazineBlocksFire(ship);
+  const cooldownDim = nextPressWontShoot ? RETICULE_COOLDOWN_DIM : 1;
   const baseHitAlpha = hitboxPulse * cooldownDim * beatPulseBoost;
   paintConeBackground(ctx, ship, apex, beatTime, beatGrid);
   paintRangeArcs(ctx, ship, apex, beatTime, radarPulse);
@@ -712,7 +703,7 @@ export const renderShipReticules = (
   const trajectoryResult = paintTrajectoryPreviews({
     ctx, apex, beatGrid, beatTime, w, h, frame, reticulePos: primaryReticule,
     reticulesBySlot, aimCircleCenter, aimCircleRadius,
-    trajectoryTracks: state.trajectoryTracks, doubletime, tutorialHighlight,
+    trajectoryTracks: state.trajectoryTracks, tutorialHighlight,
     hoverZoneEnterBySlot: state.hoverDotRings.map(r => r.zoneEnterBeatTime),
     collisionRadiusOnBeat, aimHint,
   }, targets);
@@ -842,12 +833,12 @@ export const renderShipReticules = (
 export const tickHoverLockState = (
   ship: Ship, state: ReticuleState,
   beatGrid: number, w: number, h: number,
-  targets: ReadonlyArray<ReticuleTarget>, beatTime: number, doubletime: boolean,
+  targets: ReadonlyArray<ReticuleTarget>, beatTime: number,
   superBoosted: boolean, hoverProbes: ReadonlyArray<ReticuleHoverProbe>,
   sound: Sound | null, emit: boolean,
 ): void => {
   if (!ship.alive) return;
-  const { positions: reticulePositions, slotPositionIndices } = computeReticulePositions(ship, beatGrid, doubletime, superBoosted);
+  const { positions: reticulePositions, slotPositionIndices } = computeReticulePositions(ship, beatGrid, superBoosted);
   while (state.hoverDotRings.length < slotPositionIndices.length) {
     state.hoverDotRings.push({ hoverStartBeatTime: null, completionBeatTime: null, zoneEnterBeatTime: null, fadeOutStartTime: null, lastRingCenter: null });
   }
@@ -862,7 +853,7 @@ export const tickHoverLockState = (
   const trajectoryResult = paintTrajectoryPreviews({
     ctx: null, apex, beatGrid, beatTime, w, h, frame, reticulePos: primaryReticule,
     reticulesBySlot, aimCircleCenter, aimCircleRadius,
-    trajectoryTracks: new Map(), doubletime, tutorialHighlight: false,
+    trajectoryTracks: new Map(), tutorialHighlight: false,
     hoverZoneEnterBySlot: state.hoverDotRings.map(r => r.zoneEnterBeatTime),
     collisionRadiusOnBeat,
   }, targets);

@@ -8,7 +8,8 @@ import { FUEL_MAX } from "./game/fuel";
 import { BEAT_GRID } from "./game/rhythmConstants";
 import { haloVertices, haloReach, hitDistanceToward, SHIP_BODY_RADIUS, SHIP_HALO_OFFSET } from "./ship/shipHitbox";
 import { tickShip } from "./ship/shipPhysics";
-import { fireBullets, applyPowerup } from "./ship/shipWeapons";
+import { applyPowerup } from "./ship/shipWeapons";
+import { newPylons } from "./ship/shipMagazine";
 import { setComboFromValue } from "./ship/shipComboHalo";
 import { renderShipBody } from "./ship/shipRender";
 import { renderShipReticules, tickHoverLockState, ReticuleHoverProbe } from "./ship/reticule/reticuleRender";
@@ -112,13 +113,17 @@ export class Ship {
   fireCooldown = 0;
   // one shot per beat by default; reticule previews where it lands at the next beat boundary.
   fireRate = BEAT_GRID;
+  // Two-shot magazine, drawn as a loaded round on each pylon. See ship/shipMagazine.ts.
+  pylons = newPylons();
+  // Fire held on an empty magazine must be released before it fires again.
+  triggerHeldDry = false;
+
   bulletSpeed = 620;
   bulletLife = 0.85;
-  // prong/rapid/pierce/radar/longshot persist for the run; shield is one-shot.
+  // prong/pierce/radar/longshot persist for the run; shield is one-shot.
   // prongCount stacks: each upgrade adds two more bullets (see prongOffsets for the fan).
   prongCount = 0;
   get prongActive() { return this.prongCount > 0; }
-  rapidActive = false;
   pierceActive = false;
   shieldActive = false;
   radarActive = false;
@@ -221,13 +226,10 @@ export class Ship {
   // orchestrates a single frame of player control, audio, and motion in one delegated call.
   update(
     dt: number, input: IInput, particles: ParticleSystem, bullets: Bullet[],
-    w: number, h: number, t: number, sound: Sound,
+    w: number, h: number, t: number, sound: Sound, perceivedBeatTime: number,
   ) {
-    tickShip(this, dt, input, particles, bullets, w, h, t, sound);
+    tickShip(this, dt, input, particles, bullets, w, h, t, sound, perceivedBeatTime);
   }
-
-  // prong spreads + on-beat tagging happens in Game; the ship just emits the right bullet count.
-  fire(bullets: Bullet[]) { fireBullets(this, bullets); }
 
   // powerup pickup goes through one entry point so the active-flag rules stay in one file.
   applyPowerup(kind: PowerupKind) { applyPowerup(this, kind); }
@@ -235,13 +237,13 @@ export class Ship {
   // aim disc + radar cone + trajectory previews share one composition — single delegate.
   renderReticules(
     ctx: CanvasRenderingContext2D, beatGrid: number, w: number, h: number,
-    targets: ReadonlyArray<ReticuleTarget> = [], beatTime: number = 0, doubletime: boolean = false,
+    targets: ReadonlyArray<ReticuleTarget> = [], beatTime: number = 0,
     tutorialHighlight: boolean = false, sound: Sound | null = null, audioBeatTime: number = beatTime,
     superBoosted: boolean = false,
     hoverProbes: ReadonlyArray<ReticuleHoverProbe> = [],
     aimHint: AimHintRender | null = null,
   ) {
-    renderShipReticules(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, ctx, beatGrid, w, h, targets, beatTime, doubletime, tutorialHighlight, sound, audioBeatTime, superBoosted, hoverProbes, aimHint);
+    renderShipReticules(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, ctx, beatGrid, w, h, targets, beatTime, tutorialHighlight, sound, audioBeatTime, superBoosted, hoverProbes, aimHint);
   }
 
   // How long ago the radar last had this target in its cone, in beat-time seconds; null if it
@@ -256,11 +258,11 @@ export class Ship {
   //   `emit` true on live (fires the lock hum/hint), false on replay.
   tickReticuleLock(
     beatGrid: number, w: number, h: number,
-    targets: ReadonlyArray<ReticuleTarget>, beatTime: number, doubletime: boolean,
+    targets: ReadonlyArray<ReticuleTarget>, beatTime: number,
     superBoosted: boolean, hoverProbes: ReadonlyArray<ReticuleHoverProbe>,
     sound: Sound | null, emit: boolean,
   ) {
-    tickHoverLockState(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, beatGrid, w, h, targets, beatTime, doubletime, superBoosted, hoverProbes, sound, emit);
+    tickHoverLockState(this, { trajectoryTracks: this.trajectoryTracks, hoverDotRings: this.hoverDotRingStates }, beatGrid, w, h, targets, beatTime, superBoosted, hoverProbes, sound, emit);
   }
 
   // hull + thrust + retro + shield + combo halo all composite together in one

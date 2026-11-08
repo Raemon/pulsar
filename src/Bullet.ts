@@ -57,6 +57,13 @@ const ON_BEAT_CORE_MULT = 2.38;
 
 export type BulletShape = { onBeat: boolean; superBoosted?: boolean };
 
+// The stock off-beat shot's look, shared with the magazine's loaded rounds (shipMagazineRender).
+export const OFF_BEAT_HUE = 180;
+export const OFF_BEAT_HEAD_ALPHA = 0.75;
+export const OFF_BEAT_TRAIL_ALPHA = 0.4;
+export const OFF_BEAT_CORE_FILL = "hsla(180, 100%, 98%, 1)";
+export const TRAIL_RADIUS_MUL = 5;
+
 export const bulletCoreRadius = (shape: BulletShape): number =>
   BULLET_CORE_RADIUS * (shape.onBeat ? ON_BEAT_CORE_MULT : 1);
 
@@ -90,16 +97,16 @@ export class Bullet {
   // twice as far — same hitbox/core as the yellow tier, but sharper-looking
   // and with extended reach so the streak feels like a longer arm.
   superBoosted = false;
-  // Set by Ship.fire when the player has the pierce powerup active. Game's
+  // Set by fireBullets when the player has the pierce powerup active. Game's
   // collision pass keeps a piercing bullet alive on hit instead of consuming
   // it, so a single shot can punch through a row of asteroids.
   pierce = false;
-  // Set by Ship.fire when the player has the bomb upgrade. The shell bounces
+  // Set by fireBullets when the player has the bomb upgrade. The shell bounces
   // instead of hitting, slows under BOMB_DRAG, and detonates on the next fire
   // press (game/bombShot.ts); it swaps the tier palette from blue/gold/white to
   // red/orange/white-with-a-gold-halo.
   bomb = false;
-  // Set by Ship.fire under the Warp Cannon upgrade: the shot is a flying
+  // Set by fireBullets under the Warp Cannon upgrade: the shot is a flying
   // wormhole that swallows what it hits whole (game/warpCannon.ts), painted by
   // renderWarpShotLenses / renderWarpShots rather than render() below. The
   // wake ripples it sheds are cosmetic.
@@ -289,12 +296,12 @@ export class Bullet {
     // Bomb runs its own tier palette (see bombHue): red → orange → gold-haloed
     // white, so a bomb shot never reads as an ordinary blue rhythm bullet.
     const flashing = this.flashTimer > 0;
-    const trailHue = this.bomb ? this.bombHue() : this.boosted ? 45 : this.onBeat ? 220 : this.pierce ? 60 : 180;
-    const headHue = this.bomb ? this.bombHue() : this.boosted ? 48 : this.onBeat ? 222 : this.pierce ? 60 : 180;
-    const trailAlphaScale = this.onBeat ? 0.85 : 0.4;
-    const headAlpha = this.onBeat ? 1.0 : 0.75;
+    const trailHue = this.bomb ? this.bombHue() : this.boosted ? 45 : this.onBeat ? 220 : this.pierce ? 60 : OFF_BEAT_HUE;
+    const headHue = this.bomb ? this.bombHue() : this.boosted ? 48 : this.onBeat ? 222 : this.pierce ? 60 : OFF_BEAT_HUE;
+    const trailAlphaScale = this.onBeat ? 0.85 : OFF_BEAT_TRAIL_ALPHA;
+    const headAlpha = this.onBeat ? 1.0 : OFF_BEAT_HEAD_ALPHA;
     const headRadiusMul = this.headGlowRadiusMul();
-    const trailRadiusMul = this.superBoosted ? 3 : 5;
+    const trailRadiusMul = this.superBoosted ? 3 : TRAIL_RADIUS_MUL;
     const coreRadius = this.effectiveRadius();
     for (let i = 0; i < this.trail.length; i++) {
       const segmentT = i / this.trail.length;
@@ -334,7 +341,7 @@ export class Bullet {
           ? "hsla(220, 100%, 85%, 1)"
           : this.pierce
             ? "hsla(60, 100%, 96%, 1)"
-            : "hsla(180, 100%, 98%, 1)";
+            : OFF_BEAT_CORE_FILL;
     const coreDrawRadius = this.coreDrawRadius();
     ctx.beginPath();
     ctx.arc(this.pos.x, this.pos.y, coreDrawRadius, 0, TAU);

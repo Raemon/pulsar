@@ -4,6 +4,7 @@ import { Vec, add, fromAngle, TAU } from "../vec";
 import { cosmeticRng as rng } from "../game/rng";
 import { POWERUP_HUE } from "../Canister";
 import { renderComboHalo } from "./shipComboHalo";
+import { paintMagazine } from "./shipMagazineRender";
 import { haloVertices } from "./shipHitbox";
 import { buildJaggedBolt, strokePolyline } from "../game/bassLightning";
 
@@ -218,6 +219,7 @@ export const renderShipBody = (ctx: CanvasRenderingContext2D, ship: Ship, t: num
   renderComboHalo(ctx, ship, beatPulse);
   paintSuperLaserCharge(ctx, ship, t);
   paintShipHull(ctx, verts, invuln, beatPulse, bonusFlash, ship.laserCooldownDim);
+  paintMagazine(ctx, ship, invuln);
   paintThrustFlame(ctx, ship);
   paintRetroFlares(ctx, ship);
   paintSideJets(ctx, ship);

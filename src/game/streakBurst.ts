@@ -232,7 +232,7 @@ export const renderStreakOrbs = (ctx: CanvasRenderingContext2D, game: Game, cent
 // End a streak: zero the run-streak state (the ring just stops drawing — each
 //   counted shot already paid on landing). Keeps the per-wave total. Kept here
 //   so both rhythmBonus and rhythmGate (loseCombo) can call it without an
-//   import cycle through comboGrid.
+//   import cycle.
 export const resetStreak = (game: Game) => {
   game.streakInterval = 0;
   game.streakGrid = 0;

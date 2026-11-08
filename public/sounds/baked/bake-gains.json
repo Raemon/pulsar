@@ -27,6 +27,11 @@
   "bell__0.5500": 0.237126,
   "bell__1.0000": 0.451418,
   "bell__1.1890": 0.221537,
+  "bombBlast__1.0000": 1.5222,
+  "bombBlastBeat__1.0000": 2.095069,
+  "bombBounce__0.0000": 0.396052,
+  "bombBounce__1.0000": 0.623957,
+  "bombBounce__2.0000": 0.795371,
   "bonusLife__1.0000": 0.856551,
   "bossEyeOpenStinger__1.0000": 1.616022,
   "bossHit__1.0000": 1.276204,
@@ -87,8 +92,8 @@
   "explosionMedium__1.0000": 0.394417,
   "explosionSmall__1.0000": 0.254768,
   "fire__1.0000": 0.213457,
-  "fireBomb__1.0000": 0.295118,
-  "fireBombBeat__1.0000": 0.47966,
+  "fireBomb__1.0000": 0.280569,
+  "fireBombBeat__1.0000": 0.477738,
   "firstDotHum__0.0000": 0.89887,
   "firstDotHum__1.0000": 0.898876,
   "firstDotHum__2.0000": 0.898871,
@@ -148,5 +153,8 @@
   "tink__1.0000": 0.287448,
   "warble__1.0000": 0.246301,
   "warbleDrone__0.0000": 0.747145,
-  "warbleDrone__1.0000": 0.683391
+  "warbleDrone__1.0000": 0.683391,
+  "warpSwallow__0.0000": 1.257065,
+  "warpSwallow__1.0000": 1.223663,
+  "warpSwallow__2.0000": 1.261596
 }

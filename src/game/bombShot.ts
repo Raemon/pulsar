@@ -1,12 +1,15 @@
 import type { Game } from "../Game";
+import type { Asteroid } from "../Asteroid";
+import type { Alien } from "../Alien";
 import { Bullet, BOMB_BLAST_RADIUS } from "../Bullet";
-import { toroidalDelta } from "../vec";
+import { Vec, add, addScaledMut, mul, toroidalDelta } from "../vec";
+import { ENTITY_CONFIG } from "./entityConfig";
 import { BEAT_GRID } from "./rhythmConstants";
 import { isInBeatWindow } from "./rhythmGate";
 import { registerOnBeatFire, registerOffBeatFire } from "./gameUpdate";
 import { isLiveBomb } from "../ship/shipWeapons";
 import { applyStrikes, strikeShot, strikeTargets, StrikeTarget } from "./weaponStrike";
-import { emitBounceSparks, emitBombBlast } from "./particleBursts";
+import { emitBounceDebris, emitBombBlast } from "./particleBursts";
 
 // The Bomb upgrade turns fire into a two-press weapon. The first press throws a
 // mine: the shell glides out, settles under drag (Bullet.update), and never
@@ -19,11 +22,18 @@ import { emitBounceSparks, emitBombBlast } from "./particleBursts";
 // The detonating press is judged on the beat like any fire press; the ring
 // flashes on every beat as the metronome for it.
 
-// Fraction of the closing speed a bounce returns. Low, so a mine that hits a
-// rock rebounds a short way and still has it in range when it's detonated.
-const BOMB_RESTITUTION = 0.35;
-// Closing speed at which a bounce rings and sparks at full strength.
+// Low, so a dense shell thuds into a rock instead of pinging off, staying in blast range.
+const BOMB_RESTITUTION = 0.25;
+// The shell weighs as much as a medium rock, in the bodies' knockbackMass units.
+const BOMB_MASS = ENTITY_CONFIG.asteroid.hp.medium;
+// So a point-blank throw can't fling a small rock or saucer across the field.
+const MAX_SHOVE_SPEED = 140;
+// Slower contact is a body leaning on the mine (drag re-closes the gap every frame).
+const RESTING_CONTACT_SPEED = 25;
+// Closing speed at which a bounce sounds and shows at full strength.
 const BOUNCE_FULL_IMPACT_SPEED = 400;
+const FULL_BOUNCE_SHAKE = 0.1;
+
 // Speed of the blast's push on each target. It sets the direction kill fragments
 // fly (straight out from the blast) and the knockback on survivors.
 const BLAST_PUSH_SPEED = 300;
@@ -35,28 +45,54 @@ const INCLUDE_PICKUPS = false;
 const blastReaches = (b: Bullet, target: StrikeTarget): boolean =>
   target.collidesWith(b.pos, BOMB_BLAST_RADIUS);
 
-// Rebound off a touched target, in its frame: the target's own velocity carries
-// over, so a rock that rolls into a resting mine shoves it ahead rather than
-// passing through. Only the closing part of the motion reflects; a mine already
-// separating keeps going.
-const bounceOff = (game: Game, b: Bullet, target: StrikeTarget) => {
+const shoveableBody = (game: Game, target: StrikeTarget): Asteroid | Alien | undefined =>
+  game.aliens.find((al) => al === target) ?? game.asteroids.find((a) => a === target && a.driftsFreely());
+
+const contactNormal = (game: Game, b: Bullet, target: StrikeTarget): Vec => {
   const [dx, dy] = toroidalDelta(b.pos.x - target.pos.x, b.pos.y - target.pos.y, game.w, game.h);
   const len = Math.hypot(dx, dy) || 1;
-  const nx = dx / len;
-  const ny = dy / len;
-  const closing = (b.vel.x - target.vel.x) * nx + (b.vel.y - target.vel.y) * ny;
-  if (closing >= 0) return;
-  b.vel.x -= (1 + BOMB_RESTITUTION) * closing * nx;
-  b.vel.y -= (1 + BOMB_RESTITUTION) * closing * ny;
+  return { x: dx / len, y: dy / len };
+};
+
+const impactTier = (impact: number): number => (impact < 0.3 ? 0 : impact < 0.7 ? 1 : 2);
+
+// A body leaning on the mine just carries it along: no exchange, no sound.
+const rideAlong = (b: Bullet, normal: Vec, closing: number) => addScaledMut(b.vel, normal, -closing);
+
+// Restitution split by mass; a body that can't be shoved is a wall. The shell
+// takes whatever a capped shove didn't, so the pair always parts after one bounce.
+const exchangeMomentum = (b: Bullet, body: Asteroid | Alien | undefined, normal: Vec, closing: number) => {
+  const exchange = (1 + BOMB_RESTITUTION) * closing;
+  if (!body) return addScaledMut(b.vel, normal, -exchange);
+  const bodyShare = BOMB_MASS / (BOMB_MASS + body.knockbackMass());
+  const shove = Math.max(exchange * bodyShare, -MAX_SHOVE_SPEED);
+  addScaledMut(body.vel, normal, shove);
+  addScaledMut(b.vel, normal, shove - exchange);
+};
+
+// Cosmetic only, never read back by the sim.
+const feelBounce = (game: Game, b: Bullet, body: Asteroid | Alien | undefined, normal: Vec, impact: number) => {
   b.trail.length = 0;
-  const impact = Math.min(1, -closing / BOUNCE_FULL_IMPACT_SPEED);
-  game.sound.play("tink", 0.4 + 0.3 * impact, b.pos);
-  emitBounceSparks(game.particles, b.pos, { x: nx, y: ny }, b.bombHue(), impact);
+  if (body) body.flashAmount = Math.max(body.flashAmount, 0.4 * impact);
+  game.shake = Math.min(game.shake + FULL_BOUNCE_SHAKE * impact, 1.2);
+  game.sound.play("bombBounce", impactTier(impact), b.pos);
+  const contact = add(b.pos, mul(normal, -b.hitRadius()));
+  emitBounceDebris(game.particles, contact, normal, body?.hue ?? b.bombHue(), impact);
+};
+
+// Only the closing part of the motion is exchanged; a pair already separating carries on.
+const bounceOff = (game: Game, b: Bullet, target: StrikeTarget) => {
+  const normal = contactNormal(game, b, target);
+  const closing = (b.vel.x - target.vel.x) * normal.x + (b.vel.y - target.vel.y) * normal.y;
+  if (closing >= 0) return;
+  if (-closing < RESTING_CONTACT_SPEED) return rideAlong(b, normal, closing);
+  const body = shoveableBody(game, target);
+  exchangeMomentum(b, body, normal, closing);
+  feelBounce(game, b, body, normal, Math.min(1, -closing / BOUNCE_FULL_IMPACT_SPEED));
 };
 
 const bounceBomb = (game: Game, b: Bullet, targets: StrikeTarget[]) => {
-  const touched = targets.find((t) => t.collidesWith(b.pos, b.hitRadius()));
-  if (touched) bounceOff(game, b, touched);
+  for (const t of targets) if (t.collidesWith(b.pos, b.hitRadius())) bounceOff(game, b, t);
 };
 
 // The blast scores on-beat when the detonating press was — a second kill in the
@@ -77,7 +113,7 @@ const detonate = (game: Game, b: Bullet, onBeat: boolean) => {
     const push = { x: (dx / len) * BLAST_PUSH_SPEED, y: (dy / len) * BLAST_PUSH_SPEED };
     return { damage, onBeat, shot: strikeShot(impact, push, b), bossImpact: false };
   });
-  game.sound.play("explosionMedium", 1, b.pos);
+  game.sound.play(onBeat ? "bombBlastBeat" : "bombBlast", 1, b.pos);
   game.shake = Math.min(game.shake + 0.3, 1.2);
   emitBombBlast(game.particles, b.pos, b.bombHue(), BOMB_BLAST_RADIUS);
 };

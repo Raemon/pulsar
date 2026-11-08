@@ -4488,13 +4488,12 @@ export class Asteroid {
 
   // a non-killing hit should visibly shove the target — fraction of "kill-worth"
   // damage maps to a fraction of a reference speed bump along the impact direction.
-  // Heavier targets (high maxHp + armor) get pushed proportionally less for the
-  // same damage; counting damageReduction keeps a low-hp armored crystal from
-  // weighing nothing and taking the full reference speed per blocked shot.
+  // Heavier targets (see knockbackMass) get pushed proportionally less for the
+  // same damage.
   applyKnockback(dirX: number, dirY: number, amount: number, referenceSpeed: number = 120) {
     const len = Math.hypot(dirX, dirY);
     if (len === 0) return;
-    const fraction = Math.min(1, amount / Math.max(1, this.maxHp + this.damageReduction));
+    const fraction = Math.min(1, amount / this.knockbackMass());
     const dv = fraction * referenceSpeed;
     this.vel.x += (dirX / len) * dv;
     this.vel.y += (dirY / len) * dv;
@@ -5070,6 +5069,22 @@ export class Asteroid {
   // rhythm and rendering all ask about the family rather than the kind.
   isSepulchreFamily(): boolean {
     return this.kind === "sepulchre" || this.kind === "pallbearer";
+  }
+
+  // The boss and the Sepulchre: encounters, too massive to swallow or shove.
+  isEncounter(): boolean {
+    return this.isBossFamily() || this.isSepulchreFamily();
+  }
+
+  // Whether a bounce may shove it: not an encounter, and not a torus fragment
+  // (those ride their ring and ignore their own velocity).
+  driftsFreely(): boolean {
+    return !this.isEncounter() && !isTorusFragment(this.kind);
+  }
+
+  // Counting damageReduction keeps a low-hp armoured crystal from weighing nothing.
+  knockbackMass(): number {
+    return Math.max(1, this.maxHp + this.damageReduction);
   }
 
   // Kinds that arrive dormant: a long approach where the body is still

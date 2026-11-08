@@ -201,7 +201,7 @@ try {
         if (mode === "live") head = liveChainIn(ctx);
         else if (mode === "raw") { const g = ctx.createGain(); g.gain.value = VOLUME; g.connect(ctx.destination); head = g; }
         else head = bakedChainIn(ctx);
-        builder(ctx, head);
+        builder(ctx, head, 0);
         return (await ctx.startRendering()).getChannelData(0);
       };
 

@@ -47,12 +47,8 @@ const TRAJECTORY_PULSE_PERIOD_BEATS = 4;
 const TRAJECTORY_PULSE_MIN_ALPHA = 1;
 const TRAJECTORY_BEAT_DOT_RADIUS = 0;
 const TRAJECTORY_BEAT_DOT_ALPHA = 0.25;
-// doubletime: half-beat dots interleave fainter so on-beat dots stay dominant
-const TRAJECTORY_HALF_BEAT_DOT_ALPHA_FACTOR = 0.45;
-const TRAJECTORY_HALF_BEAT_DOT_RADIUS = 0.8;
-// the half-beat first dot glows like the on-beat first dot but at a reduced alpha so the
-// on-beat anchor still dominates as the primary "shoot here" cue.
-const TRAJECTORY_HALF_BEAT_FIRST_DOT_ALPHA_FACTOR = 0.5;
+// the 'both'-mode secondary first dot glows at a reduced alpha so the primary one dominates.
+const TRAJECTORY_SECONDARY_FIRST_DOT_ALPHA_FACTOR = 0.5;
 // the first beat-dot is the most important — slightly larger and brighter than the rest so
 // the player's eye is drawn to "this is where to shoot next beat", but still reads as a member
 // of the same dot series rather than a separate kind of cue.
@@ -97,7 +93,7 @@ const HOVER_ZONE_PULSE_HEAD_HALO_RADIUS = 4;
 const HOVER_ZONE_PULSE_HEAD_HALO_ALPHA = 0.3;
 const HOVER_ZONE_FADE_IN_SEC = 0.05;
 // hint text that appears alongside the first crosshair shown per game session — only for
-// pre-veteran pilots (anyone who has never hit 6x rhythm). Veterans skip the hint entirely;
+// pre-veteran pilots (anyone who has never hit 12x rhythm). Veterans skip the hint entirely;
 // non-veterans see it once per run, anchored to the spot of first appearance, and fade out
 // gently after the originating hover ends.
 const HOVER_ZONE_HINT_LINES = ["Aim at the target", "to hit on the beat"] as const;
@@ -121,7 +117,7 @@ let hoverZoneHintAnchor: { x: number; y: number } | null = null;
 let hoverZoneHintShownAt: number | null = null;
 // beat-time the originating hover ended; null while still active. Drives the fade-out window.
 let hoverZoneHintRetiredAt: number | null = null;
-// veteran flag is stamped persistently by waveDirector when the player ever hits 6x rhythm;
+// veteran flag is stamped persistently by waveDirector when the player ever hits 12x rhythm;
 // read it inline to avoid pulling the whole waveDirector module (heavy import graph) just for
 // this gate.
 const HOVER_ZONE_HINT_VETERAN_KEY = "pulsar.veteran";
@@ -319,7 +315,6 @@ export type TrajectoryContext = {
   aimCircleCenter: Vec;
   aimCircleRadius: number;
   trajectoryTracks: TrajectoryTrackMap;
-  doubletime: boolean;
   tutorialHighlight: boolean;
   // The live weapon's true collision reach for an on-beat shot. Each on-beat aim dot
   // is pulled this far toward the ship so the shell's leading edge — not its center —
@@ -469,7 +464,7 @@ const paintOnRhythmReticule = (
 // first beat-dot is a filled dot like the others — just bigger and brighter so it stands out
 // as "shoot here next beat". It still picks up proximity glow, direct-flash flicker, entry-flash,
 // and the per-beat pulse so it reads as part of the same lock-on language.
-// dimFactor < 1 is used for the doubletime half-beat "first dot" — still glows, but fainter.
+// dimFactor < 1 dims the 'both'-mode secondary marker.
 const paintFirstBeatDot = (
   ctx: CanvasRenderingContext2D, px: number, py: number,
   proximity01: number, entryFlashBoost: number, beatPulseBoost: number, focusBoost: number,
@@ -556,19 +551,6 @@ const paintBeatDot = (
   ctx.fillStyle = `hsla(${RETICULE_DASH_HSL}, ${alpha})`;
   ctx.beginPath();
   ctx.arc(px, py, TRAJECTORY_BEAT_DOT_RADIUS, 0, TAU);
-  ctx.fill();
-};
-
-// half-beat dot interleaves between regular beat dots when doubletime is active — visually
-// reads as the same kind of cue but fainter and slightly smaller, so on-beat dots still anchor.
-const paintHalfBeatDot = (
-  ctx: CanvasRenderingContext2D, px: number, py: number,
-  entryFlashBoost: number, focusBoost: number,
-) => {
-  const alpha = Math.min(1, TRAJECTORY_BEAT_DOT_ALPHA * TRAJECTORY_HALF_BEAT_DOT_ALPHA_FACTOR * entryFlashBoost * focusBoost);
-  ctx.fillStyle = `hsla(${RETICULE_DASH_HSL}, ${alpha})`;
-  ctx.beginPath();
-  ctx.arc(px, py, TRAJECTORY_HALF_BEAT_DOT_RADIUS, 0, TAU);
   ctx.fill();
 };
 
@@ -743,15 +725,13 @@ export const wrapReticuleVec = (p: Vec, w: number, h: number): Vec => {
 };
 
 // dots mark target position at successive beats — direct preview of where the player needs to aim.
-// in doubletime, an extra fainter dot is interleaved at each half-beat between the beat dots,
-// and a second, fainter "first dot" precedes the on-beat first dot at the half-beat lead.
 const drawBeatDotsAlongRay = (
   ctx: CanvasRenderingContext2D | null,
   rawStartX: number, rawStartY: number, ux: number, uy: number,
   reticulesBySlot: Array<Array<[number, number]>>,
   sMin: number, sMax: number, dotStep: number, dotOffset: number,
   entryFlashBoost: number, beatPulseBoost: number, focusBoost: number,
-  w: number, h: number, doubletime: boolean, tutorialHighlight: boolean, focused: boolean,
+  w: number, h: number, tutorialHighlight: boolean, focused: boolean,
   beatTime: number, beatGrid: number, hoverZoneEnterBySlot: Array<number | null>,
   onBeatDotOverrides: Array<[number, number] | null>,
   firstDotSecondary: [number, number] | null,
@@ -761,97 +741,65 @@ const drawBeatDotsAlongRay = (
   const slotProximities: number[] = new Array(slotCount).fill(0);
   const slotWinnerReticuleIdx: number[] = new Array(slotCount).fill(-1);
   const slotWithin75: boolean[] = new Array(slotCount).fill(false);
-  // doubletime halves the spacing and marks every other k as a half-beat (off-beat) dot.
-  const step = doubletime ? dotStep * 0.5 : dotStep;
-  const isHalfBeatK = (k: number): boolean => doubletime && (k % 2 === 1);
   // on-beat dot indices are anchored to the target (next-beat future position), not to the wedge —
   // letting cone clipping exclude them produces a worse "lock cue lies about position" bug than
-  // the cosmetic spill it would prevent. Each slot's on-beat dot (and the doubletime half-beat
-  // first-dot lead) always paints, regardless of cone clipping.
-  const firstHalfBeatK = 1;
-  // 1-indexed slot → k value at which that slot's on-beat dot appears
-  const slotToK = (slot: number): number => doubletime ? slot * 2 : slot;
-  const maxSlotK = slotCount > 0 ? slotToK(slotCount) : 0;
-  const isAnchorK = (k: number): boolean => {
-    if (doubletime && k === firstHalfBeatK) return true;
-    if (k <= 0 || k > maxSlotK) return false;
-    if (doubletime && k % 2 !== 0) return false;
-    const slot = doubletime ? k / 2 : k;
-    return reticulesBySlot[slot - 1].length > 0;
-  };
+  // the cosmetic spill it would prevent. Each slot's on-beat dot always paints, regardless of cone
+  // clipping.
+  const isAnchorK = (k: number): boolean => k > 0 && k <= slotCount && reticulesBySlot[k - 1].length > 0;
   let drawnOnBeatDots = 0;
-  let drawnHalfBeatDots = 0;
   for (let k = 1; ; k++) {
-    const sK = dotOffset + step * k;
+    const sK = dotOffset + dotStep * k;
     const isFirstBeatDot = isAnchorK(k);
-    if (sK > sMax && k > maxSlotK) break;
+    if (sK > sMax && k > slotCount) break;
     if (sK > sMax && !isFirstBeatDot) continue;
     if (sK < sMin && !isFirstBeatDot) continue;
-    const halfBeat = isHalfBeatK(k);
     // each on-beat dot uses its slot's pulled-back aim point (override index = how many on-beat dots
-    // drawn so far, i.e. this dot's 0-based slot). Half-beat dots and out-of-range trail dots stay on
-    // the raw velocity trail.
-    const slotOverride = !halfBeat && drawnOnBeatDots < onBeatDotOverrides.length
+    // drawn so far, i.e. this dot's 0-based slot). Out-of-range trail dots stay on the raw velocity trail.
+    const slotOverride = drawnOnBeatDots < onBeatDotOverrides.length
       ? onBeatDotOverrides[drawnOnBeatDots]
       : null;
     const px = slotOverride ? slotOverride[0] : rawStartX + ux * sK;
     const py = slotOverride ? slotOverride[1] : rawStartY + uy * sK;
     const [drawX, drawY] = wrapToCanvas(px, py, w, h);
-    if (halfBeat) {
-      if (drawnHalfBeatDots === 0) {
-        // dimmed first-dot glow — no proximity check against the on-beat reticule, since
-        // this dot represents a different bullet endpoint (half-beat shot, not on-beat shot).
-        if (ctx && SHOW_FIRST_BEAT_DOT) {
-          paintFirstBeatDot(
-            ctx, drawX, drawY, 0, entryFlashBoost, beatPulseBoost, focusBoost,
-            TRAJECTORY_HALF_BEAT_FIRST_DOT_ALPHA_FACTOR, false, focused,
-          );
-        }
-      } else if (ctx) {
-        paintHalfBeatDot(ctx, drawX, drawY, entryFlashBoost, focusBoost);
+    const slotIdx = drawnOnBeatDots; // 0-based slot for this on-beat dot
+    const slotReticules = slotIdx < slotCount ? reticulesBySlot[slotIdx] : [];
+    if (slotReticules.length > 0) {
+      let bestProximity = 0;
+      let bestRetIdx = -1;
+      let anyStrictOverlap = false;
+      let within75 = false;
+      for (let r = 0; r < slotReticules.length; r++) {
+        const [retXk, retYk] = slotReticules[r];
+        const proximityR = firstDotProximity01(px, py, retXk, retYk);
+        if (proximityR > bestProximity) { bestProximity = proximityR; bestRetIdx = r; }
+        if (slotIdx === 0 && firstDotOverlapsReticule(px, py, retXk, retYk)) anyStrictOverlap = true;
+        if (withinApproachZone(px, py, retXk, retYk)) within75 = true;
       }
-      drawnHalfBeatDots++;
-    } else {
-      const slotIdx = drawnOnBeatDots; // 0-based slot for this on-beat dot
-      const slotReticules = slotIdx < slotCount ? reticulesBySlot[slotIdx] : [];
-      if (slotReticules.length > 0) {
-        let bestProximity = 0;
-        let bestRetIdx = -1;
-        let anyStrictOverlap = false;
-        let within75 = false;
-        for (let r = 0; r < slotReticules.length; r++) {
-          const [retXk, retYk] = slotReticules[r];
-          const proximityR = firstDotProximity01(px, py, retXk, retYk);
-          if (proximityR > bestProximity) { bestProximity = proximityR; bestRetIdx = r; }
-          if (slotIdx === 0 && firstDotOverlapsReticule(px, py, retXk, retYk)) anyStrictOverlap = true;
-          if (withinApproachZone(px, py, retXk, retYk)) within75 = true;
-        }
-        if (within75) slotWithin75[slotIdx] = true;
-        // giant approach crosshairs sit centered on the dot; pulse phase is locked to the beat
-        // grid so it's always mid-flight, with a 50ms opacity ramp from zoneEnter for a soft fade-in.
-        if (ctx && within75) {
-          const zoneEnter = slotIdx < hoverZoneEnterBySlot.length ? hoverZoneEnterBySlot[slotIdx] : null;
-          paintApproachCrosshair(ctx, drawX, drawY, beatTime, beatGrid, zoneEnter);
-        }
-        const tickLength = slotCrosshairLengthTrajectory(slotIdx + 1);
-        if (ctx && SHOW_FIRST_BEAT_DOT) {
-          // tutorial highlight + the 1st-dot strict-overlap signal only apply to the 1-beat slot.
-          paintFirstBeatDot(
-            ctx, drawX, drawY, bestProximity, entryFlashBoost, beatPulseBoost, focusBoost,
-            1, slotIdx === 0 ? tutorialHighlight : false, slotIdx === 0 ? focused : false,
-            tickLength,
-          );
-        }
-        if (anyStrictOverlap) overlapsReticule = true;
-        if (bestProximity > slotProximities[slotIdx]) {
-          slotProximities[slotIdx] = bestProximity;
-          slotWinnerReticuleIdx[slotIdx] = bestRetIdx;
-        }
-      } else if (ctx) {
-        paintBeatDot(ctx, drawX, drawY, entryFlashBoost, focusBoost);
+      if (within75) slotWithin75[slotIdx] = true;
+      // giant approach crosshairs sit centered on the dot; pulse phase is locked to the beat
+      // grid so it's always mid-flight, with a 50ms opacity ramp from zoneEnter for a soft fade-in.
+      if (ctx && within75) {
+        const zoneEnter = slotIdx < hoverZoneEnterBySlot.length ? hoverZoneEnterBySlot[slotIdx] : null;
+        paintApproachCrosshair(ctx, drawX, drawY, beatTime, beatGrid, zoneEnter);
       }
-      drawnOnBeatDots++;
+      const tickLength = slotCrosshairLengthTrajectory(slotIdx + 1);
+      if (ctx && SHOW_FIRST_BEAT_DOT) {
+        // tutorial highlight + the 1st-dot strict-overlap signal only apply to the 1-beat slot.
+        paintFirstBeatDot(
+          ctx, drawX, drawY, bestProximity, entryFlashBoost, beatPulseBoost, focusBoost,
+          1, slotIdx === 0 ? tutorialHighlight : false, slotIdx === 0 ? focused : false,
+          tickLength,
+        );
+      }
+      if (anyStrictOverlap) overlapsReticule = true;
+      if (bestProximity > slotProximities[slotIdx]) {
+        slotProximities[slotIdx] = bestProximity;
+        slotWinnerReticuleIdx[slotIdx] = bestRetIdx;
+      }
+    } else if (ctx) {
+      paintBeatDot(ctx, drawX, drawY, entryFlashBoost, focusBoost);
     }
+    drawnOnBeatDots++;
   }
   // 'both' mode: a dimmed player-relative marker alongside the primary (edge) dot. Purely visual —
   // no proximity/lock-on so the lock cue isn't doubled; the edge dot stays the interactive one.
@@ -859,7 +807,7 @@ const drawBeatDotsAlongRay = (
     const [sx, sy] = wrapToCanvas(firstDotSecondary[0], firstDotSecondary[1], w, h);
     paintFirstBeatDot(
       ctx, sx, sy, 0, entryFlashBoost, beatPulseBoost, focusBoost,
-      TRAJECTORY_HALF_BEAT_FIRST_DOT_ALPHA_FACTOR, false, false,
+      TRAJECTORY_SECONDARY_FIRST_DOT_ALPHA_FACTOR, false, false,
     );
   }
   return { overlapsReticule, slotProximities, slotWinnerReticuleIdx, slotWithin75 };
@@ -1132,7 +1080,7 @@ const paintTrajectoryFromSnapshot = (
   const result = drawBeatDotsAlongRay(
     c, rawStartX, rawStartY, ux, uy, reticulesBySlot,
     sMin, sMax, dotStep, dotOffset, entryFlashBoost, beatPulseBoost, focusBoost,
-    ctx.w, ctx.h, ctx.doubletime, ctx.tutorialHighlight, showOnRhythmSpot,
+    ctx.w, ctx.h, ctx.tutorialHighlight, showOnRhythmSpot,
     ctx.beatTime, ctx.beatGrid, ctx.hoverZoneEnterBySlot, onBeatDotOverrides, firstDotSecondary,
   );
   if (c && SHOW_ON_RHYTHM_RETICULE && showOnRhythmSpot) {
@@ -1145,9 +1093,8 @@ const paintTrajectoryFromSnapshot = (
   }
   if (c && aimHint) {
     // The reticule the lesson is about is the 1-beat dot — the ringed "shoot here next beat"
-    //   marker. Under doubletime it sits at k=2 on a half-width step, so the on-beat dot is one
-    //   full beat of travel out either way; the slot-0 override is the same point pulled back by
-    //   the shell's reach, which is exactly where the player should put their sight.
+    //   marker. The slot-0 override is that point pulled back by the shell's reach, which is
+    //   exactly where the player should put their sight.
     const [hintX, hintY] = onBeatDotOverrides[0]
       ?? [rawStartX + ux * (dotOffset + dotStep), rawStartY + uy * (dotOffset + dotStep)];
     const [hintDrawX, hintDrawY] = wrapToCanvas(hintX, hintY, ctx.w, ctx.h);
@@ -1244,7 +1191,6 @@ const imageIsOnScreen = (ctx: TrajectoryContext, t: ReticuleTarget, img: ImageDe
     const fy = img.dy + t.vel.y * ctx.beatGrid * beatsAhead;
     return Math.abs(fx) <= halfW && Math.abs(fy) <= halfH;
   };
-  if (ctx.doubletime && dotOnScreen(0.5)) return true;
   const slotCount = ctx.reticulesBySlot.length;
   for (let k = 1; k <= slotCount; k++) if (dotOnScreen(k)) return true;
   return false;
