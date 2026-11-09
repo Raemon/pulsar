@@ -20,11 +20,15 @@ export const ENTITY_CONFIG = {
   },
 
   // Each live streak shot also hurls fragments faster: +base·growth^(n-1), so
-  //   +1% on the 1st shot, ~+38% by 10, ~+195% by 14. Combined with rhythm, capped.
+  //   +1% on the 1st shot, ~+38% by 10, ~+195% by 14. Multiplies the rhythm
+  //   term and scales each fragment's outward kick (not its inherited drift).
   streakShatter: {
     base: 0.01,
     growth: 1.5,
     maxMul: 6,
+    // Absolute fragment speed ceiling (px/s): past ~900 a small outruns the
+    //   bullet's per-frame point-in-circle check and tunnels through it.
+    maxSpeed: 900,
   },
 
   // dampens remaining headline rolls once one fires, so they rarely stack.

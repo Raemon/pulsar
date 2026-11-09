@@ -264,6 +264,7 @@ const finishAsteroidKillCore = (
   scoreEarned: number,
   comboAtKill: number,
   impactPos?: Vec,
+  shatterMul = 1,
 ): Asteroid[] => {
   // Glass prison + wraith get bespoke kill bursts instead of the generic
   // shard-and-particle explosion. The prison still emits shards (its shell
@@ -316,6 +317,7 @@ const finishAsteroidKillCore = (
   if (a.kind === "bossEye" && game.ship.alive) {
     fireBossEyeFinalShot(game, a);
   }
+  const parentVel = { x: a.vel.x, y: a.vel.y };
   const children = a.split({
     impactDir: killerVel,
     impactPos,
@@ -332,15 +334,9 @@ const finishAsteroidKillCore = (
   // sibling fragments share one beat-claim set so the two pieces target
   //   *different* beats — otherwise the player can only combo one of them
   //   before the second drifts past the engagement ring on the same tick.
-  // Boost before aligning so the aligner tunes around the faster speed and the
-  //   fragments still reach the engagement ring on a beat.
-  const k = shatterSpeedMul(game);
   const claimed = newBeatClaimSet();
   for (const c of children) {
-    if (!c.isBossFamily()) {
-      c.vel.x *= k;
-      c.vel.y *= k;
-    }
+    if (shatterMul !== 1 && !isShatterBoostExempt(c)) boostSeparation(c, parentVel, shatterMul);
     alignSplitChildToRhythm(game, c, claimed);
   }
   if (a.isBass()) restartChildBassDrones(game, children);
@@ -354,6 +350,25 @@ export const shatterSpeedMul = (game: Game): number => {
   const n = game.streakShots > 0 && !streakWindowClosed(game) ? game.streakShots : 0;
   const streak = n > 0 ? 1 + base * growth ** (n - 1) : 1;
   return Math.min(maxMul, rhythm * streak);
+};
+
+// Boss fans are choreographed; metal wedges (and the crystal they free) are meant to linger.
+const isShatterBoostExempt = (c: Asteroid): boolean =>
+  c.isBossFamily() || c.kind === "metalShard" || c.kind === "superBassCrystal";
+
+// Scale only the outward kick relative to the parent — scaling the whole velocity
+//   would compound each split generation, since children inherit the parent's speed.
+//   Capped so fast smalls can't tunnel past bullets, but never below the unboosted speed.
+const boostSeparation = (c: Asteroid, parentVel: Vec, k: number) => {
+  const base = Math.hypot(c.vel.x, c.vel.y);
+  c.vel.x = parentVel.x + (c.vel.x - parentVel.x) * k;
+  c.vel.y = parentVel.y + (c.vel.y - parentVel.y) * k;
+  const speed = Math.hypot(c.vel.x, c.vel.y);
+  const cap = Math.max(base, ENTITY_CONFIG.streakShatter.maxSpeed);
+  if (speed > cap) {
+    c.vel.x *= cap / speed;
+    c.vel.y *= cap / speed;
+  }
 };
 
 // bassEcho → asteroidHit order matches the original handleCollisions bullet branch.
@@ -382,7 +397,9 @@ export const onAsteroidKilledByBullet = (
   // Layer the meaty armored-impact on a large shot's killing blow too, so the
   // hit that cleaves the boss lands as heavily as the chips along the way.
   playBossImpactIfLarge(game, a, b);
-  return finishAsteroidKillCore(game, a, b.vel, isOnBeatHit, scoreEarned, comboAtKill, b.pos);
+  // Only the player's shots get the rhythm/streak shatter boost — rams and saucer
+  //   fire route through onAsteroidKilledByRam and stay at base speed.
+  return finishAsteroidKillCore(game, a, b.vel, isOnBeatHit, scoreEarned, comboAtKill, b.pos, shatterSpeedMul(game));
 };
 
 // asteroidHit → bassEcho (reverse of bullet path) preserves the original ram-branch order.
