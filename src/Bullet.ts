@@ -1,6 +1,6 @@
 import { Vec, wrapMut, TAU } from "./vec";
 import { drawGlow } from "./glow";
-import { tickWarpRipples, type WarpRipple } from "./game/warpCannon";
+import { tickWarpRipples, warpPelletScale, type WarpRipple } from "./game/warpCannon";
 
 // Damage dealt by a non-rhythm bullet — enough to one-shot a small asteroid
 // but takes the full size table (4/2/1) of hits to chew through a large.
@@ -111,6 +111,9 @@ export class Bullet {
   // renderWarpShotLenses / renderWarpShots rather than render() below. The
   // wake ripples it sheds are cosmetic.
   warp = false;
+  // Warp Cannon charge tier (0…WARP_MAX_CHARGE) the shot was fired at: scales
+  // its mouth (hitRadius) and caps how big a rock it swallows whole (warpBite).
+  warpCharge = 0;
   warpRipples: WarpRipple[] = [];
   warpRippleClock = 0;
   // Beat index (perceivedBeatTime / BEAT_GRID) of the bomb ring's next flash;
@@ -217,7 +220,8 @@ export class Bullet {
   // lands.
   hitRadius(): number {
     const glowVisibleRadius = this.effectiveRadius() * this.headGlowRadiusMul() * GLOW_VISIBLE_FRACTION;
-    return Math.max(glowVisibleRadius, this.coreDrawRadius());
+    const r = Math.max(glowVisibleRadius, this.coreDrawRadius());
+    return this.warp ? r * warpPelletScale(this.warpCharge) : r;
   }
 
   update(dt: number, w: number, h: number) {

@@ -9,7 +9,8 @@ import { renderDriftBursts } from "./driftBurst";
 import { renderStreakOrbs, streakWindowClosed } from "./streakBurst";
 import { primaryReticulePosition } from "../ship/reticule/reticuleRender";
 import { renderWormholes, type LensBackdrop } from "./wormhole";
-import { renderSwallows, renderWarpShots, renderWarpShotLenses } from "./warpCannon";
+import { renderSwallows, renderWarpShots, renderWarpShotLenses, renderWarpCharge } from "./warpCannon";
+import { renderWarpIns } from "./warpReturn";
 import { computeConeFrame, toroidalDelta } from "../ship/reticule/coneGeometry";
 import { pickCenterMostTargetForFocus, ReticuleTarget, setReticuleWrapAnchor } from "../ship/reticule/trajectoryPreview";
 import { renderShipTrajectoryPreview } from "../ship/shipTrajectoryPreview";
@@ -135,6 +136,7 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   renderWormholes(ctx, game.wormholes, lensBackdrop);
   renderWarpShotLenses(ctx, game.bullets, lensBackdrop, game.time);
   renderSwallows(ctx, game.swallows, game.time);
+  renderWarpIns(ctx, game.warpIns, game.time);
   for (const c of game.comets) if (!c.entering) c.render(ctx);
   for (const s of game.shards) s.render(ctx);
   // bassteroids wear the ship's 4+/12+ combo halo — share the ship's eased
@@ -357,6 +359,7 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
   if (!warping) {
     renderLaserReticule(ctx, game, game.beatTime);
     renderLaserChargeDots(ctx, game, game.beatTime);
+    renderWarpCharge(ctx, game.ship, game.perceivedBeatTime, game.time);
   }
 };
 

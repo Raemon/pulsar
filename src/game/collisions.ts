@@ -188,13 +188,13 @@ const hitAsteroidWithBullets = (game: Game, a: Asteroid): Asteroid[] | null => {
       return null;
     }
     logBulletHit(game, "HIT asteroid", b);
-    // A Warp Cannon shot that gets through the armour takes the whole body,
-    // whatever its HP. The swallow reads the shot's open mouth, so it goes
-    // before the hit consumes the shot.
+    // A Warp Cannon shot that gets through the armour swallows the body (or a
+    // bite of it), whatever its HP. The swallow reads the shot's open mouth,
+    // so it goes before the hit consumes the shot.
     if (b.warp && canSwallow(a)) {
-      onAsteroidSwallowed(game, a, b, onBeat);
+      const leftovers = onAsteroidSwallowed(game, a, b, onBeat);
       consumeBullet(b);
-      return [];
+      return leftovers;
     }
     consumeBullet(b);
     const { killed } = a.applyDamage(dmg, innerHit, b.pos);

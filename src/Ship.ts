@@ -137,6 +137,10 @@ export class Ship {
   //   hit whole. See game/warpCannon.ts. Swaps with the bomb — one shell type
   //   (a mine already thrown still detonates on the next press).
   warpCannonActive = false;
+  // Warp Cannon charge: fire is held to grow the pellet a tier per beat and
+  //   released to fire it. See warpChargeAt in game/warpCannon.ts.
+  warpChargeActive = false;
+  warpChargeStartBeatTime = 0;
   // Set by the fire trigger when a press should detonate the live bomb; the
   //   game-level bomb pass (which can reach the targets) consumes it.
   bombDetonateRequested = false;

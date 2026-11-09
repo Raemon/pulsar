@@ -48,6 +48,7 @@ import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
 import { updateWormholes, spawnWormhole, type Dive, type Wormhole } from "./wormhole";
 import { updateSwallows } from "./warpCannon";
+import { updateWarpIns, releaseWarpedBodies } from "./warpReturn";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
 import { tickPendingRhythmBonuses, flushPendingRhythmBonuses } from "./rhythmBonus";
 import { emitExplosion, emitCometExplosion } from "./particleBursts";
@@ -934,6 +935,7 @@ const updatePlaying = (game: Game, dt: number) => {
   // dive, which also runs on musicDt — under slow-mo both stretch together.
   game.wormholes = updateWormholes(game.wormholes, musicDt);
   game.swallows = updateSwallows(game.swallows, musicDt);
+  updateWarpIns(game, musicDt);
   tickPendingDriftBonuses(game);
   tickPendingRhythmBonuses(game);
   tickStreakTimeout(game);
@@ -942,7 +944,8 @@ const updatePlaying = (game: Game, dt: number) => {
   recordHighlightFrame(game);
   syncPowerupHud(game);
   syncFuelHud(game);
-  if (game.asteroids.length === 0 && !game.betaMode && !game.waveTransitioning && !game.tutorialActive) advanceWave(game);
+  // A rock still climbing back out of a warp counts as on the field.
+  if (game.asteroids.length === 0 && game.warpIns.length === 0 && !game.betaMode && !game.waveTransitioning && !game.tutorialActive) advanceWave(game);
   tickHoverLock(game);
   captureOrAssertCheckpoint(game);
 };
@@ -1562,6 +1565,8 @@ export const advanceWave = (game: Game, targetWave?: number, extraSpawnDelaySec 
     game.pulsar.setWaveLevel(game.wave);
     updateBgBeatIntensity(game);
     spawnWave(game);
+    // Whatever the Warp Cannon swallowed last wave climbs back out now.
+    releaseWarpedBodies(game);
     // The single-target warm-ups carry no numbered banner (the summary already
     //   read "Wave Complete"); the density waves announce their number as usual.
     if (!holdForWarmupCrystal) showWaveAnnounce(game);

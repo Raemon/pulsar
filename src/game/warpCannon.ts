@@ -1,8 +1,12 @@
 import type { Game } from "../Game";
-import type { Bullet } from "../Bullet";
-import type { Asteroid } from "../Asteroid";
-import { Vec, TAU } from "../vec";
+import { type Bullet, bulletCollisionRadius } from "../Bullet";
+import type { Ship } from "../Ship";
+import type { Asteroid, AsteroidKind, AsteroidSize } from "../Asteroid";
+import { TAU, fromAngle } from "../vec";
 import { ENTITY_CONFIG } from "./entityConfig";
+import { BEAT_GRID, BEAT_WINDOW } from "./rhythmConstants";
+import { muzzleOf } from "../ship/shipWeapons";
+import { type WarpedBody, warpedReach, drawWarpedBody } from "./warpReturn";
 import {
   type Wormhole,
   type LensBackdrop,
@@ -30,6 +34,50 @@ import {
 // the sim (so it's deterministic and replays) but nothing reads it back except
 // a skip portal's collapse waiting for it; the shot's wobble and ripples are
 // render-only.
+
+// ── The charge ────────────────────────────────────────────────────────────────
+// Like the laser, the Warp Cannon is held to charge and fires on release: one
+// charge tier ticks in per beat held, up to WARP_MAX_CHARGE. The tier sets the
+// pellet's size and how big a body it can swallow whole (warpBite). The press
+// and release are both plain trigger edges (shipPhysics.updateFireTrigger), so
+// the release is judged on-beat like any other volley.
+export const WARP_MAX_CHARGE = 3;
+// Pellet mouth (its hitbox) by tier, against a stock shot's hit radius: a tap
+// fires a teeny pellet, a full charge a hole wider than a medium rock.
+const PELLET_SCALE = [0.5, 1, 1.5, 2.1];
+export const warpPelletScale = (charge: number): number =>
+  PELLET_SCALE[Math.max(0, Math.min(WARP_MAX_CHARGE, charge))];
+
+// Tiers charged by `beatTime`. A tier lands a beat window early, so a press on
+// one beat and a release on a later one counts every beat between, whichever
+// side of the beat each edge fell.
+export const warpChargeAt = (ship: Ship, beatTime: number): number => {
+  if (!ship.warpChargeActive) return 0;
+  const beats = (beatTime - ship.warpChargeStartBeatTime + BEAT_WINDOW) / BEAT_GRID;
+  return Math.max(0, Math.min(WARP_MAX_CHARGE, Math.floor(beats)));
+};
+
+// ── The bite ──────────────────────────────────────────────────────────────────
+// A pellet swallows a rock whole only up to its tier's size: tier 0 takes a
+// small, tier 1 a medium, and so on. A bigger rock loses a bite of the
+// pellet's size and leaves ONE smaller rock behind — tier+1 steps down the
+// ladder. Only kinds that break down the plain size ladder (Asteroid's
+// splitRegular) can be bitten; every other swallowable body goes whole.
+const SIZE_LADDER: ReadonlyArray<AsteroidSize> = ["small", "medium", "large", "huge"];
+const BITEABLE_KINDS: ReadonlySet<AsteroidKind> = new Set<AsteroidKind>(["normal", "asteroidWithGem", "chime", "warble"]);
+
+export type WarpBite = { bite: AsteroidSize; leftover: AsteroidSize; kind: AsteroidKind };
+
+// null = the shot swallows `a` whole.
+export const warpBite = (a: Asteroid, shot: Bullet): WarpBite | null => {
+  if (!BITEABLE_KINDS.has(a.kind)) return null;
+  const size = SIZE_LADDER.indexOf(a.size);
+  const cap = shot.warpCharge;
+  if (size <= cap) return null;
+  // A gem-bearer's pieces are plain rock, as in its break-up.
+  const kind = a.kind === "asteroidWithGem" ? "normal" : a.kind;
+  return { bite: SIZE_LADDER[cap], leftover: SIZE_LADDER[size - cap - 1], kind };
+};
 
 // ── The shot ──────────────────────────────────────────────────────────────────
 // Seconds a fresh shot takes to tear fully open off the muzzle.
@@ -175,20 +223,51 @@ export const renderWarpShots = (ctx: CanvasRenderingContext2D, bullets: Readonly
   }
 };
 
+// The pellet forming on the nose while the trigger is held: the mouth it will
+// fire at the tier charged so far, swelling a little toward the next tier
+// across each beat, with one faint ring per tier banked around it. Uses the
+// sim's perceived beat clock, the same one the release is judged on.
+export const renderWarpCharge = (ctx: CanvasRenderingContext2D, ship: Ship, beatTime: number, timeMs: number): void => {
+  if (!ship.alive || !ship.warpChargeActive) return;
+  const charge = warpChargeAt(ship, beatTime);
+  const toNext = charge < WARP_MAX_CHARGE
+    ? Math.max(0, Math.min(1, (beatTime - ship.warpChargeStartBeatTime) / BEAT_GRID - charge))
+    : 0;
+  const base = bulletCollisionRadius({ onBeat: false, superBoosted: false });
+  const scale = warpPelletScale(charge);
+  const mouth = base * (scale + (warpPelletScale(charge + 1) - scale) * 0.3 * toNext * toNext);
+  const pos = { ...muzzleOf(ship) };
+  const ahead = fromAngle(ship.heading, mouth);
+  pos.x += ahead.x;
+  pos.y += ahead.y;
+  const tSec = timeMs * 0.001;
+  const spin = tSec * 1.6;
+  const breathe = 1 + 0.06 * Math.sin(tSec * 19);
+  renderBakedMouth(ctx, { x: pos.x, y: pos.y, radius: lensScaleForMouth(mouth), seed: 0, hueShift: 0 }, breathe, null, spin);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const tint = "185, 90%";
+  ctx.lineWidth = Math.max(0.8, mouth * 0.1);
+  strokeRing(ctx, pos.x, pos.y, mouth * breathe, `hsla(${tint}, 88%, 0.75)`);
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= charge; i++) {
+    strokeRing(ctx, pos.x, pos.y, mouth * (1 + 0.35 * i), `hsla(${tint}, 80%, ${(0.4 - 0.08 * i).toFixed(3)})`);
+  }
+  ctx.restore();
+};
+
 // ── The swallow ───────────────────────────────────────────────────────────────
 // A body a shot has swallowed, plunging through the portal it tore open. Same
 // plunge as an alien warping out or the ship diving into a skip portal: it
-// carries its own drift into the throat rather than stopping at the lip.
+// carries its own drift into the throat rather than stopping at the lip. It
+// comes back next wave (warpReturn.ts).
 export type Swallow = {
   portal: Wormhole;
   // The body itself; its pos is moved down the dive in place.
-  body: { pos: Vec };
+  warped: WarpedBody;
   dive: Dive;
   // Warp progress 0→1 over dive.sec.
   t: number;
-  // Furthest the body paints from its centre (halo included), for the lens buffer.
-  reach: number;
-  draw: (g: CanvasRenderingContext2D, timeMs: number) => void;
 };
 
 // Cap on the per-pixel lens buffer — a big rock's fall spans a lot of screen,
@@ -209,12 +288,11 @@ const ROCK_RADIUS = ENTITY_CONFIG.asteroid.radius;
 const swallowSizeTier = (radius: number): number =>
   radius < (ROCK_RADIUS.small + ROCK_RADIUS.medium) / 2 ? 0 : radius < (ROCK_RADIUS.medium + ROCK_RADIUS.large) / 2 ? 1 : 2;
 
-// Drop `body` into `portal` — or, by default, a fresh one torn open where the
-// shot struck. Call before the hit consumes the shot (see swallowOpenFrom).
-export const swallowIntoWarp = (
-  game: Game, body: { pos: Vec; vel: Vec; radius: number }, shot: Bullet,
-  reach: number, draw: Swallow["draw"], portal: Wormhole | null = null,
-): void => {
+// Drop `warped` into `portal` — or, by default, a fresh one torn open where the
+// shot struck — and hold it for its return next wave. Call before the hit
+// consumes the shot (see swallowOpenFrom).
+export const swallowIntoWarp = (game: Game, warped: WarpedBody, shot: Bullet, portal: Wormhole | null = null): void => {
+  const { body } = warped;
   game.sound.play("warpSwallow", swallowSizeTier(body.radius), shot.pos);
   if (!portal) {
     portal = spawnWormhole(
@@ -222,14 +300,8 @@ export const swallowIntoWarp = (
       { openFrom: swallowOpenFrom(shot, body.radius) },
     );
   }
-  game.swallows.push({
-    portal,
-    body,
-    dive: planDiveInto(body.pos, body.vel, portal, game.w, game.h),
-    t: 0,
-    reach,
-    draw,
-  });
+  game.swallows.push({ portal, warped, dive: planDiveInto(body.pos, body.vel, portal, game.w, game.h), t: 0 });
+  game.warpedOut.push(warped);
 };
 
 // Seconds until every body still falling into `portal` is through — how long
@@ -245,18 +317,18 @@ export const updateSwallows = (list: Swallow[], dt: number): Swallow[] => {
   for (const s of list) {
     s.t += dt / s.dive.sec;
     const p = diveAt(s.dive, Math.min(1, s.t));
-    s.body.pos.x = p.x;
-    s.body.pos.y = p.y;
+    s.warped.body.pos.x = p.x;
+    s.warped.body.pos.y = p.y;
   }
   return list.filter((s) => s.t < 1);
 };
 
 export const renderSwallows = (ctx: CanvasRenderingContext2D, list: ReadonlyArray<Swallow>, timeMs: number): void => {
   for (const s of list) {
-    const { pos } = s.body;
+    const { pos } = s.warped.body;
     renderThroughPortal(
-      ctx, s.portal, Math.min(1, s.t), { x: pos.x, y: pos.y, reach: s.reach },
-      s.dive.x1 - pos.x, s.dive.y1 - pos.y, (g) => s.draw(g, timeMs), SWALLOW_MAX_PX,
+      ctx, s.portal, Math.min(1, s.t), { x: pos.x, y: pos.y, reach: warpedReach(s.warped) },
+      s.dive.x1 - pos.x, s.dive.y1 - pos.y, (g) => drawWarpedBody(s.warped, g, timeMs), SWALLOW_MAX_PX,
     );
   }
 };

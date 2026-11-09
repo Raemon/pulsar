@@ -10,6 +10,7 @@ import { tickMagazine, spendShot, magazineBlocksFire } from "./shipMagazine";
 import { isDown } from "../game/controlBindings";
 import { FUEL_MODE_ENABLED, FUEL_THRUST_DRAIN, FUEL_SIDE_DRAIN, FUEL_RECHARGE, FUEL_RECHARGE_INTERVAL } from "../game/fuel";
 import { BEAT_GRID } from "../game/rhythmConstants";
+import { warpChargeAt } from "../game/warpCannon";
 
 const ENGINE_SOUNDS_ENABLED = false;
 
@@ -324,9 +325,17 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[], perceiv
   // A banked super-laser charge replaces the next shot with a screen-spanning
   // bolt. The bullet path is suppressed here; the game-level tickSuperLaserFire
   // owns the actual fire (it needs game state the ship module can't see).
-  if (ship.superLaserCharged) return;
+  // It also spends a Warp Cannon charge in progress, so its release fires nothing more.
+  if (ship.superLaserCharged) {
+    ship.warpChargeActive = false;
+    return;
+  }
   // Without this, a trigger held through the reload would autofire on the refill beat.
   if (ship.triggerHeldDry) return;
+  if (ship.warpCannonActive) {
+    updateWarpTrigger(ship, down, pressed, bullets, perceivedBeatTime);
+    return;
+  }
   // A bomb throws on a press, never a hold or a cooldown, so each press does
   // exactly one thing: throw, then blow.
   if (ship.bombActive) {
@@ -338,8 +347,24 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[], perceiv
   fireShot(ship, bullets, perceivedBeatTime);
 };
 
-const fireShot = (ship: Ship, bullets: Bullet[], perceivedBeatTime: number) => {
-  fireBullets(ship, bullets);
+// Warp Cannon: a press starts the charge, the release fires one pellet at the
+// tier it reached (game/warpCannon.ts). A press on an empty magazine never
+// starts one (triggerHeldDry), and holding spends nothing, so the release
+// always has a round.
+const updateWarpTrigger = (ship: Ship, down: boolean, pressed: boolean, bullets: Bullet[], perceivedBeatTime: number) => {
+  if (pressed) {
+    ship.warpChargeActive = true;
+    ship.warpChargeStartBeatTime = perceivedBeatTime;
+    return;
+  }
+  if (down || !ship.warpChargeActive) return;
+  const charge = warpChargeAt(ship, perceivedBeatTime);
+  ship.warpChargeActive = false;
+  fireShot(ship, bullets, perceivedBeatTime, charge);
+};
+
+const fireShot = (ship: Ship, bullets: Bullet[], perceivedBeatTime: number, warpCharge = 0) => {
+  fireBullets(ship, bullets, warpCharge);
   spendShot(ship, perceivedBeatTime);
   armFireCooldown(ship);
 };
@@ -375,7 +400,10 @@ export const tickShip = (
 ) => {
   ship.lastWrapDX = 0;
   ship.lastWrapDY = 0;
-  if (!ship.alive) return;
+  if (!ship.alive) {
+    ship.warpChargeActive = false;
+    return;
+  }
   if (ship.invuln > 0) ship.invuln -= dt;
   if (ship.fireCooldown > 0) ship.fireCooldown -= dt;
   easeComboHaloIntensity(ship, dt);

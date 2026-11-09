@@ -2,7 +2,7 @@ import type { Game } from "../Game";
 import { Asteroid, isBurstGem, isGlassPrison, isMetalHull, isPhasedKind } from "../Asteroid";
 import { Alien } from "../Alien";
 import { AlienBullet } from "../AlienBullet";
-import { Comet, COMET_HALO_REACH } from "../Comet";
+import { Comet } from "../Comet";
 import { Bullet } from "../Bullet";
 import { shotRayDir } from "../ship/shipWeapons";
 import { Vec, nearestImageOf } from "../vec";
@@ -33,7 +33,7 @@ import { snapshotAsteroidKill, snapshotAlienKill, snapshotCometKill } from "./ki
 import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet, markVeteranPilot, VETERAN_COMBO_THRESHOLD } from "./waveDirector";
 import { BASS_KIND_SOUND } from "./bassClock";
 import { maybeSpawnSkipPortal } from "./waveSkip";
-import { swallowIntoWarp, swallowOpenFrom } from "./warpCannon";
+import { swallowIntoWarp, swallowOpenFrom, warpBite } from "./warpCannon";
 import type { KillBucket } from "./killBuckets";
 
 // Last-gasp plasma bolt fired by an eye-core in the same frame it dies —
@@ -411,14 +411,18 @@ export const onAsteroidKilledByRam = (game: Game, a: Asteroid, shipVel: Vec): As
   return finishAsteroidKillCore(game, a, shipVel, false, 0, 0);
 };
 
-// A Warp Cannon shot swallows the rock whole, whatever its HP: it scores as a
-// kill — combo, rhythm multiply, drift bonus — on the rock plus every fragment
-// it would have broken into (wholeScore), and none of a break-up's aftermath
+// A Warp Cannon shot swallows the rock, whatever its HP: it scores as a kill —
+// combo, rhythm multiply, drift bonus — on what it took plus every fragment
+// that would have broken into (wholeScore), and none of a break-up's aftermath
 // happens: no explosion, no shards, no children, no gems or captives freed.
-// The rock leaves play now; its fall into the portal is cosmetic.
-export const onAsteroidSwallowed = (game: Game, a: Asteroid, b: Bullet, isOnBeatHit: boolean) => {
+// A pellet too small for the rock (warpBite) takes only a bite of its own
+// size and leaves one smaller rock behind — the returned survivors. Whatever
+// is taken leaves play now and comes back next wave (warpReturn.ts).
+export const onAsteroidSwallowed = (game: Game, a: Asteroid, b: Bullet, isOnBeatHit: boolean): Asteroid[] => {
+  const bite = warpBite(a, b);
+  const taken = bite ? new Asteroid({ ...a.pos }, { ...a.vel }, bite.bite, a.hue, bite.kind) : a;
   applyHitToCombo(game, isOnBeatHit, b.pos, beatsAwayAtHit(game, b));
-  const scoreEarned = awardScoreForKill(game, b.pos, a.wholeScore(), isOnBeatHit, b.driftTierAtHit());
+  const scoreEarned = awardScoreForKill(game, b.pos, taken.wholeScore(), isOnBeatHit, b.driftTierAtHit());
   game.popups.push(popupScore(b.pos, scoreEarned));
   const comboAtKill = isOnBeatHit ? game.beatCombo : 0;
   if (isOnBeatHit) triggerBassLightning(game, a.pos, a);
@@ -428,8 +432,21 @@ export const onAsteroidSwallowed = (game: Game, a: Asteroid, b: Bullet, isOnBeat
   // stops it drawing its share of the ring's thread as it falls.
   a.alive = false;
   a.torusGroup = null;
-  recordAsteroidKill(game, a, isOnBeatHit, scoreEarned, comboAtKill);
-  swallowIntoWarp(game, a, b, a.radius * 1.6, (g, t) => a.render(g, t));
+  recordAsteroidKill(game, taken, isOnBeatHit, scoreEarned, comboAtKill);
+  swallowIntoWarp(game, { kind: "asteroid", body: taken }, b);
+  if (!bite) return [];
+  // The leftover drifts on with the rock's motion, nudged along the shot.
+  const push = shotPushOf(b, LEFTOVER_PUSH);
+  const leftover = new Asteroid({ ...a.pos }, { x: a.vel.x + push.x, y: a.vel.y + push.y }, bite.leftover, a.hue, bite.kind);
+  leftover.flashAmount = 1;
+  return [leftover];
+};
+
+// px/s a bitten rock's leftover picks up along the shot.
+const LEFTOVER_PUSH = 40;
+const shotPushOf = (b: Bullet, speed: number): Vec => {
+  const len = Math.hypot(b.vel.x, b.vel.y) || 1;
+  return { x: (b.vel.x / len) * speed, y: (b.vel.y / len) * speed };
 };
 
 // bassteroids take multiple hits to kill; chip points keep the player rewarded for
@@ -497,7 +514,7 @@ export const onAlienKilled = (game: Game, al: Alien, b: Bullet, isOnBeatHit: boo
   if (swallowed) {
     game.shake = Math.min(game.shake + 0.3, 1.2);
     const skip = maybeSpawnSkipPortal(game, al, b.pos, swallowOpenFrom(b, al.radius));
-    swallowIntoWarp(game, al, b, al.radius * 2.2, (g, t) => al.render(g, t), skip);
+    swallowIntoWarp(game, { kind: "alien", body: al }, b, skip);
   } else {
     game.shake = Math.min(game.shake + 0.5, 1.4);
     game.sound.play("alienExplode", 1, al.pos);
@@ -549,7 +566,7 @@ export const onCometKilled = (game: Game, c: Comet, b: Bullet, isOnBeatHit: bool
     // Only the head falls in: its tail is drawn in world space along where it
     // has been, which the lens can't carry, so it's dropped.
     c.trail.length = 0;
-    swallowIntoWarp(game, c, b, COMET_HALO_REACH * c.scale, (g) => c.render(g));
+    swallowIntoWarp(game, { kind: "comet", body: c }, b);
   } else {
     game.shake = Math.min(game.shake + 0.6, 1.6);
     // No pos: these are big centered "event" sounds — the live graph always
