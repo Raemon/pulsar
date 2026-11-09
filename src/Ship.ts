@@ -138,7 +138,8 @@ export class Ship {
   //   (a mine already thrown still detonates on the next press).
   warpCannonActive = false;
   // Warp Cannon charge: fire is held to grow the pellet a tier per beat and
-  //   released to fire it. See warpChargeAt in game/warpCannon.ts.
+  //   released to fire it. The start is stamped on the PERCEIVED beat clock
+  //   (the one the trigger reads), unlike the laser's. See game/warpCharge.ts.
   warpChargeActive = false;
   warpChargeStartBeatTime = 0;
   // Set by the fire trigger when a press should detonate the live bomb; the

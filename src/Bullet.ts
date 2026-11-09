@@ -1,6 +1,7 @@
 import { Vec, wrapMut, TAU } from "./vec";
 import { drawGlow } from "./glow";
-import { tickWarpRipples, warpPelletScale, type WarpRipple } from "./game/warpCannon";
+import { tickWarpRipples, type WarpRipple } from "./game/warpCannon";
+import { warpPelletScale } from "./game/warpCharge";
 
 // Damage dealt by a non-rhythm bullet — enough to one-shot a small asteroid
 // but takes the full size table (4/2/1) of hits to chew through a large.

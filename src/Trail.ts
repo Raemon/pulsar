@@ -106,6 +106,15 @@ export class Trail {
     this.buf = new Float32Array(capacity * STRIDE);
   }
 
+  // Forget every sample — for an owner that left play and comes back
+  // somewhere else (a Warp Cannon return), so no streak joins the two.
+  clear() {
+    this.head = 0;
+    this.count = 0;
+    this.lastX = Number.NaN;
+    this.lastY = Number.NaN;
+  }
+
   // Stamp a new sample at (x, y) if we've moved far enough since the last
   // one, and age every live sample by dt seconds. This is the only place we
   // touch the ring buffer — everything else is read-only.

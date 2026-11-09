@@ -11,6 +11,7 @@ import { primaryReticulePosition } from "../ship/reticule/reticuleRender";
 import { renderWormholes, type LensBackdrop } from "./wormhole";
 import { renderSwallows, renderWarpShots, renderWarpShotLenses, renderWarpCharge } from "./warpCannon";
 import { renderWarpIns } from "./warpReturn";
+import { bulletCollisionRadius } from "../Bullet";
 import { computeConeFrame, toroidalDelta } from "../ship/reticule/coneGeometry";
 import { pickCenterMostTargetForFocus, ReticuleTarget, setReticuleWrapAnchor } from "../ship/reticule/trajectoryPreview";
 import { renderShipTrajectoryPreview } from "../ship/shipTrajectoryPreview";
@@ -359,7 +360,8 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
   if (!warping) {
     renderLaserReticule(ctx, game, game.beatTime);
     renderLaserChargeDots(ctx, game, game.beatTime);
-    renderWarpCharge(ctx, game.ship, game.perceivedBeatTime, game.time);
+    // Sized off an off-beat stock shot: the size it'll fly at unless the release lands on the beat.
+    renderWarpCharge(ctx, game.ship, bulletCollisionRadius({ onBeat: false, superBoosted: false }), game.perceivedBeatTime, game.time);
   }
 };
 

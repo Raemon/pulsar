@@ -1,34 +1,16 @@
 import type { Game } from "../Game";
-import { BASS_MEASURE_LENGTH, type Asteroid } from "../Asteroid";
-import type { Alien } from "../Alien";
-import { COMET_HALO_REACH, type Comet } from "../Comet";
 import { TAU, fromAngle, wrapMut } from "../vec";
 import { rngRange } from "./rng";
-import { BEAT_GRID } from "./rhythmConstants";
-import { alignBassBeat } from "./waveDirector";
-import { type Wormhole, renderThroughPortal, spawnWormhole, wormholeEnterable } from "./wormhole";
+import { alignSplitChildToRhythm, seedAlienFire, seedCometMelody } from "./waveDirector";
+import { startAsteroidDrones } from "./killEffects";
+import { type Wormhole, spawnWormhole, wormholeEnterable } from "./wormhole";
+import { type WarpedBody, renderWarpedThroughPortal, swallowSizeTier } from "./warpCannon";
 
 // What a Warp Cannon shot swallows isn't destroyed — it's sent somewhere. Each
 // body falls through its portal (warpCannon.ts) into game.warpedOut, and comes
 // back at the start of the next wave: a portal tears open somewhere around the
 // middle of the screen (the camera rides the ship, so around the ship, at a
 // fair distance) and the body climbs back out of it into play.
-
-export type WarpedBody =
-  | { kind: "asteroid"; body: Asteroid }
-  | { kind: "alien"; body: Alien }
-  | { kind: "comet"; body: Comet };
-
-// Furthest a warped body paints from its centre (halo included), for the lens buffer.
-export const warpedReach = (w: WarpedBody): number =>
-  w.kind === "asteroid" ? w.body.radius * 1.6
-  : w.kind === "alien" ? w.body.radius * 2.2
-  : COMET_HALO_REACH * w.body.scale;
-
-export const drawWarpedBody = (w: WarpedBody, g: CanvasRenderingContext2D, timeMs: number): void => {
-  if (w.kind === "comet") w.body.render(g);
-  else w.body.render(g, timeMs);
-};
 
 // A body on its way back: it waits out `delay` (the returns are staggered so
 // they read one by one), then its portal opens, and once the mouth is wide it
@@ -57,6 +39,8 @@ export const releaseWarpedBodies = (game: Game): void => {
   const out = game.warpedOut;
   if (out.length === 0) return;
   game.warpedOut = [];
+  // A fall still in flight would keep writing the body's position down its dive.
+  game.swallows = game.swallows.filter((s) => !out.includes(s.warped));
   const ringBase = rngRange(0, TAU);
   out.forEach((warped, i) => {
     const angle = ringBase + (i * TAU) / out.length + rngRange(-0.3, 0.3);
@@ -74,29 +58,30 @@ export const releaseWarpedBodies = (game: Game): void => {
   });
 };
 
-// Back into play: the sim lists, plus whatever per-entity rhythm and voice
-// state a fresh spawn would have set up (its swallow silenced it).
+// Back into play with whatever per-entity rhythm, voice and travel state a
+// fresh spawn would have set up — the swallow silenced it, and it's a wave
+// or more out of date.
 const rejoinPlay = (game: Game, w: WarpedBody): void => {
   wrapMut(w.body.pos, game.w, game.h);
   if (w.kind === "asteroid") {
     const a = w.body;
     a.alive = true;
-    alignBassBeat(game, a);
+    alignSplitChildToRhythm(game, a);
+    startAsteroidDrones(game, a);
     game.asteroids.push(a);
-    if (a.isBass() && (a.size === "medium" || a.size === "small")) {
-      game.sound.startBassteroidDrone(a, a.kind as "bassA" | "bassB" | "bassC" | "bassD", a.size, a.pos);
-    }
   } else if (w.kind === "alien") {
     const al = w.body;
-    al.nextFireAt = Math.ceil((game.beatTime + 0.5) / BEAT_GRID) * BEAT_GRID;
-    al.firePatternIndex = 0;
+    al.traveled = 0;
+    al.trail.clear();
+    seedAlienFire(game, al);
     game.aliens.push(al);
     game.sound.startAlienDrone(al, al.size, al.pos);
   } else {
     const c = w.body;
     // A fresh lifetime, so it doesn't burst the moment it's back.
     c.age = 0;
-    c.nextNoteBeatTime = Math.ceil((game.beatTime + 0.6) / BASS_MEASURE_LENGTH) * BASS_MEASURE_LENGTH;
+    c.glowTrail.clear();
+    seedCometMelody(game, c);
     game.comets.push(c);
     if (!c.isMeteor) game.sound.startCometShimmer(c, c.pos);
   }
@@ -111,7 +96,7 @@ export const updateWarpIns = (game: Game, dt: number): void => {
       wi.delay -= dt;
       if (wi.delay > 0) return true;
       wi.portal = spawnWormhole(game.wormholes, body.pos, body.radius, Math.atan2(body.vel.y, body.vel.x), { holdSec: EMERGE_SEC });
-      game.sound.play("warpSwallow", 1, body.pos);
+      game.sound.play("warpSwallow", swallowSizeTier(body.radius), body.pos);
       return true;
     }
     if (wi.t === 0 && !wormholeEnterable(wi.portal)) return true;
@@ -126,14 +111,10 @@ export const updateWarpIns = (game: Game, dt: number): void => {
   });
 };
 
-// The climb out: renderThroughPortal run backwards, the lens letting go as it rises.
+// The climb out: the fall in run backwards, the lens letting go as it rises.
 export const renderWarpIns = (ctx: CanvasRenderingContext2D, list: ReadonlyArray<WarpIn>, timeMs: number): void => {
   for (const wi of list) {
     if (!wi.portal || wi.t <= 0) continue;
-    const { pos } = wi.warped.body;
-    renderThroughPortal(
-      ctx, wi.portal, 1 - Math.min(1, wi.t), { x: pos.x, y: pos.y, reach: warpedReach(wi.warped) },
-      wi.portal.x - pos.x, wi.portal.y - pos.y, (g) => drawWarpedBody(wi.warped, g, timeMs),
-    );
+    renderWarpedThroughPortal(ctx, wi.warped, wi.portal, 1 - Math.min(1, wi.t), wi.portal.x, wi.portal.y, timeMs);
   }
 };

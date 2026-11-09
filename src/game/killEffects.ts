@@ -5,7 +5,7 @@ import { AlienBullet } from "../AlienBullet";
 import { Comet } from "../Comet";
 import { Bullet } from "../Bullet";
 import { shotRayDir } from "../ship/shipWeapons";
-import { Vec, nearestImageOf } from "../vec";
+import { Vec, nearestImageOf, add, mul, len } from "../vec";
 import { ENTITY_CONFIG } from "./entityConfig";
 import { spawnGemFan, spawnBurstGemFan } from "../Gem";
 import { loseCombo, rebaseBeatEval } from "./rhythmGate";
@@ -215,13 +215,14 @@ export const awardScoreForKill = (
   return scoreEarned;
 };
 
-// only medium/small children carry drones (large bass has its own continuous low end).
-const restartChildBassDrones = (game: Game, children: Asteroid[]) => {
-  for (const c of children) {
-    alignBassBeat(game, c);
-    if (c.size === "medium" || c.size === "small") {
-      game.sound.startBassteroidDrone(c, c.kind as "bassA" | "bassB" | "bassC" | "bassD", c.size, c.pos);
-    }
+// A bass rock coming into play locks to the pulsar grid and, at medium/small,
+// opens its drone (large bass has its own continuous low end). Warble voices
+// open lazily (updatePositionalAudio).
+export const startAsteroidDrones = (game: Game, a: Asteroid) => {
+  if (!a.isBass()) return;
+  alignBassBeat(game, a);
+  if (a.size === "medium" || a.size === "small") {
+    game.sound.startBassteroidDrone(a, a.kind as "bassA" | "bassB" | "bassC" | "bassD", a.size, a.pos);
   }
 };
 
@@ -339,7 +340,7 @@ const finishAsteroidKillCore = (
     if (shatterMul !== 1 && !isShatterBoostExempt(c)) boostSeparation(c, parentVel, shatterMul);
     alignSplitChildToRhythm(game, c, claimed);
   }
-  if (a.isBass()) restartChildBassDrones(game, children);
+  if (a.isBass()) for (const c of children) startAsteroidDrones(game, c);
   return children;
 };
 
@@ -411,16 +412,19 @@ export const onAsteroidKilledByRam = (game: Game, a: Asteroid, shipVel: Vec): As
   return finishAsteroidKillCore(game, a, shipVel, false, 0, 0);
 };
 
+// px/s a bitten rock's leftover picks up along the shot.
+const LEFTOVER_PUSH = 40;
+
 // A Warp Cannon shot swallows the rock, whatever its HP: it scores as a kill —
 // combo, rhythm multiply, drift bonus — on what it took plus every fragment
-// that would have broken into (wholeScore), and none of a break-up's aftermath
+// it would have broken into (wholeScore), and none of a break-up's aftermath
 // happens: no explosion, no shards, no children, no gems or captives freed.
 // A pellet too small for the rock (warpBite) takes only a bite of its own
 // size and leaves one smaller rock behind — the returned survivors. Whatever
 // is taken leaves play now and comes back next wave (warpReturn.ts).
 export const onAsteroidSwallowed = (game: Game, a: Asteroid, b: Bullet, isOnBeatHit: boolean): Asteroid[] => {
   const bite = warpBite(a, b);
-  const taken = bite ? new Asteroid({ ...a.pos }, { ...a.vel }, bite.bite, a.hue, bite.kind) : a;
+  const taken = bite ? new Asteroid({ ...a.pos }, { ...a.vel }, bite.bite, a.hue, bite.biteKind) : a;
   applyHitToCombo(game, isOnBeatHit, b.pos, beatsAwayAtHit(game, b));
   const scoreEarned = awardScoreForKill(game, b.pos, taken.wholeScore(), isOnBeatHit, b.driftTierAtHit());
   game.popups.push(popupScore(b.pos, scoreEarned));
@@ -435,18 +439,12 @@ export const onAsteroidSwallowed = (game: Game, a: Asteroid, b: Bullet, isOnBeat
   recordAsteroidKill(game, taken, isOnBeatHit, scoreEarned, comboAtKill);
   swallowIntoWarp(game, { kind: "asteroid", body: taken }, b);
   if (!bite) return [];
-  // The leftover drifts on with the rock's motion, nudged along the shot.
-  const push = shotPushOf(b, LEFTOVER_PUSH);
-  const leftover = new Asteroid({ ...a.pos }, { x: a.vel.x + push.x, y: a.vel.y + push.y }, bite.leftover, a.hue, bite.kind);
+  // The leftover drifts on with the rock's motion, nudged along the shot, then
+  // rhythm-aligned like any break-up's fragment.
+  const leftover = new Asteroid({ ...a.pos }, add(a.vel, mul(b.vel, LEFTOVER_PUSH / (len(b.vel) || 1))), bite.leftover, a.hue, a.kind);
   leftover.flashAmount = 1;
+  alignSplitChildToRhythm(game, leftover);
   return [leftover];
-};
-
-// px/s a bitten rock's leftover picks up along the shot.
-const LEFTOVER_PUSH = 40;
-const shotPushOf = (b: Bullet, speed: number): Vec => {
-  const len = Math.hypot(b.vel.x, b.vel.y) || 1;
-  return { x: (b.vel.x / len) * speed, y: (b.vel.y / len) * speed };
 };
 
 // bassteroids take multiple hits to kill; chip points keep the player rewarded for
