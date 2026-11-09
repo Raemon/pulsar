@@ -1,5 +1,29 @@
 [
   {
+    "id": "2026-11-09-ac16a17",
+    "date": "2026-11-09",
+    "title": "Rhythm and streaks make rocks shatter harder",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "The higher your rhythm, the faster the pieces fly apart when you shoot a rock. It's clearly faster by x32 and wild by x50.",
+          "Every streak shot hurls fragments a little faster too, starting small and snowballing: noticeable around 10 shots, absurd by 14."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "Only your own shots get the extra force. Ramming a rock or a saucer's fire breaks it at normal speed, and metal wedges still drift slowly."
+        ]
+      }
+    ],
+    "commits": [
+      "ac16a17",
+      "8717043"
+    ]
+  },
+  {
     "id": "2026-11-07-8110874",
     "date": "2026-11-07",
     "title": "Two-shot magazine with beat-timed reloads",
@@ -1525,42 +1549,6 @@
     ],
     "commits": [
       "2af5e8d"
-    ]
-  },
-  {
-    "id": "2026-06-03-c369430",
-    "date": "2026-06-03",
-    "title": "Solid crystals, manta aliens, and stinger bullets",
-    "sections": [
-      {
-        "heading": "New",
-        "items": [
-          "Solid crystal asteroids appear in waves — tougher than normal rocks, they shatter into fast fragments and drop collectible gems.",
-          "Alien ships now sport a sleek manta-ray silhouette with curved wings, cephalic horns, glowing structural ribs, and an animated whip tail.",
-          "Big aliens fire an 8-shot fan burst in a wide arc, then pause before the next volley.",
-          "Alien bullets now appear as slim stinger darts instead of round blobs.",
-          "The big alien's fire sound uses a sampled electric guitar."
-        ]
-      },
-      {
-        "heading": "Changed",
-        "items": [
-          "Ship trajectory preview now shows directional chevrons instead of dots for clearer heading indication.",
-          "Aim disc rendering distinguishes between primary and secondary weapon slots.",
-          "Gold crystals shatter on ship contact with an updated sound effect."
-        ]
-      }
-    ],
-    "commits": [
-      "c369430",
-      "910f267",
-      "66b7114",
-      "dbbc27e",
-      "ff4ca70",
-      "3471d4f",
-      "4629957",
-      "783fe44",
-      "aa7e661"
     ]
   }
 ]
