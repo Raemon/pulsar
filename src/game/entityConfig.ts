@@ -14,6 +14,17 @@ export const ENTITY_CONFIG = {
   rhythm: {
     chancePerCombo: 0.01,
     speedPerCombo: 0.0375,
+    // Fragments of a kill fly apart faster as rhythm climbs: 1 + (combo / ref)^2,
+    //   so ~1.25x at 16, 2x at 32, ~3.4x at 50.
+    shatterSpeedRef: 32,
+  },
+
+  // Each live streak shot also hurls fragments faster: +base·growth^(n-1), so
+  //   +1% on the 1st shot, ~+38% by 10, ~+195% by 14. Combined with rhythm, capped.
+  streakShatter: {
+    base: 0.01,
+    growth: 1.5,
+    maxMul: 6,
   },
 
   // dampens remaining headline rolls once one fires, so they rarely stack.

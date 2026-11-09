@@ -14,6 +14,7 @@ import { setFirstWaveHintStage, emitFirstWaveHintHitProgress, emitFirstWaveHintS
 import { tryUnlockPilotLog1, tryUnlockPilotLog3 } from "./pilotLog";
 import { popupCombo, popupScore, popupDriftCombo } from "./popups";
 import { resonanceBonus } from "./resonanceBonus";
+import { streakWindowClosed } from "./streakBurst";
 import { trackRhythmComboHit, extendStreakWindow, beatsAwayAtHit } from "./rhythmBonus";
 import { triggerBassLightning } from "./bassLightning";
 import { spawnDriftBurst } from "./driftBurst";
@@ -331,10 +332,28 @@ const finishAsteroidKillCore = (
   // sibling fragments share one beat-claim set so the two pieces target
   //   *different* beats — otherwise the player can only combo one of them
   //   before the second drifts past the engagement ring on the same tick.
+  // Boost before aligning so the aligner tunes around the faster speed and the
+  //   fragments still reach the engagement ring on a beat.
+  const k = shatterSpeedMul(game);
   const claimed = newBeatClaimSet();
-  for (const c of children) alignSplitChildToRhythm(game, c, claimed);
+  for (const c of children) {
+    if (!c.isBossFamily()) {
+      c.vel.x *= k;
+      c.vel.y *= k;
+    }
+    alignSplitChildToRhythm(game, c, claimed);
+  }
   if (a.isBass()) restartChildBassDrones(game, children);
   return children;
+};
+
+// How much faster a kill's fragments fly apart: rhythm (quadratic) × live streak (exponential).
+export const shatterSpeedMul = (game: Game): number => {
+  const rhythm = 1 + (game.beatCombo / ENTITY_CONFIG.rhythm.shatterSpeedRef) ** 2;
+  const { base, growth, maxMul } = ENTITY_CONFIG.streakShatter;
+  const n = game.streakShots > 0 && !streakWindowClosed(game) ? game.streakShots : 0;
+  const streak = n > 0 ? 1 + base * growth ** (n - 1) : 1;
+  return Math.min(maxMul, rhythm * streak);
 };
 
 // bassEcho → asteroidHit order matches the original handleCollisions bullet branch.
