@@ -109,7 +109,7 @@ export const setShotLife = (bullet: Bullet, life: number) => {
   bullet.fadeStartLife = Math.max(0, life - beatSlotCount(life) * BEAT_GRID);
 };
 
-const launchBullet = (ship: Ship, headingOffset: number): Bullet => {
+const launchBullet = (ship: Ship, headingOffset: number, warpCharge: number): Bullet => {
   const bullet = new Bullet(muzzleOf(ship, headingOffset), shotLaunchVel(ship, headingOffset), 0);
   if (ship.bombActive) {
     // A bomb never times out: it rests where drag leaves it until the player's
@@ -120,13 +120,15 @@ const launchBullet = (ship: Ship, headingOffset: number): Bullet => {
   }
   bullet.pierce = ship.pierceActive;
   bullet.warp = ship.warpCannonActive;
+  bullet.warpCharge = warpCharge;
   setShotLife(bullet, shotLife(ship, false));
   return bullet;
 };
 
 // single fire event yields one bullet per prongOffsets entry; prong must share its on-beat flag across all.
-export const fireBullets = (ship: Ship, bullets: Bullet[]) => {
-  for (const offset of prongOffsets(ship.prongCount)) bullets.push(launchBullet(ship, offset));
+// `warpCharge`: the tier a released Warp Cannon charge reached (ignored otherwise).
+export const fireBullets = (ship: Ship, bullets: Bullet[], warpCharge = 0) => {
+  for (const offset of prongOffsets(ship.prongCount)) bullets.push(launchBullet(ship, offset, warpCharge));
 };
 
 // powerup flags are simple bool latches; shield is one-shot, the rest persist for the run.

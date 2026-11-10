@@ -10,6 +10,7 @@ import { tickMagazine, spendShot, magazineBlocksFire } from "./shipMagazine";
 import { isDown } from "../game/controlBindings";
 import { FUEL_MODE_ENABLED, FUEL_THRUST_DRAIN, FUEL_SIDE_DRAIN, FUEL_RECHARGE, FUEL_RECHARGE_INTERVAL } from "../game/fuel";
 import { BEAT_GRID } from "../game/rhythmConstants";
+import { warpChargeAt, cancelWarpCharge } from "../game/warpCharge";
 
 const ENGINE_SOUNDS_ENABLED = false;
 
@@ -313,6 +314,10 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[], perceiv
   // one is ever in play. The cooldown keeps a banked super-laser from also
   // firing on that press.
   ship.bombInPlay = hasLiveBomb(bullets);
+  // Only the warp branch below may hold a Warp Cannon charge; any other path
+  // this tick drops it, so it can't fire on its own later.
+  const warpTrigger = ship.warpCannonActive && !ship.bombInPlay && !ship.lasershotActive && !ship.superLaserCharged;
+  if (!warpTrigger) cancelWarpCharge(ship);
   if (ship.bombInPlay) {
     if (pressed) {
       ship.bombDetonateRequested = true;
@@ -327,6 +332,10 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[], perceiv
   if (ship.superLaserCharged) return;
   // Without this, a trigger held through the reload would autofire on the refill beat.
   if (ship.triggerHeldDry) return;
+  if (warpTrigger) {
+    updateWarpTrigger(ship, down, pressed, bullets, perceivedBeatTime);
+    return;
+  }
   // A bomb throws on a press, never a hold or a cooldown, so each press does
   // exactly one thing: throw, then blow.
   if (ship.bombActive) {
@@ -338,8 +347,25 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[], perceiv
   fireShot(ship, bullets, perceivedBeatTime);
 };
 
-const fireShot = (ship: Ship, bullets: Bullet[], perceivedBeatTime: number) => {
-  fireBullets(ship, bullets);
+// Warp Cannon: a press starts the charge, the release fires one volley at the
+// tier it reached (game/warpCharge.ts). A press on an empty magazine never
+// starts one (triggerHeldDry), and holding spends nothing, so the release
+// always has a round. Like the bomb, it's paced by presses and the magazine,
+// not the autofire cooldown.
+const updateWarpTrigger = (ship: Ship, down: boolean, pressed: boolean, bullets: Bullet[], perceivedBeatTime: number) => {
+  if (pressed) {
+    ship.warpChargeActive = true;
+    ship.warpChargeStartBeatTime = perceivedBeatTime;
+    return;
+  }
+  if (down || !ship.warpChargeActive) return;
+  const charge = warpChargeAt(ship, perceivedBeatTime);
+  cancelWarpCharge(ship);
+  fireShot(ship, bullets, perceivedBeatTime, charge);
+};
+
+const fireShot = (ship: Ship, bullets: Bullet[], perceivedBeatTime: number, warpCharge = 0) => {
+  fireBullets(ship, bullets, warpCharge);
   spendShot(ship, perceivedBeatTime);
   armFireCooldown(ship);
 };

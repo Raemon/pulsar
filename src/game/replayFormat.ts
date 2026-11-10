@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 59;
+export const REPLAY_FORMAT_VERSION = 60;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -66,6 +66,9 @@ export const REPLAY_FORMAT_VERSION = 59;
 //   ready), so a v57 run that refired a round on its third beat re-sims without it.
 // v59 scales a shot-kill's fragment kick by rhythm × streak, so v58 fragments
 //   re-sim at different speeds.
+// v60 makes the Warp Cannon hold-to-charge (pellet size by beats held, small
+//   pellets bite big rocks) and returns swallowed bodies next wave, so a v59
+//   Warp Cannon run re-sims differently.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

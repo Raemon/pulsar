@@ -1,8 +1,8 @@
 import type { Game } from "../Game";
 import { Asteroid, AsteroidKind, AsteroidSize, BASS_KINDS, BASS_MEASURE_LENGTH, isBurstGem, isTorusFragment, SIZE_SPAWN_SPEED, spawnAsteroidAtEdge, spawnBossAt } from "../Asteroid";
 import { spawnGemSwarm } from "../Gem";
-import { spawnComet as spawnCometAtEdge, spawnMeteorShower, COMET_LIFETIME } from "../Comet";
-import { AlienSize, spawnAlienAtEdge } from "../Alien";
+import { spawnComet as spawnCometAtEdge, spawnMeteorShower, COMET_LIFETIME, type Comet } from "../Comet";
+import { AlienSize, spawnAlienAtEdge, type Alien } from "../Alien";
 import { spawnCanister } from "../Canister";
 import { pick, rand, randInt, v, TAU, nearestImageOf, wrapMut } from "../vec";
 import { rng } from "./rng";
@@ -346,14 +346,18 @@ const spawnSolidCrystalSmall = (game: Game, claimed?: BeatClaimSet): Asteroid =>
 // pre-align first fire to the next BEAT_GRID slot so saucer shots lock into
 // the rhythm immediately. From there the alien advances through its own
 // fire pattern (see ALIEN_FIRE_PATTERN_BEATS in Alien.ts).
+export const seedAlienFire = (game: Game, a: Alien) => {
+  a.nextFireAt = Math.ceil((game.beatTime + 0.5) / BEAT_GRID) * BEAT_GRID;
+  a.firePatternIndex = 0;
+};
+
 export const spawnAlien = (game: Game, size: AlienSize) => {
   const origin = shipFrameOrigin(game);
   const a = spawnAlienAtEdge(game.w, game.h, size, actOfWave(game.wave));
   a.pos.x += origin.x;
   a.pos.y += origin.y;
   applyRhythmSpeed(game, a.vel);
-  a.nextFireAt = Math.ceil((game.beatTime + 0.5) / BEAT_GRID) * BEAT_GRID;
-  a.firePatternIndex = 0;
+  seedAlienFire(game, a);
   stageEntrance(game, a);
   game.aliens.push(a);
   game.sound.startAlienDrone(a, size, audiblePos(a));
@@ -371,6 +375,11 @@ export const spawnAlien = (game: Game, size: AlienSize) => {
 // individual phase.
 // The ±15% band is enough wiggle room to absorb the small phase mismatch
 // without noticeably altering the comet's chosen traversal speed.
+export const seedCometMelody = (game: Game, c: Comet) => {
+  const cometEntryLead = 0.6;
+  c.nextNoteBeatTime = Math.ceil((game.beatTime + cometEntryLead) / BASS_MEASURE_LENGTH) * BASS_MEASURE_LENGTH;
+};
+
 export const spawnComet = (game: Game) => {
   const c = spawnCometAtEdge(game.w, game.h);
   // Slide the edge-spawn into the player's visible frame so the comet streaks
@@ -378,8 +387,7 @@ export const spawnComet = (game: Game) => {
   const origin = shipFrameOrigin(game);
   c.pos.x += origin.x;
   c.pos.y += origin.y;
-  const cometEntryLead = 0.6;
-  c.nextNoteBeatTime = Math.ceil((game.beatTime + cometEntryLead) / BASS_MEASURE_LENGTH) * BASS_MEASURE_LENGTH;
+  seedCometMelody(game, c);
   const cometSpeed = Math.hypot(c.vel.x, c.vel.y);
   if (cometSpeed > 0) {
     alignVelocityToRhythm(c.pos, c.vel, {
