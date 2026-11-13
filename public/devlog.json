@@ -106,7 +106,7 @@
         "heading": "New",
         "items": [
           "Warp Cannon upgrade: every shot becomes a small rippling wormhole, its rim coloured by your rhythm tier.",
-          "A warp shot swallows its target whole in one hit, however tough \u2014 no explosion, no fragments to chase down. Armour still turns away weak shots, and bosses are too massive to swallow.",
+          "A warp shot swallows its target whole in one hit, however tough — no explosion, no fragments to chase down. Armour still turns away weak shots, and bosses are too massive to swallow.",
           "Swallowing pays out as if you'd broken the target all the way down, scoring every piece it would have split into.",
           "Aliens swallowed by the Warp Cannon fall straight into the wave-skip portal their kill tears open.",
           "The Warp Cannon and the Bomb swap: picking one up replaces the other."
@@ -169,7 +169,7 @@
       {
         "heading": "Fixed",
         "items": [
-          "Ship hull contact now checks the full outline \u2014 nose tip, wings, and off-axis grazes \u2014 so near-misses no longer pass through silently.",
+          "Ship hull contact now checks the full outline — nose tip, wings, and off-axis grazes — so near-misses no longer pass through silently.",
           "Drift-aim snap no longer pins your turn in place when a target drifts into the heading each frame."
         ]
       }
@@ -218,8 +218,8 @@
       {
         "heading": "Changed",
         "items": [
-          "Prong upgrade now fires a centre shot plus a \u00b115\u00b0 pair, so the first upgrade gives three bullets instead of two.",
-          "Each additional Prong upgrade adds two more bullets at the next \u00b115\u00b0 step outward.",
+          "Prong upgrade now fires a centre shot plus a ±15° pair, so the first upgrade gives three bullets instead of two.",
+          "Each additional Prong upgrade adds two more bullets at the next ±15° step outward.",
           "The metal slab's inner crystal is now a pulsing black square instead of a magenta gem.",
           "Square soundwave rings radiate outward from the crystal on each pulse beat.",
           "Metal slab wedge pieces are resized to better match the slab they break from."
@@ -260,7 +260,7 @@
       {
         "heading": "Fixed",
         "items": [
-          "Boss hemispheres no longer eject together as one blob \u2014 each half now flies off its own side.",
+          "Boss hemispheres no longer eject together as one blob — each half now flies off its own side.",
           "Giant enemies no longer roll during Act II's opening wave, preserving the intended warble, prison, and torus introductions."
         ]
       }
@@ -280,7 +280,7 @@
       {
         "heading": "New",
         "items": [
-          "Giant bassteroids occasionally appear, docking three large ships around a central hub \u2014 destroying one launches all three at once.",
+          "Giant bassteroids occasionally appear, docking three large ships around a central hub — destroying one launches all three at once.",
           "Metal chunks now split into two triangular wedges and release a pulsing superBassCrystal that echoes bass hits for a 40-point resonance bounty.",
           "Giant bassteroids are rare through level 10 (3% chance) and become common from level 11 onward (30% chance)."
         ]
@@ -296,7 +296,7 @@
       {
         "heading": "Changed",
         "items": [
-          "Slow-motion effect is softened to 0.75\u00d7 speed.",
+          "Slow-motion effect is softened to 0.75× speed.",
           "Power-up glyph is no longer shown on canisters."
         ]
       }
@@ -443,7 +443,7 @@
       {
         "heading": "Fixed",
         "items": [
-          "Replay buttons no longer disappear on leaderboard rows right after you upload a run \u2014 stale cache layers no longer hide a replay you just saved.",
+          "Replay buttons no longer disappear on leaderboard rows right after you upload a run — stale cache layers no longer hide a replay you just saved.",
           "Your post-run standings view is now fetched after your replay uploads, so it correctly shows a play button for your new run.",
           "Replay encoding failures are now logged instead of silently leaving your run without an uploadable replay."
         ]
@@ -479,8 +479,8 @@
       {
         "heading": "Tuning",
         "items": [
-          "Prong fan spread narrowed to 30\u00b0 per prong for tighter shot grouping.",
-          "Game sounds load faster at startup \u2014 initial download drops from ~2.6 MB to ~560 KB."
+          "Prong fan spread narrowed to 30° per prong for tighter shot grouping.",
+          "Game sounds load faster at startup — initial download drops from ~2.6 MB to ~560 KB."
         ]
       }
     ],
@@ -518,7 +518,7 @@
       {
         "heading": "New",
         "items": [
-          "Each control action now supports two bindings \u2014 a primary and an alternate.",
+          "Each control action now supports two bindings — a primary and an alternate.",
           "Arrow keys and WASD are both active out of the box with no setup required.",
           "The controls screen now shows two key chips per action, each independently rebindable or clearable.",
           "New intro hint lines added to the tip rotation."
@@ -595,7 +595,7 @@
       {
         "heading": "New",
         "items": [
-          "Citadel asteroids appear in later waves \u2014 massive armoured fortresses with a ship-shaped escape hole; fly inside while the shell is phased out and shoot the inner wall to destroy them.",
+          "Citadel asteroids appear in later waves — massive armoured fortresses with a ship-shaped escape hole; fly inside while the shell is phased out and shoot the inner wall to destroy them.",
           "Defeating aliens can now open wave-skip portals; fly into one to jump ahead several waves and re-emerge with a return portal.",
           "New warm-up waves ease newer players into the game with single-target encounters before the full field spawns.",
           "Streaks now have their own shimmer sounds and music layer."
@@ -605,7 +605,7 @@
         "heading": "Changed",
         "items": [
           "Boss laser timing overhauled: the eye now has a longer aim windup followed by a visible pre-fire surge before it fires, giving more time to read and dodge the shot.",
-          "Boss hemisphere armour is now directional \u2014 the freshly-cut flat face takes full damage while the rounded outer shell still deflects weak shots.",
+          "Boss hemisphere armour is now directional — the freshly-cut flat face takes full damage while the rounded outer shell still deflects weak shots.",
           "Bonus life threshold now doubles after each award."
         ]
       },
@@ -682,7 +682,7 @@
       {
         "heading": "Fixed",
         "items": [
-          "Asteroid knockback no longer stacks from repeated hits or armored deflections \u2014 momentum transfers once per bullet.",
+          "Asteroid knockback no longer stacks from repeated hits or armored deflections — momentum transfers once per bullet.",
           "Boss beam, shockwave, and collision detection now correctly handle targets near or across the world seam.",
           "Comet and alien trails no longer draw a screen-spanning streak when the entity wraps around the map edge.",
           "Fuel orbs and canisters now wrap properly instead of occasionally blinking out."
@@ -749,7 +749,7 @@
       {
         "heading": "New",
         "items": [
-          "Fuel orbs now drop from gold ore that cracks open without an upgrade in Fuel Mode \u2014 fly through the cyan tumbling orb to refill your reserve.",
+          "Fuel orbs now drop from gold ore that cracks open without an upgrade in Fuel Mode — fly through the cyan tumbling orb to refill your reserve.",
           "Comets now wrap around the map boundaries instead of drifting off-screen, keeping them visible for their full 30-second lifespan before warping out.",
           "Comets depart through a warp portal at a fixed 30-second timer rather than fading out when they reach a screen edge."
         ]
@@ -758,7 +758,7 @@
         "heading": "Changed",
         "items": [
           "Gems have a new look: a faceted brilliant-cut diamond with shaded crown and pavilion facets, a rough chipped shadow side, and crisp sparkle seams instead of a wireframe octahedron.",
-          "Comets no longer fade to invisible before leaving \u2014 they stay bright and dive through a departure portal as their exit animation.",
+          "Comets no longer fade to invisible before leaving — they stay bright and dive through a departure portal as their exit animation.",
           "The shield option has been removed from powerup canisters."
         ]
       }
@@ -821,7 +821,7 @@
         "items": [
           "Comets that time out now dive through a swirling departure portal instead of fading away.",
           "Aliens that cross the screen now warp out through a portal instead of vanishing off the edge.",
-          "Warping-out comets and aliens are intangible \u2014 bullets and the ship no longer interact with them.",
+          "Warping-out comets and aliens are intangible — bullets and the ship no longer interact with them.",
           "Background ecliptic stars now orbit the pulsar's tilted plane alongside the planets, giving the sky more depth."
         ]
       },
@@ -831,7 +831,7 @@
           "Aliens now appear in dark blood-red instead of deep violet.",
           "Comets now spawn from the visible screen edge and move faster, making them harder to farm for on-beat combos.",
           "Drift Shot combo now shows two staged numbers climbing one step at a time; the damage multiplier label only reappears when you beat your best tier for the run.",
-          "Alien bullets no longer time out \u2014 they persist until they hit or are otherwise cleared."
+          "Alien bullets no longer time out — they persist until they hit or are otherwise cleared."
         ]
       }
     ],
@@ -849,7 +849,7 @@
         "heading": "New",
         "items": [
           "The default camera now locks your ship to screen center and scrolls the entire arena around you, so you are never near a hard edge.",
-          "Two additional experimental camera views (2\u00d72 tiled and 3\u00d73 silhouette-edge) can be switched live with number keys 1\u20134; an on-screen label shows the active mode.",
+          "Two additional experimental camera views (2×2 tiled and 3×3 silhouette-edge) can be switched live with number keys 1–4; an on-screen label shows the active mode.",
           "The starfield now features a diagonal Milky Way band with denser star clusters, nebula clouds, and a handful of prominent bright foreground stars with diffraction glints.",
           "Background layers (nebula, dust, star field) each scroll at their own parallax depth, giving the arena a clear sense of 3D space."
         ]
@@ -927,10 +927,10 @@
         "heading": "New",
         "items": [
           "Collectible Gems now drop from gold-bearing asteroids and can be shot on-beat for points or a powerup, or picked up directly.",
-          "Burst Gem asteroids explode into a fan of fast-flying Gem blades \u2014 dodge or shoot them on-beat to claim the reward.",
+          "Burst Gem asteroids explode into a fan of fast-flying Gem blades — dodge or shoot them on-beat to claim the reward.",
           "Gem swarm events send a flock of fast Gems streaking across the field as a timed rhythm challenge.",
           "New Laser Shot powerup lets you activate laser capabilities during gameplay.",
-          "A spectrum visualizer now pulses around the pulsar; press keys 1\u20135 to switch between visualization modes.",
+          "A spectrum visualizer now pulses around the pulsar; press keys 1–5 to switch between visualization modes.",
           "The reticule now shows a guidance arrow orbiting toward the nearest first-beat rhythm dot, plus a lock-on pulse when hovering over one.",
           "Wave bodies flash brighter on the beat for improved rhythm feedback."
         ]
@@ -974,19 +974,19 @@
       {
         "heading": "New",
         "items": [
-          "Huge asteroids now appear \u2014 larger and tougher than large, they shatter into varied fragment combinations.",
+          "Huge asteroids now appear — larger and tougher than large, they shatter into varied fragment combinations.",
           "Gold gem asteroids (medium and big tiers) spawn as chunky cut diamonds; destroying one bursts it into a fan of fast gold diamond shards.",
           "Gem swarm events send a flock of gold-crystal rocks streaking across the field, rewarding quick shooting with upgrade drops.",
-          "Warble asteroids now phase in and out on the beat \u2014 they turn intangible while dimmed, letting bullets pass clean through.",
+          "Warble asteroids now phase in and out on the beat — they turn intangible while dimmed, letting bullets pass clean through.",
           "Laser charging now builds through multiple tiers with sustained sound effects and visual crackle; releasing a charged shot triggers a full-screen flash.",
-          "Replays can now be scrubbed with a timeline control \u2014 pause, change playback speed, or seek to any moment with arrow keys or the on-screen bar.",
-          "Glass prisons now release a brood of 2\u20134 wraiths instead of a single one when broken."
+          "Replays can now be scrubbed with a timeline control — pause, change playback speed, or seek to any moment with arrow keys or the on-screen bar.",
+          "Glass prisons now release a brood of 2–4 wraiths instead of a single one when broken."
         ]
       },
       {
         "heading": "Changed",
         "items": [
-          "Cathedral debris (bell, glass shards, keystones) now appears dark and unlit \u2014 the stained glass has gone cold.",
+          "Cathedral debris (bell, glass shards, keystones) now appears dark and unlit — the stained glass has gone cold.",
           "Leaderboard top-pilots view now scans deeper to ensure a diverse spread of pilots is shown even when one pilot dominates the top scores."
         ]
       },
@@ -994,7 +994,7 @@
         "heading": "Tuning",
         "items": [
           "Alien bullets are now significantly larger, improving visibility during combat.",
-          "Prong upgrade now stacks \u2014 each pickup adds an additional prong bullet rather than simply toggling the effect."
+          "Prong upgrade now stacks — each pickup adds an additional prong bullet rather than simply toggling the effect."
         ]
       }
     ],
@@ -1053,18 +1053,18 @@
       {
         "heading": "New",
         "items": [
-          "Boss laser aim now rotates like a turret \u2014 circling the boss lets you outrun the sweep instead of being snapped onto.",
+          "Boss laser aim now rotates like a turret — circling the boss lets you outrun the sweep instead of being snapped onto.",
           "Destroyed boss hull plates and iris shards pulse on the beat with glowing blooms, keeping the rhythm alive as the planet breaks apart.",
           "Beat-active boss debris produces heavier, wider lightning arcs than ordinary Bassteroid splinters.",
           "A red 'INSUFFICIENT DAMAGE / GAIN MORE RHYTHM' tip now appears the first time a shot glances off an armoured rock.",
-          "Boss debris carries a Resonance bounty \u2014 cashing the field while fragments pulse pays out more than standard small pieces."
+          "Boss debris carries a Resonance bounty — cashing the field while fragments pulse pays out more than standard small pieces."
         ]
       },
       {
         "heading": "Fixed",
         "items": [
           "Entering the boss wave while a halo was already active now correctly transitions to the boss music instead of staying on the random track.",
-          "Bassteroids now always break into the same recognisable pieces \u2014 fragments are authored per shape, never random, so splits are consistent and stutter-free.",
+          "Bassteroids now always break into the same recognisable pieces — fragments are authored per shape, never random, so splits are consistent and stutter-free.",
           "Boss laser beam fires along the telegraphed aim line rather than snapping to the ship's position at the last moment."
         ]
       }
@@ -1087,7 +1087,7 @@
           "Meteor showers now appear as fast-moving flocks of meteors with their own sound effects and scoring.",
           "The boss fires a sustained sweeping beam attack from its eye.",
           "Bell asteroids now shatter into carved debris pieces: keystones, glass shards, column drums, and rubble blocks.",
-          "Bell asteroids now come in five distinct cathedral archetypes \u2014 lancet wall, rose facade, spire tower, arcade, and buttress ruin \u2014 each with unique visuals."
+          "Bell asteroids now come in five distinct cathedral archetypes — lancet wall, rose facade, spire tower, arcade, and buttress ruin — each with unique visuals."
         ]
       },
       {
@@ -1122,7 +1122,7 @@
       {
         "heading": "New",
         "items": [
-          "Two new boss-fight music tracks \u2014 Vigil and Knell \u2014 replace the old boss theme.",
+          "Two new boss-fight music tracks — Vigil and Knell — replace the old boss theme.",
           "A new post-boss haunting track, Spectral Toll, plays after defeating the boss.",
           "Solid crystals now deflect weak bullets instead of absorbing them, with particle effects showing the bounce.",
           "A new Echo bonus tracks bass hits on asteroids and adds to your score multiplier.",
@@ -1177,7 +1177,7 @@
       {
         "heading": "Fixed",
         "items": [
-          "Beat Calibration tap timing is more accurate on touch devices \u2014 input registers on finger-down rather than finger-up."
+          "Beat Calibration tap timing is more accurate on touch devices — input registers on finger-down rather than finger-up."
         ]
       }
     ],
@@ -1194,7 +1194,7 @@
         "heading": "New",
         "items": [
           "A dedicated boss-fight music track (brooding brass and heartbeat sub-bass) now plays during the boss encounter.",
-          "Three new post-boss atmospheric music tracks cycle through levels 11\u201319: a cathedral hymn, a lost-transmission ghost, and a submerged requiem.",
+          "Three new post-boss atmospheric music tracks cycle through levels 11–19: a cathedral hymn, a lost-transmission ghost, and a submerged requiem.",
           "Boss laser shots now render as a bright beam-streak with a white-hot core and perpendicular lens flare.",
           "Post-break boss plasma balls display as larger charged spheres with a crimson corona and fade out gracefully.",
           "Bell asteroids now display as detailed cathedral wall fragments with gothic lancet windows, stained glass, rose medallions, and weathered masonry."
@@ -1224,7 +1224,7 @@
         "heading": "New",
         "items": [
           "The level-10 boss now has a multi-phase encounter: a dormant reveal period, a tracking eye-core that fires plasma bolts, and a full shatter sequence leaving hemispheres, plates, iris shards, and an ember.",
-          "Glass prison asteroids appear from level 11 \u2014 tough angular shells containing a captive wraith that escapes when the prison is destroyed.",
+          "Glass prison asteroids appear from level 11 — tough angular shells containing a captive wraith that escapes when the prison is destroyed.",
           "Wraits pursue the ship, slither side to side, and occasionally lunge; they must be finished off after breaking free.",
           "Boss plasma bolts render as chunky glowing orbs distinct from normal alien stingers.",
           "Leaderboard now supports sorting scores by date, with relative and exact timestamps shown for each entry."
@@ -1426,7 +1426,7 @@
       {
         "heading": "New",
         "items": [
-          "Drift bonus popup now shows a '2\u00d7 DAMAGE' subtitle the first time you pull off a Drift Shot in a run.",
+          "Drift bonus popup now shows a '2× DAMAGE' subtitle the first time you pull off a Drift Shot in a run.",
           "The starfield and background planets now share a coherent camera with subtle parallax and a slow roll as you progress.",
           "The boss planetoid is now visually distinct with an oblong silhouette and updated eclipse corona effects.",
           "Updated in-game music tracks with new orchestral cello and choir layers for later rounds."
@@ -1463,7 +1463,7 @@
       {
         "heading": "New",
         "items": [
-          "Gameplay replays can now be saved and uploaded after posting a high score \u2014 watch your run from the leaderboard.",
+          "Gameplay replays can now be saved and uploaded after posting a high score — watch your run from the leaderboard.",
           "Leaderboard entries show a replay button when a recording is available.",
           "Audio settings now have separate volume sliders for Base Pulse, Sound Effects, Music, and Vocals.",
           "Rhythm latency calibration has moved into the Audio settings tab for easier access."
@@ -1479,7 +1479,7 @@
       {
         "heading": "Tuning",
         "items": [
-          "White bullet (super-boosted) combo threshold raised from 8 to 12 \u2014 harder to reach but the yellow halo tier now lasts longer."
+          "White bullet (super-boosted) combo threshold raised from 8 to 12 — harder to reach but the yellow halo tier now lasts longer."
         ]
       }
     ],
@@ -1525,7 +1525,7 @@
         "heading": "Changed",
         "items": [
           "Aliens fly a curving, arcing path across the field instead of moving in straight lines.",
-          "Aliens no longer wrap around the screen edges \u2014 they drift off and disappear.",
+          "Aliens no longer wrap around the screen edges — they drift off and disappear.",
           "Alien engine drone sounds stop correctly when an alien leaves the screen.",
           "Prong reticule now properly anchors the drift-shot bonus to the first prong angle."
         ]
