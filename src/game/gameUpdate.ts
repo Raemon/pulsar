@@ -1044,7 +1044,8 @@ const classifyNewBullets = (game: Game, firstNewIndex: number) => {
   //   press timed to the heard beat scores even when output latency makes it land
   //   late on the raw audio grid.
   const volley = game.bullets[firstNewIndex];
-  const firedOnBeat = isInBeatWindow(game, game.perceivedBeatTime) || warpTapPressedOnBeat(game, volley);
+  const tapBeatTime = warpTapPressedOnBeat(game, volley) ? game.ship.warpChargeStartBeatTime : null;
+  const firedOnBeat = tapBeatTime !== null || isInBeatWindow(game, game.perceivedBeatTime);
   const count = game.bullets.length - firstNewIndex;
   // snapshot each ring's drift TIER (0 = unlocked; 1/2/3 = held tier). Uses game.beatTime — the
   //   same clock tickHoverLockState stamped hoverStartBeatTime on — so the tier is deterministic.
@@ -1061,15 +1062,22 @@ const classifyNewBullets = (game: Game, firstNewIndex: number) => {
   } else {
     registerOffBeatFire(game);
   }
-  // deeper fireBeat pluck reinforces "you nailed the beat"; ship no longer plays its own.
-  // The bomb's shells get their own pair of voices, two octaves down but the same
-  // pitch classes, so the heavier weapon sounds heavier without leaving the key.
+  playFireVoice(game, volley, firedOnBeat, tapBeatTime ?? game.perceivedBeatTime);
+};
+
+// deeper fireBeat pluck reinforces "you nailed the beat"; ship no longer plays its own.
+// The bomb's shells get their own pair of voices, two octaves down but the same
+// pitch classes, so the heavier weapon sounds heavier without leaving the key.
+// A Warp Cannon volley blooms instead, its chord tone taken from the beat it
+// was scored on (`judgedAt`).
+const playFireVoice = (game: Game, volley: Bullet, firedOnBeat: boolean, judgedAt: number) => {
   if (volley.warp) {
-    game.sound.play(firedOnBeat ? "fireWarpBeat" : "fireWarp", fireWarpKey(volley.warpCharge, game.perceivedBeatTime));
-    return;
+    game.sound.play(firedOnBeat ? "fireWarpBeat" : "fireWarp", fireWarpKey(volley.warpCharge, judgedAt));
+  } else if (game.ship.bombActive) {
+    game.sound.play(firedOnBeat ? "fireBombBeat" : "fireBomb");
+  } else {
+    game.sound.play(firedOnBeat ? "fireBeat" : "fire");
   }
-  const bomb = game.ship.bombActive;
-  game.sound.play(firedOnBeat ? (bomb ? "fireBombBeat" : "fireBeat") : bomb ? "fireBomb" : "fire");
 };
 
 // A Warp Cannon tap fires on its release, a moment after the press the player

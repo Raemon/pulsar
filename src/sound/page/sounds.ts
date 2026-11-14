@@ -137,6 +137,8 @@ export const OBJECTS: GameObject[] = [
   {
     id: "bullet-warp",
     label: "warp cannon pellet",
+    // The page plays key 1 only: a tap's middle chord tone. In game a bigger
+    // charge plays lower and successive shots walk the chord.
     about: "warp cannon upgrade — a soft C-major bloom, lower for a bigger charge",
     actions: [
       { verb: "taps off-beat", sound: "fireWarp", trigger: beat(1, 0.5) },

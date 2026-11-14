@@ -429,6 +429,9 @@ type PercEnvelope = {
 };
 
 // Voices played through Sound.playOneShot.
+// A bake key that indexes `count` variants, from play()'s pitchRatio.
+const keyIndex = (pitchRatio: number, count: number): number => Math.max(0, Math.min(count - 1, Math.round(pitchRatio)));
+
 type OneShotVoice = "fireWarp" | "fireWarpBeat" | "warpSwallow" | "bombBlast" | "bombBlastBeat" | "bombBounce";
 
 // The playFire pluck's tuning: sine body, octave partial, bandpassed noise tick.
@@ -6396,9 +6399,9 @@ export class Sound {
       case "fireBomb": this.playFireBomb(); break;
       case "fireBombBeat": this.playFireBombBeat(); break;
       case "fireWarp":
-      case "fireWarpBeat": this.playOneShot(name, Math.max(0, Math.min(FIRE_WARP_KEYS - 1, Math.round(pitchRatio)))); break;
+      case "fireWarpBeat": this.playOneShot(name, keyIndex(pitchRatio, FIRE_WARP_KEYS)); break;
       case "warpSwallow":
-      case "bombBounce": this.playOneShot(name, Math.max(0, Math.min(2, Math.round(pitchRatio)))); break;
+      case "bombBounce": this.playOneShot(name, keyIndex(pitchRatio, 3)); break;
       case "bombBlast":
       case "bombBlastBeat": this.playOneShot(name, 1); break;
       case "explosionLarge": this.playExplosion("explosionLarge"); break;
@@ -7114,6 +7117,10 @@ export class Sound {
     };
   }
 
+  // G2 C3 E3 G3 C4 E4 G4, and the rung each charge tier's three chord tones start on.
+  private static readonly FIRE_WARP_LADDER = [98, 130.81, 164.81, 196, 261.63, 329.63, 392];
+  private static readonly FIRE_WARP_LOWEST = [4, 3, 1, 0];
+
   // Warp Cannon muzzle voice: a hole blooming open rather than a pluck. A pair
   // of detuned triangles scoops up a fourth into a C-major chord tone through a
   // lowpass that opens and closes again, over a soft felt onset with no high
@@ -7123,7 +7130,7 @@ export class Sound {
   // louder, gains a sub octave, and echoes back an eighth note later.
   private buildFireWarpGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, key: number, onBeat: boolean) {
     const tier = Math.floor(key / FIRE_WARP_TONES);
-    const hz = Sound.WARP_FIRE_LADDER[Sound.WARP_FIRE_LOWEST[tier] + (key % FIRE_WARP_TONES)];
+    const hz = Sound.FIRE_WARP_LADDER[Sound.FIRE_WARP_LOWEST[tier] + (key % FIRE_WARP_TONES)];
     const len = (onBeat ? 0.42 : 0.3) * (1 + 0.2 * tier);
     const bus = ctx.createGain();
     bus.gain.value = onBeat ? 1 : 0.65;
@@ -7146,10 +7153,6 @@ export class Sound {
     if (onBeat) this.percTone(ctx, bus, t, { hz: hz / 2, peak: 0.14, attack: 0.005, decay: len });
     this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 900, q: 0.7, peak: 0.08, attack: 0.001, decay: 0.03 });
   }
-
-  // G2 C3 E3 G3 C4 E4 G4, and the rung each charge tier's three chord tones start on.
-  private static readonly WARP_FIRE_LADDER = [98, 130.81, 164.81, 196, 261.63, 329.63, 392];
-  private static readonly WARP_FIRE_LOWEST = [4, 3, 1, 0];
 
   // Deeper "thump" pluck for rhythm shots — same musical-pluck shape as
   // playFire but tuned an octave-and-a-half lower (C3 carrier instead of
