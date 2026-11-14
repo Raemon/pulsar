@@ -127,7 +127,7 @@ export const OBJECTS: GameObject[] = [
   {
     id: "bullet-bomb-rhythm",
     label: "on-beat bomb bullet",
-    about: "bomb upgrade, on the grid — two octaves under the normal shot",
+    about: "bomb upgrade, on the grid — a mortar thoomp on a C power chord",
     actions: [
       { verb: "fires", sound: "fireBombBeat", trigger: beat(1) },
       { verb: "bounces (solid)", sound: "bombBounce", trigger: beat(2, 0.5) },

@@ -1066,10 +1066,9 @@ const classifyNewBullets = (game: Game, firstNewIndex: number) => {
 };
 
 // deeper fireBeat pluck reinforces "you nailed the beat"; ship no longer plays its own.
-// The bomb's shells get their own pair of voices, two octaves down but the same
-// pitch classes, so the heavier weapon sounds heavier without leaving the key.
-// A Warp Cannon volley blooms instead, its chord tone taken from the beat it
-// was scored on (`judgedAt`).
+// The upgrades replace it with voices of their own: the bomb lobs its shell with
+// a sub-heavy mortar thoomp, and a Warp Cannon volley blooms upward on a chord
+// tone taken from the beat it was scored on (`judgedAt`).
 const playFireVoice = (game: Game, volley: Bullet, firedOnBeat: boolean, judgedAt: number) => {
   if (volley.warp) {
     game.sound.play(firedOnBeat ? "fireWarpBeat" : "fireWarp", fireWarpKey(volley.warpCharge, judgedAt));
