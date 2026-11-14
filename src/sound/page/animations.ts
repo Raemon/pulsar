@@ -43,6 +43,7 @@ export type ObjectId =
   | "bullet-rhythm"
   | "bullet-bomb-weak"
   | "bullet-bomb-rhythm"
+  | "bullet-warp"
   | "bullet-prong"
   | "asteroid-normal"
   | "asteroid-bassA"
@@ -380,6 +381,8 @@ export const ANIMATIONS: Record<ObjectId, () => Animator> = {
   "bullet-rhythm": () => drawBullet({ onBeat: true, boosted: false, count: 1 }),
   "bullet-bomb-weak": () => drawBullet({ onBeat: false, boosted: false, count: 1, bomb: true }),
   "bullet-bomb-rhythm": () => drawBullet({ onBeat: true, boosted: false, count: 1, bomb: true }),
+  // No warp-lens animator on this page yet; the stock on-beat shot stands in.
+  "bullet-warp": () => drawBullet({ onBeat: true, boosted: false, count: 1 }),
   "bullet-prong": () => drawBullet({ onBeat: true, boosted: true, count: 3 }),
   "asteroid-normal": () => drawAsteroid("normal", "chip"),
   "asteroid-bassA": () => drawAsteroid("bassA", "chip"),

@@ -5,6 +5,7 @@ import { dist, nearestImageOf } from "../vec";
 import { Asteroid, tickTorusGroups, isPhasedKind } from "../Asteroid";
 import { Alien, ALIEN_FIRE_PATTERN_BEATS, bigAlienBurstAngleOffset } from "../Alien";
 import { AlienBullet } from "../AlienBullet";
+import type { Bullet } from "../Bullet";
 import { ENTITY_CONFIG } from "./entityConfig";
 import { BEAT_GRID, DEBUG_BEAT_TIMING } from "./rhythmConstants";
 import {
@@ -48,6 +49,7 @@ import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
 import { updateWormholes, spawnWormhole, type Dive, type Wormhole } from "./wormhole";
 import { updateSwallows } from "./warpCannon";
+import { fireWarpKey, warpReleaseWasTap } from "./warpCharge";
 import { updateWarpIns, releaseWarpedBodies } from "./warpReturn";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
 import { tickPendingRhythmBonuses, flushPendingRhythmBonuses } from "./rhythmBonus";
@@ -1041,7 +1043,8 @@ const classifyNewBullets = (game: Game, firstNewIndex: number) => {
   // perceivedBeatTime = beatTime shifted by the player's calibrated latency, so a
   //   press timed to the heard beat scores even when output latency makes it land
   //   late on the raw audio grid.
-  const firedOnBeat = isInBeatWindow(game, game.perceivedBeatTime);
+  const volley = game.bullets[firstNewIndex];
+  const firedOnBeat = isInBeatWindow(game, game.perceivedBeatTime) || warpTapPressedOnBeat(game, volley);
   const count = game.bullets.length - firstNewIndex;
   // snapshot each ring's drift TIER (0 = unlocked; 1/2/3 = held tier). Uses game.beatTime — the
   //   same clock tickHoverLockState stamped hoverStartBeatTime on — so the tier is deterministic.
@@ -1061,9 +1064,18 @@ const classifyNewBullets = (game: Game, firstNewIndex: number) => {
   // deeper fireBeat pluck reinforces "you nailed the beat"; ship no longer plays its own.
   // The bomb's shells get their own pair of voices, two octaves down but the same
   // pitch classes, so the heavier weapon sounds heavier without leaving the key.
+  if (volley.warp) {
+    game.sound.play(firedOnBeat ? "fireWarpBeat" : "fireWarp", fireWarpKey(volley.warpCharge, game.perceivedBeatTime));
+    return;
+  }
   const bomb = game.ship.bombActive;
   game.sound.play(firedOnBeat ? (bomb ? "fireBombBeat" : "fireBeat") : bomb ? "fireBomb" : "fire");
 };
+
+// A Warp Cannon tap fires on its release, a moment after the press the player
+// timed, so a tap pressed on the beat counts as on it.
+const warpTapPressedOnBeat = (game: Game, volley: Bullet): boolean =>
+  volley.warp && warpReleaseWasTap(game.ship, game.perceivedBeatTime) && isInBeatWindow(game, game.ship.warpChargeStartBeatTime);
 
 // Bullet-only: tag the freshly-spawned projectiles with the live halo tier so
 // they fly boosted/super-boosted. The laser owns its own per-tier visuals, so

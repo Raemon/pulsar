@@ -12,8 +12,11 @@ import { BEAT_GRID, BEAT_WINDOW } from "./rhythmConstants";
 export const WARP_MAX_CHARGE = 3;
 
 // Pellet mouth (its hitbox) by tier, against a stock shot's hit radius: a tap
-// fires a teeny pellet, a full charge a hole wider than a medium rock.
-const PELLET_SCALE = [0.5, 1, 1.5, 2.1];
+// fires a teeny pellet, a full charge one about the size of a medium rock.
+// Even an on-beat pellet stays well inside the biggest rock its tier swallows
+// whole (warpCannon.warpBite), so it reads as a hole a body falls into, not a
+// lid over it.
+const PELLET_SCALE = [0.4, 0.65, 0.95, 1.35];
 export const warpPelletScale = (charge: number): number =>
   PELLET_SCALE[Math.max(0, Math.min(WARP_MAX_CHARGE, charge))];
 
@@ -32,6 +35,23 @@ export const warpChargeToNext = (ship: Ship, beatTime: number): number => {
   if (!ship.warpChargeActive || warpChargeAt(ship, beatTime) >= WARP_MAX_CHARGE) return 0;
   const held = Math.max(0, beatsHeld(ship, beatTime));
   return held - Math.floor(held);
+};
+
+// A release this soon after the press is a tap: its rhythm is the press, so
+// either edge landing on the beat counts (classifyNewBullets).
+export const WARP_TAP_SEC = 0.25;
+export const warpReleaseWasTap = (ship: Ship, beatTime: number): boolean =>
+  beatTime - ship.warpChargeStartBeatTime <= WARP_TAP_SEC;
+
+// The muzzle voice's bake key (Sound.buildFireWarpGraph): the tier picks the
+// register, and the beat in the bar picks the chord tone (root, third, fifth,
+// third), so a run of shots walks an arpeggio in time with the music.
+export const FIRE_WARP_TONES = 3;
+export const FIRE_WARP_KEYS = (WARP_MAX_CHARGE + 1) * FIRE_WARP_TONES;
+const TONE_BY_BEAT = [0, 1, 2, 1];
+export const fireWarpKey = (charge: number, beatTime: number): number => {
+  const beat = Math.round(beatTime / BEAT_GRID);
+  return charge * FIRE_WARP_TONES + TONE_BY_BEAT[((beat % 4) + 4) % 4];
 };
 
 // Drop a charge in progress without firing it: whenever the warp trigger
