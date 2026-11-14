@@ -7,7 +7,7 @@ npm run marketing:costs -- track --campaign rhythm-demo
 npm run marketing:costs -- sync
 ```
 
-The first command finds the current root turn in the local Codex index. The second refreshes every registered turn, including any model responses generated after the previous refresh. Run it again from a later turn to capture the previous turn's final response. Both commands stage data privately in the ignored `.marketing-costs/` folder. They require the local Codex rollouts with per-response usage records. Automatic turn discovery also uses the `sqlite3` command.
+The first command finds the current root turn in the local Codex index. The second follows registered agents and their descendants across dated or archived rollouts, including responses generated after the previous refresh. If a source disappears, it retains staged counters and marks that turn's compute unpriced until coverage is restored. Run it again from a later turn to capture the previous turn's final response. Both commands stage data privately in the ignored `.marketing-costs/` folder. They require the local Codex rollouts with per-response usage records. Automatic turn discovery also uses the `sqlite3` command.
 
 Outside a Codex chat, use `track --turn <root-turn-uuid> --logs <rollout-directory>`. Pass `--logs` again for each additional directory containing a parent or child rollout. For a turn spanning dates, include all applicable dated directories when updating its registration.
 

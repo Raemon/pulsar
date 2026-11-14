@@ -58,14 +58,40 @@ async function* recordsOfType(path, type = "token_usage_record") {
   } finally { stream.destroy(); }
 }
 
-export async function capture({ logs, turn, campaign }) {
-  if (!uuid.test(turn) || !Array.isArray(logs) || !logs.length) throw new Error("A root turn UUID and rollout directories are required");
+export async function capture({ logs, turn, campaign, threadId }) {
+  if (!uuid.test(turn) || !Array.isArray(logs) || (!threadId && !logs.length)) throw new Error("A root turn UUID and rollout source are required");
   checkCampaign(campaign);
-  const rows = new Map();
+  const paths = new Set();
+  let complete = true;
+  if (threadId) {
+    if (!uuid.test(threadId)) throw new Error("Invalid registered Codex thread ID");
+    // A child can register the turn. Walk up to the parent, then down to all
+    // descendants. root_turn_id below selects only responses from this turn.
+    try {
+      const threads = queryIndex(`WITH RECURSIVE ancestors(id) AS (
+        VALUES ('${threadId}') UNION SELECT parent_thread_id FROM thread_spawn_edges JOIN ancestors ON child_thread_id=id
+      ), family(id) AS (
+        SELECT id FROM ancestors UNION SELECT child_thread_id FROM thread_spawn_edges JOIN family ON parent_thread_id=id
+      ) SELECT t.rollout_path FROM family f LEFT JOIN threads t ON t.id=f.id`);
+      for (const t of threads) {
+        if (t.rollout_path) paths.add(t.rollout_path);
+        else complete = false;
+      }
+    } catch { complete = false; }
+  }
+  const indexed = paths.size > 0;
   for (const directory of logs) {
-    const files = (await readdir(directory)).filter(f => /^rollout-.*\.jsonl$/.test(f)).sort();
-    for (const filename of files) {
-      for await (const record of recordsOfType(join(directory, filename))) {
+    try {
+      for (const file of await readdir(directory)) if (/^rollout-.*\.jsonl$/.test(file)) paths.add(join(directory, file));
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+      if (!indexed) complete = false;
+    }
+  }
+  const rows = new Map();
+  for (const path of paths) {
+    try {
+      for await (const record of recordsOfType(path)) {
         const item = record.payload;
         if (item.root_turn_id !== turn) continue;
         if (typeof item.response_id !== "string" || !item.response_id || !uuid.test(item.thread_id)) {
@@ -83,10 +109,12 @@ export async function capture({ logs, turn, campaign }) {
         if (old && JSON.stringify(old) !== JSON.stringify(expense)) throw new Error("Conflicting copies of a response usage record");
         rows.set(expense.expense_id, expense);
       }
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+      complete = false;
     }
   }
-  if (!rows.size) throw new Error("No per-response usage found for this root turn in the supplied rollout directories");
-  return [...rows.values()].sort((a, b) => a.expense_id.localeCompare(b.expense_id));
+  return { rows: [...rows.values()], complete: complete && rows.size > 0 };
 }
 
 function queryIndex(statement) {
@@ -249,6 +277,31 @@ async function writeAtomically(path, content) {
   await rename(tmp, path);
 }
 
+async function refreshScope(scope) {
+  const { rows: fresh, complete } = await capture(scope);
+  const byId = new Map(fresh.map(row => [row.expense_id, row]));
+  // Keep usage previously observed in other rollout files, e.g. a child that
+  // has since been archived. Revalue its raw counters with the current bill.
+  let prior;
+  try { prior = await readFile(join(stage, scope.turn, "expenses.jsonl"), "utf8"); }
+  catch (err) { if (err.code !== "ENOENT") throw err; }
+  for (const line of (prior ?? "").split(/\r?\n/).filter(Boolean)) {
+    const row = validateExpense(JSON.parse(line));
+    if (byId.has(row.expense_id)) continue;
+    const { thread_id, input_tokens, cached_input_tokens, output_tokens } = row.details;
+    if (row.campaign !== scope.campaign || row.category !== "compute" || !uuid.test(thread_id)
+        || !/^codex:[0-9a-f]{64}$/.test(row.expense_id)
+        || ![input_tokens, cached_input_tokens, output_tokens].every(n => Number.isSafeInteger(n) && n >= 0)) {
+      throw new Error("Invalid previously staged compute counters");
+    }
+    byId.set(row.expense_id, { ...row, amount_usd: null, basis: "unknown",
+      details: { thread_id, input_tokens, cached_input_tokens, output_tokens, allocation: "subscription" } });
+  }
+  if (!byId.size) throw new Error("No per-response usage found for the registered turn");
+  const rows = [...byId.values()].sort((a, b) => a.expense_id.localeCompare(b.expense_id));
+  return { scope, rows, complete: complete && rows.length === fresh.length };
+}
+
 async function sync(extraScope, publish) {
   await mkdir(stage, { recursive: true, mode: 0o700 });
   const turns = (await readdir(stage)).filter(name => uuid.test(name)).sort();
@@ -258,15 +311,18 @@ async function sync(extraScope, publish) {
     const prior = scopes.get(extraScope.turn);
     if (prior && prior.campaign !== extraScope.campaign) throw new Error("Turn already tracked with a different campaign");
     extraScope.logs = [...new Set([...(prior?.logs ?? []), ...extraScope.logs])];
+    if (!extraScope.threadId && prior?.threadId) extraScope.threadId = prior.threadId;
     scopes.set(extraScope.turn, extraScope);
   }
   if (!scopes.size) throw new Error("Register a turn with track first");
   const groups = [];
-  for (const scope of scopes.values()) groups.push({ scope, rows: await capture(scope) });
+  for (const scope of scopes.values()) groups.push(await refreshScope(scope));
   let bill;
   try { bill = await readJson(join(stage, "subscription.json")); } catch (err) { if (err.code !== "ENOENT") throw err; }
-  if (bill) await applySubscription(groups, bill);
-  for (const { scope, rows } of groups) {
+  const verified = groups.filter(group => group.complete);
+  if (bill && verified.length) await applySubscription(verified, bill);
+  for (const { scope, rows, complete } of groups) {
+    if (!complete) console.warn("Incomplete rollout coverage: retained observed counters; compute is unpriced until coverage is restored.");
     const dir = join(stage, scope.turn);
     await mkdir(dir, { recursive: true, mode: 0o700 });
     await writeAtomically(join(dir, "scope.json"), JSON.stringify(scope, null, 2) + "\n");
@@ -312,7 +368,7 @@ async function main() {
         try { await readdir(today); logs.push(today); } catch (err) { if (err.code !== "ENOENT") throw err; }
       }
     }
-    await sync({ turn, logs, campaign: values.campaign ?? null }, values.publish);
+    await sync({ turn, logs, campaign: values.campaign ?? null, ...(!values.turn ? { threadId: process.env.CODEX_THREAD_ID } : {}) }, values.publish);
   } else if (action === "sync") {
     await sync(undefined, values.publish);
   } else if (action === "import" && file) {

@@ -33,7 +33,10 @@ async function readFunnel(db, asOf) {
 async function readExpenses(db, asOf) {
   return db.$queryRaw`
     SELECT campaign, category, basis, count(*)::int AS entries,
-      coalesce(sum(amount_usd), 0)::text AS usd
+      coalesce(sum(amount_usd), 0)::text AS usd,
+      coalesce(sum(CASE WHEN category = 'compute' AND details->>'allocation' = 'subscription'
+        AND jsonb_typeof(details->'input_tokens') = 'number' AND jsonb_typeof(details->'output_tokens') = 'number'
+        THEN (details->>'input_tokens')::numeric + (details->>'output_tokens')::numeric END), 0)::text AS "codexTokens"
     FROM marketing_expenses WHERE occurred_at <= ${asOf}
     GROUP BY campaign, category, basis ORDER BY campaign NULLS LAST, category, basis`;
 }
@@ -50,10 +53,11 @@ function funnel(rows) {
 const usd = n => Number(n.toFixed(10));
 
 function spending(rows) {
-  let actual = 0, estimated = 0, unknownEntries = 0, entries = 0;
+  let actual = 0, estimated = 0, unknownEntries = 0, entries = 0, codexTokens = 0;
   const knownByCategoryUsd = {};
   for (const row of rows) {
     entries += row.entries;
+    codexTokens += Number(row.codexTokens ?? 0);
     if (row.basis === "unknown") {
       unknownEntries += row.entries;
       continue;
@@ -63,7 +67,7 @@ function spending(rows) {
     else estimated += amount;
     knownByCategoryUsd[row.category] = usd((knownByCategoryUsd[row.category] ?? 0) + amount);
   }
-  return { entries, unknownEntries, actualUsd: usd(actual), estimatedUsd: usd(estimated),
+  return { entries, unknownEntries, codexTokens, actualUsd: usd(actual), estimatedUsd: usd(estimated),
     knownUsd: usd(actual + estimated), knownByCategoryUsd };
 }
 

@@ -37,7 +37,9 @@ test("withhold the dollar metric for missing prices, uncovered campaigns, missin
   const rows = [touch("a", 1)];
   const reported = expenses => buildReport(rows, expenses, day).taggedAcquisition;
   const actual = cost("a", "media", "actual", "10");
-  assert.equal(reported([actual, cost("a", "compute", "unknown", "0")]).costPerQualifiedUsd, null);
+  const unpriced = reported([actual, { ...cost("a", "compute", "unknown", "0"), codexTokens: "140" }]);
+  assert.equal(unpriced.costPerQualifiedUsd, null);
+  assert.equal(unpriced.totalSpend.codexTokens, 140);
   assert.deepEqual(reported([actual]).reasons, ["missing_compute"]);
   assert.deepEqual(reported([cost(null, "compute", "actual", "1")]).missingExpenseCampaigns, ["a"]);
   assert.equal(reported([cost("a", "compute", "actual", "0")]).costPerQualifiedUsd, 0);
