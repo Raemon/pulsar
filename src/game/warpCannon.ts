@@ -7,7 +7,7 @@ import { COMET_HALO_REACH, type Comet } from "../Comet";
 import { TAU, fromAngle } from "../vec";
 import { ENTITY_CONFIG } from "./entityConfig";
 import { muzzleOf } from "../ship/shipWeapons";
-import { warpChargeAt, warpChargeToNext, warpPelletScale } from "./warpCharge";
+import { warpChargeAt, warpChargeToNext, warpPelletScale, warpSwallowKey } from "./warpCharge";
 import {
   type Wormhole,
   type LensBackdrop,
@@ -306,7 +306,7 @@ export const swallowSizeTier = (radius: number): number =>
 // consumes the shot (see swallowOpenFrom).
 export const swallowIntoWarp = (game: Game, warped: WarpedBody, shot: Bullet, portal: Wormhole | null = null): void => {
   const { body } = warped;
-  game.sound.play("warpSwallow", swallowSizeTier(body.radius), shot.pos);
+  game.sound.play("warpSwallow", warpSwallowKey(swallowSizeTier(body.radius), game.beatTime), shot.pos);
   if (!portal) {
     portal = spawnWormhole(
       game.wormholes, shot.pos, body.radius, Math.atan2(shot.vel.y, shot.vel.x),
