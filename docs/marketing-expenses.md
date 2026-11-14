@@ -13,26 +13,29 @@ Outside a Codex chat, use `track --turn <root-turn-uuid> --logs <rollout-directo
 
 ## Allocate a subscription
 
-Put the actual USD charge and billing boundaries in `.marketing-costs/subscription.json`. Add a period for each bill. The start instant is inclusive, and the end instant is exclusive. The following values illustrate the format.
+Put the USD amount, period boundaries and coverage basis in `.marketing-costs/subscription.json`. Add a period for each bill. The start instant is inclusive, and the end instant is exclusive. For a provisional monthly budget, use a calendar month in America/Los_Angeles and set the two offsets for the corresponding dates.
 
 ```json
 {
   "periods": [
     {
-      "start": "2026-10-15T00:00:00-07:00",
-      "end": "2026-11-15T00:00:00-08:00",
-      "usd": "20.00",
-      "coverage": "complete"
+      "start": "2026-11-01T00:00:00-07:00",
+      "end": "2026-12-01T00:00:00-08:00",
+      "usd": "200.00",
+      "basis": "budget",
+      "coverage": "observed"
     }
   ]
 }
 ```
 
-A response receives the subscription charge multiplied by its share of all metered Codex tokens for the same account and period. The weight is input tokens plus output tokens. Input already includes cached input, and output already includes reasoning. Every token carries the same weight. Each response gets a stable expense ID shared across retries and transcript forks.
+The provisional estimate is the full monthly budget multiplied by the response's share of same-account Codex tokens observed on this installation during the month to date. The ledger records the budget, observed token denominator, coverage basis and count of indexed rollouts with missing counters. Usage on other devices or absent local records can increase the true denominator and reduce this share. An agent can roll the same working budget forward each calendar month until it is corrected. Budget-based or observed-only amounts stay estimates after month end.
+
+For reconciliation, replace the provisional intervals with the actual billed periods and amounts. Use `"basis": "invoice"` (the default) and `"coverage": "complete"` when the denominator covers the whole account. The response receives its share of the subscription charge for that period. The weight is input tokens plus output tokens. Input already includes cached input, and output already includes reasoning. Every token carries the same weight. Each response gets a stable expense ID shared across retries and transcript forks.
 
 With local metering, `complete` means the local Codex records represent the subscription's entire Codex usage through the current instant or the period end, whichever comes first. The importer identifies the subscription account from registered marketing threads and reads per-response usage counters from that account's indexed active and archived rollouts. For multiple devices, supply a verified whole-account `total_tokens` and its exclusive ISO timestamp cutoff in `total_tokens_as_of`, then set `coverage` to `complete`. An external denominator applies only to responses before its cutoff. Refresh both fields when new usage occurs. A closed period needs a cutoff covering the period end. If coverage is unknown, use `"coverage": "partial"`. Missing bills, incomplete coverage, and unsupported or missing local metering leave the applicable responses unpriced.
 
-Open billing periods produce estimates that change as more usage arrives. After a billing period closes, complete usage produces the allocated share of the actual charge, rounded to 12 decimal places per response. Use one billing configuration per subscription account. Register shared setup once with no campaign specified. Enter subscription compute through this allocation only so the same bill cannot be charged twice.
+Open billing periods produce estimates that change as more usage arrives. After a verified billing period closes, complete usage produces the allocated share of the actual invoice, rounded to 12 decimal places per response. Use one billing configuration per subscription account. Register shared setup once with no campaign specified. Enter subscription compute through this allocation only so the same bill cannot be charged twice.
 
 ## Publish and reconcile
 

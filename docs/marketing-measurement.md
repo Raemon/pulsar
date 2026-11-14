@@ -17,7 +17,7 @@ The first command imports the staged ledger. The second prints JSON for an agent
 
 ## Reading the report
 
-- `taggedAcquisition.costPerQualifiedUsd` divides **all recorded marketing expenses** by unique qualified new browsers first acquired through a campaign tag. The numerator includes shared compute, other overhead and campaigns that produced zero plays. Look at actual and estimated USD separately while the subscription period is open.
+- `taggedAcquisition.costPerQualifiedUsd` divides **all recorded marketing expenses** by unique qualified new browsers first acquired through a campaign tag. The numerator includes shared compute, other overhead and campaigns that produced zero plays. `totalSpend` shows actual USD, estimated USD and metered Codex tokens. An allocation made from a monthly budget or local-only usage remains an estimate.
 - `campaigns[].directCost` uses only the costs assigned to that campaign. Shared setup appears once in the headline. A campaign with spend and zero conversions remains visible with its spend and a null ratio.
 - `firstTouches` breaks visits, first play, second play, peak rhythm and qualification down by source, medium, campaign and creative. `knownReturning` counts browsers with a preexisting run marker at first measurement. Those browsers and untagged acquisitions are excluded from the headline denominator. `untagged` shows the untagged funnel separately.
 - `qualifiedIn7d / mature7d` compares conversion rates for visitors who have each had a full 168 hours to play. `qualified` includes later conversions as they occur. When comparing two launches of different ages, use the seven-day counts alongside the lifetime cost and sample sizes.

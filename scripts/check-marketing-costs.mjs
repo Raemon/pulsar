@@ -41,7 +41,11 @@ test("imports each response once across forks, excludes unrelated work, allocate
   const { rows: partial } = await capture(scope);
   allocate(partial, { ...bill, coverage: "partial" }, 2200, now);
   assert(partial.every(row => row.basis === "unknown"));
-
+  for (const options of [{ basis: "budget", coverage: "complete" }, { basis: "invoice", coverage: "observed" }]) {
+    const [provisional] = billingPeriods({ periods: [{ ...period, ...options }] });
+    allocate(partial, provisional, 2200, bill.endMs);
+    assert(partial.every(row => row.basis === "estimate"));
+  }
 });
 
 test("validates receipt, credit and explicit zero, and rejects missing campaign or unknown-as-zero", () => {
@@ -96,6 +100,27 @@ test("sync finds a child's final response after archival and keeps unpriced coun
   const final = await rows();
   assert.equal(final.length, 3);
   assert(final.every(r => r.basis === "actual" && Number(r.amount_usd) === 1));
+  // A calendar month can still have only a working budget and on-device
+  // coverage after it closes. Include unrelated same-account usage in its denominator.
+  sql(`ALTER TABLE threads ADD COLUMN created_at INTEGER DEFAULT 1767270000;
+    ALTER TABLE threads ADD COLUMN updated_at INTEGER DEFAULT 1767279600;
+    ALTER TABLE threads ADD COLUMN tokens_used INTEGER DEFAULT 10;`);
+  const other = "00000000-0000-0000-0000-000000000003";
+  const free = response(other, "other");
+  free.payload.usage = { input_tokens: 65, output_tokens: 5 };
+  free.payload.root_turn_id = other;
+  await writeFile(pathFor(archive, other), log([free]));
+  sql(`INSERT INTO threads (id,rollout_path,creator_account_id,model_provider)
+    VALUES ('${other}', ${literal(pathFor(archive, other))}, 'account', 'openai'),
+           ('legacy', ${literal(join(dir, "unavailable"))}, 'account', 'openai');`);
+  await writeFile(join(ledger, "subscription.json"), JSON.stringify({ periods: [{
+    start: "2026-01-01T00:00:00Z", end: "2026-01-02T00:00:00Z", usd: "200", coverage: "observed", basis: "budget",
+  }] }));
+  run("sync");
+  const provisional = await rows();
+  assert(provisional.every(r => r.basis === "estimate" && Number(r.amount_usd) === 20 &&
+    r.details.subscription_basis === "budget" && r.details.coverage === "observed" &&
+    r.details.observed_account_tokens === 100 && r.details.incomplete_rollouts === 1));
   await rm(archive, { recursive: true });
   run("sync");
   const retained = await rows();

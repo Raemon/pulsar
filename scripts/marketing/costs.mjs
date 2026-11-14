@@ -136,31 +136,36 @@ export function billingPeriods(bill) {
   if (!Array.isArray(bill.periods) || !bill.periods.length) throw new Error("Supply at least one subscription billing period");
   const periods = bill.periods.map(p => {
     const start = instant(p.start), end = instant(p.end);
-    if (start >= end || !["complete", "partial"].includes(p.coverage)
-        || !/^\d{1,9}(?:\.\d{1,6})?$/.test(String(p.usd))) throw new Error("Invalid period, coverage or USD price");
+    const basis = p.basis ?? "invoice";
+    if (start >= end || !["complete", "partial", "observed"].includes(p.coverage) || !["invoice", "budget"].includes(basis)
+        || !/^\d{1,9}(?:\.\d{1,6})?$/.test(String(p.usd))) throw new Error("Invalid period, coverage, basis or USD price");
+    if (p.coverage === "observed" && p.total_tokens !== undefined) throw new Error("Observed coverage uses this installation's metered tokens");
     if (p.total_tokens !== undefined && (!Number.isSafeInteger(p.total_tokens) || p.total_tokens <= 0)) {
       throw new Error("Provided whole-account billing-period total_tokens must be a positive integer");
     }
     const throughMs = p.total_tokens === undefined ? null : instant(p.total_tokens_as_of);
     if (throughMs !== null && throughMs <= start) throw new Error("External token cutoff must follow the period start");
     const [whole, fraction = ""] = String(p.usd).split(".");
-    return { ...p, startMs: start, endMs: end, throughMs, picoUsd: BigInt(whole + fraction.padEnd(12, "0")) };
+    return { ...p, basis, startMs: start, endMs: end, throughMs, picoUsd: BigInt(whole + fraction.padEnd(12, "0")) };
   }).sort((a, b) => a.startMs - b.startMs);
   if (periods.some((p, i) => i && periods[i - 1].endMs > p.startMs)) throw new Error("Subscription billing periods overlap");
   return periods;
 }
 
-export function allocate(rows, period, denominator, now) {
-  if (period.coverage !== "complete" || !denominator) return;
+export function allocate(rows, period, denominator, now, incompleteRollouts = 0) {
+  if (period.coverage === "partial" || !denominator) return;
   const tokens = r => r.details.input_tokens + r.details.output_tokens;
   if (rows.reduce((sum, r) => sum + tokens(r), 0) > denominator) throw new Error("Campaign usage exceeds whole-account total_tokens");
   for (const row of rows) {
     const divisor = BigInt(denominator);
     const digits = ((period.picoUsd * BigInt(tokens(row)) + divisor / 2n) / divisor).toString().padStart(13, "0");
     row.amount_usd = digits.slice(0, -12) + "." + digits.slice(-12);
-    row.basis = now < period.endMs ? "estimate" : "actual";
+    row.basis = period.basis === "invoice" && period.coverage === "complete" && now >= period.endMs ? "actual" : "estimate";
     Object.assign(row.details, { period_start: period.start, period_end: period.end, subscription_usd: String(period.usd),
-      total_account_tokens: denominator, denominator_source: period.total_tokens ? "provided" : "local Codex usage",
+      subscription_basis: period.basis, coverage: period.coverage,
+      ...(period.coverage === "observed" ? { observed_account_tokens: denominator, incomplete_rollouts: incompleteRollouts }
+        : { total_account_tokens: denominator }),
+      denominator_source: period.total_tokens ? "provided" : "local Codex usage",
       denominator_as_of: new Date(Math.min(period.throughMs ?? now, period.endMs)).toISOString(), weighted_tokens: tokens(row) });
   }
 }
@@ -172,10 +177,10 @@ async function accountDenominator(account, period, now) {
   const safeAccount = "'" + account.replaceAll("'", "''") + "'";
   const threads = queryIndex(`SELECT id, rollout_path, tokens_used FROM threads WHERE model_provider='openai'
     AND creator_account_id=${safeAccount} AND created_at < ${end} AND updated_at >= ${start}`);
-  let total = 0;
+  let total = 0, incompleteRollouts = 0;
   const seen = new Set();
   for (const thread of threads) {
-    let currentFormat = false;
+    let currentFormat = false, incomplete = false;
     try {
       for await (const r of recordsOfType(thread.rollout_path)) {
         const p = r.payload;
@@ -183,15 +188,24 @@ async function accountDenominator(account, period, now) {
         currentFormat = true;
         const timestamp = instant(r.timestamp);
         if (timestamp < period.startMs || timestamp >= Math.min(period.endMs, now) || seen.has(p.response_id)) continue;
-        if (!p.response_id || ![p.usage?.input_tokens, p.usage?.output_tokens].every(n => Number.isSafeInteger(n) && n >= 0)) return null;
+        if (!p.response_id || ![p.usage?.input_tokens, p.usage?.output_tokens].every(n => Number.isSafeInteger(n) && n >= 0)) {
+          incomplete = true;
+          continue;
+        }
         seen.add(p.response_id);
         total += p.usage.input_tokens + p.usage.output_tokens;
         if (!Number.isSafeInteger(total)) throw new Error("Account token total exceeds supported precision");
       }
-    } catch (err) { if (err.code === "ENOENT") return null; throw err; }
-    if (thread.tokens_used > 0 && !currentFormat) return null;
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+      incomplete = true;
+    }
+    if (incomplete || (thread.tokens_used > 0 && !currentFormat)) {
+      if (period.coverage !== "observed") return { tokens: null, incompleteRollouts: 1 };
+      incompleteRollouts++;
+    }
   }
-  return total;
+  return { tokens: total, incompleteRollouts };
 }
 
 async function applySubscription(groups, bill) {
@@ -214,9 +228,10 @@ async function applySubscription(groups, bill) {
       const time = instant(row.occurred_at);
       return matched.has(row.details.thread_id) && time >= period.startMs && time < cutoff;
     });
-    if (!rows.length || period.coverage !== "complete") continue;
-    const denominator = period.total_tokens ?? await accountDenominator(account, period, now);
-    allocate(rows, period, denominator, now);
+    if (!rows.length || period.coverage === "partial") continue;
+    const denominator = period.total_tokens ? { tokens: period.total_tokens, incompleteRollouts: 0 }
+      : await accountDenominator(account, period, now);
+    allocate(rows, period, denominator.tokens, now, denominator.incompleteRollouts);
   }
 }
 
