@@ -1,5 +1,23 @@
 [
   {
+    "id": "2026-11-14-752218f",
+    "date": "2026-11-14",
+    "title": "Warp hits echo their shots, and the Bomb lands a cadence",
+    "sections": [
+      {
+        "heading": "Changed",
+        "items": [
+          "A Warp Cannon hit now echoes the note its shot fired with, in the same voice: the shot rises into its note, and the swallow falls back into it.",
+          "An on-beat Warp Cannon hit now sounds exactly on the beat, even when the shot connects a hair early.",
+          "Firing and detonating a Bomb now work as a musical pair. While the shell is live, its launch and bounces sit on a note that leaves you hanging, and the blast resolves it to the music's home note."
+        ]
+      }
+    ],
+    "commits": [
+      "752218f"
+    ]
+  },
+  {
     "id": "2026-11-14-4849fad",
     "date": "2026-11-14",
     "title": "A heavier Bomb, and a Warp Cannon swallow that lands on the beat",
