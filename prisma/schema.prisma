@@ -33,6 +33,19 @@ model Highscore {
   @@map("highscores")
 }
 
+model MarketingExpense {
+  expenseId  String   @id @map("expense_id")
+  campaign   String?
+  category   String
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz
+  amountUsd  Decimal? @map("amount_usd") @db.Decimal(26, 12)
+  basis      String
+  details    Json     @default("{}")
+
+  @@index([campaign, occurredAt], map: "marketing_expenses_campaign_time")
+  @@map("marketing_expenses")
+}
+
 // A pilot who signed in with Google and claimed a callsign. googleSub is the
 //   stable Google account id (the JWT `sub`). username is the claimed callsign;
 //   usernameLower enforces case-insensitive uniqueness, matching the
@@ -62,4 +75,29 @@ model User {
   scores Highscore[]
 
   @@map("users")
+}
+
+model AcquisitionPlayer {
+  id             String   @id @db.Uuid
+  firstSeenAt    DateTime @map("first_seen_at") @db.Timestamptz
+  existingPlayer Boolean  @map("existing_player")
+  source         String   @db.VarChar(100)
+  medium         String   @db.VarChar(100)
+  campaign       String?  @db.VarChar(100)
+  content        String?  @db.VarChar(100)
+  runs           AcquisitionRun[]
+
+  @@map("acquisition_players")
+}
+
+model AcquisitionRun {
+  playerId    String            @map("player_id") @db.Uuid
+  runId       String            @map("run_id") @db.Uuid
+  startedAt   DateTime?         @map("started_at") @db.Timestamptz
+  rhythm12At  DateTime?         @map("rhythm_12_at") @db.Timestamptz
+  completedAt DateTime?         @map("completed_at") @db.Timestamptz
+  player      AcquisitionPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([playerId, runId])
+  @@map("acquisition_runs")
 }

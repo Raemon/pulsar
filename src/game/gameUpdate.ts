@@ -66,6 +66,7 @@ import { tickTorusCharge, tickSuperLaserFire } from "./torusCharge";
 import { tickEntrances, shiftEntranceFrames, audiblePos } from "./entrance";
 import { fireBossSweepBeam, tickBossBeams } from "./bossBeam";
 import { targetsForReticule } from "./gameRender";
+import { completeAcquisitionRun, recordAcquisitionRhythm } from "./acquisitionEvents";
 import { driftTierForRing } from "../ship/reticule/reticuleRender";
 
 // single dispatcher means main.ts has one update entry; per-state branches live below.
@@ -404,6 +405,10 @@ const updateDying = (game: Game, dt: number) => {
 };
 
 const transitionToGameOver = (game: Game) => {
+  if (game.acquisitionRun) {
+    completeAcquisitionRun(game.acquisitionRun);
+    game.acquisitionRun = null;
+  }
   // Safety net: if a highlight clip is somehow live when we reach game-over (e.g.
   //   the re-sim diverged and the ship died inside the clip window before clip.end),
   //   tear the clip down and fall through to a plain parade game-over rather than
@@ -943,6 +948,7 @@ const updatePlaying = (game: Game, dt: number) => {
   tickStreakTimeout(game);
   runCollisionPasses(game);
   evaluateClosedBeats(game);
+  if (game.acquisitionRun) recordAcquisitionRhythm(game.acquisitionRun, game.maxCombo);
   recordHighlightFrame(game);
   syncPowerupHud(game);
   syncFuelHud(game);

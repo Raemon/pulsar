@@ -9,6 +9,9 @@ import { loadSoundConfig } from "./soundConfig";
 import { installBetaTest } from "./game/betaTest";
 import { installInstructionsDemos } from "./instructions";
 import { initAuth } from "./game/auth";
+import { initAcquisition } from "./game/acquisitionEvents";
+
+initAcquisition();
 
 // Mount React first and force a synchronous commit so the HUD/Overlay
 // markup is on the page before bindHudElements() runs inside `new Game()`.
