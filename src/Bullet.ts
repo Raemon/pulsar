@@ -115,6 +115,8 @@ export class Bullet {
   // Warp Cannon charge tier (0…WARP_MAX_CHARGE) the shot was fired at: scales
   // its mouth (hitRadius) and caps how big a rock it swallows whole (warpBite).
   warpCharge = 0;
+  // The muzzle voice's key (warpCharge.warpVoiceKey), which its swallow plays back.
+  warpVoiceKey = 0;
   warpRipples: WarpRipple[] = [];
   warpRippleClock = 0;
   // Beat index (perceivedBeatTime / BEAT_GRID) of the bomb ring's next flash;

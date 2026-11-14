@@ -4,8 +4,7 @@ import { rngRange } from "./rng";
 import { alignSplitChildToRhythm, seedAlienFire, seedCometMelody } from "./waveDirector";
 import { startAsteroidDrones } from "./killEffects";
 import { type Wormhole, spawnWormhole, wormholeEnterable } from "./wormhole";
-import { type WarpedBody, renderWarpedThroughPortal, swallowSizeTier } from "./warpCannon";
-import { warpSwallowKey } from "./warpCharge";
+import { type WarpedBody, renderWarpedThroughPortal, returnVoiceKey } from "./warpCannon";
 
 // What a Warp Cannon shot swallows isn't destroyed — it's sent somewhere. Each
 // body falls through its portal (warpCannon.ts) into game.warpedOut, and comes
@@ -97,7 +96,7 @@ export const updateWarpIns = (game: Game, dt: number): void => {
       wi.delay -= dt;
       if (wi.delay > 0) return true;
       wi.portal = spawnWormhole(game.wormholes, body.pos, body.radius, Math.atan2(body.vel.y, body.vel.x), { holdSec: EMERGE_SEC });
-      game.sound.play("warpSwallow", warpSwallowKey(swallowSizeTier(body.radius), game.beatTime), body.pos);
+      game.sound.play("warpSwallow", returnVoiceKey(game, body.radius), body.pos);
       return true;
     }
     if (wi.t === 0 && !wormholeEnterable(wi.portal)) return true;

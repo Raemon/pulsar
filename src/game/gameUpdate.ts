@@ -49,7 +49,7 @@ import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
 import { updateWormholes, spawnWormhole, type Dive, type Wormhole } from "./wormhole";
 import { updateSwallows } from "./warpCannon";
-import { fireWarpKey, warpReleaseWasTap } from "./warpCharge";
+import { warpVoiceKey, warpReleaseWasTap } from "./warpCharge";
 import { updateWarpIns, releaseWarpedBodies } from "./warpReturn";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
 import { tickPendingRhythmBonuses, flushPendingRhythmBonuses } from "./rhythmBonus";
@@ -1050,9 +1050,11 @@ const classifyNewBullets = (game: Game, firstNewIndex: number) => {
   // snapshot each ring's drift TIER (0 = unlocked; 1/2/3 = held tier). Uses game.beatTime — the
   //   same clock tickHoverLockState stamped hoverStartBeatTime on — so the tier is deterministic.
   const lockedSlots = game.ship.hoverDotRingStates.map(r => driftTierForRing(r, game.beatTime));
+  const voiceKey = warpVoiceKey(volley.warpCharge, tapBeatTime ?? game.perceivedBeatTime);
   for (let i = firstNewIndex; i < game.bullets.length; i++) {
     game.bullets[i].firedAtBeatTime = game.perceivedBeatTime;
     game.bullets[i].driftLockedSlots = lockedSlots;
+    game.bullets[i].warpVoiceKey = voiceKey;
   }
   logBeatEvent(game, "FIRE", game.perceivedBeatTime, `bullets=${count}`);
   spawnBeatDebugPopup(game, game.ship.pos, game.perceivedBeatTime, "FIRE");
@@ -1062,16 +1064,16 @@ const classifyNewBullets = (game: Game, firstNewIndex: number) => {
   } else {
     registerOffBeatFire(game);
   }
-  playFireVoice(game, volley, firedOnBeat, tapBeatTime ?? game.perceivedBeatTime);
+  playFireVoice(game, volley, firedOnBeat);
 };
 
 // deeper fireBeat pluck reinforces "you nailed the beat"; ship no longer plays its own.
 // The upgrades replace it with voices of their own: the bomb lobs its shell with
 // a sub-heavy mortar thoomp, and a Warp Cannon volley blooms upward on a chord
-// tone taken from the beat it was scored on (`judgedAt`).
-const playFireVoice = (game: Game, volley: Bullet, firedOnBeat: boolean, judgedAt: number) => {
+// tone taken from the beat it was scored on (its warpVoiceKey).
+const playFireVoice = (game: Game, volley: Bullet, firedOnBeat: boolean) => {
   if (volley.warp) {
-    game.sound.play(firedOnBeat ? "fireWarpBeat" : "fireWarp", fireWarpKey(volley.warpCharge, judgedAt));
+    game.sound.play(firedOnBeat ? "fireWarpBeat" : "fireWarp", volley.warpVoiceKey);
   } else if (game.ship.bombActive) {
     game.sound.play(firedOnBeat ? "fireBombBeat" : "fireBomb");
   } else {

@@ -7,7 +7,10 @@ import { COMET_HALO_REACH, type Comet } from "../Comet";
 import { TAU, fromAngle } from "../vec";
 import { ENTITY_CONFIG } from "./entityConfig";
 import { muzzleOf } from "../ship/shipWeapons";
-import { warpChargeAt, warpChargeToNext, warpPelletScale, warpSwallowKey } from "./warpCharge";
+import { warpChargeAt, warpChargeToNext, warpPelletScale, warpVoiceKey } from "./warpCharge";
+import { BEAT_GRID } from "./rhythmConstants";
+import { enqueueBeatCue } from "./beatCues";
+import type { Pos } from "../Sound";
 import {
   type Wormhole,
   type LensBackdrop,
@@ -298,15 +301,33 @@ export const swallowOpenFrom = (shot: Bullet, bodyRadius: number): number =>
 
 // The swallow's voice tier: the body's radius against the rock sizes, split halfway.
 const ROCK_RADIUS = ENTITY_CONFIG.asteroid.radius;
-export const swallowSizeTier = (radius: number): number =>
+const swallowSizeTier = (radius: number): number =>
   radius < (ROCK_RADIUS.small + ROCK_RADIUS.medium) / 2 ? 0 : radius < (ROCK_RADIUS.medium + ROCK_RADIUS.large) / 2 ? 1 : 2;
+
+// The swallow sounds the shot's own note back (Sound.buildWarpSwallowGraph).
+// An on-beat hit can connect a little either side of the beat, so its sound
+// is put on the beat it was scored on: held for it if the hit came early,
+// played at once if it's already passed.
+export const playSwallowSound = (game: Game, key: number, pos: Pos, onBeat: boolean): void => {
+  if (!onBeat) {
+    game.sound.play("warpSwallow", key, pos);
+    return;
+  }
+  const beat = Math.round(game.perceivedBeatTime / BEAT_GRID) * BEAT_GRID;
+  enqueueBeatCue(game, { at: beat, name: "warpSwallow", pitch: key, pos: { x: pos.x, y: pos.y }, tag: "warpSwallow" });
+};
+
+// The voice key of a body climbing back out with no shot behind it: its size.
+export const returnVoiceKey = (game: Game, radius: number): number => warpVoiceKey(swallowSizeTier(radius), game.beatTime);
 
 // Drop `warped` into `portal` — or, by default, a fresh one torn open where the
 // shot struck — and hold it for its return next wave. Call before the hit
 // consumes the shot (see swallowOpenFrom).
-export const swallowIntoWarp = (game: Game, warped: WarpedBody, shot: Bullet, portal: Wormhole | null = null): void => {
+export const swallowIntoWarp = (
+  game: Game, warped: WarpedBody, shot: Bullet, onBeat: boolean, portal: Wormhole | null = null,
+): void => {
   const { body } = warped;
-  game.sound.play("warpSwallow", warpSwallowKey(swallowSizeTier(body.radius), game.beatTime), shot.pos);
+  playSwallowSound(game, shot.warpVoiceKey, shot.pos, onBeat);
   if (!portal) {
     portal = spawnWormhole(
       game.wormholes, shot.pos, body.radius, Math.atan2(shot.vel.y, shot.vel.x),
