@@ -1,5 +1,31 @@
 [
   {
+    "id": "2026-11-14-e0de883",
+    "date": "2026-11-14",
+    "title": "Warp Cannon: a warmer, more musical shot",
+    "sections": [
+      {
+        "heading": "Changed",
+        "items": [
+          "The Warp Cannon has its own firing sound: a soft, round bloom instead of the shrill plucked pew. A bigger charge sounds lower, and each shot plays a note of the chord that follows the beat, so a run of shots plays an arpeggio rather than one note over and over.",
+          "On the beat, a Warp Cannon shot rings deeper and echoes back an eighth note later.",
+          "The swallow sound is less shrill, and its afterglow now sits in the music's key.",
+          "Warp pellets are smaller at every charge, so each one is a hole smaller than the rock it swallows."
+        ]
+      },
+      {
+        "heading": "Fixed",
+        "items": [
+          "A quick tap of the Warp Cannon now counts as on-beat when you pressed on the beat, even though it fires a moment later on release."
+        ]
+      }
+    ],
+    "commits": [
+      "e0de883",
+      "f04f785"
+    ]
+  },
+  {
     "id": "2026-11-13-436710c",
     "date": "2026-11-13",
     "title": "Warp Cannon: hold to charge, and what you swallow comes back",
