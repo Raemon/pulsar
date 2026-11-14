@@ -1,5 +1,24 @@
 [
   {
+    "id": "2026-11-14-4849fad",
+    "date": "2026-11-14",
+    "title": "A heavier Bomb, and a Warp Cannon swallow that lands on the beat",
+    "sections": [
+      {
+        "heading": "Changed",
+        "items": [
+          "The Bomb now fires with a deep mortar thoomp: a heavy low drop, a bass note in the music's key and a puff of air from the barrel. On the beat it hits harder and rings out as a power chord.",
+          "The Warp Cannon keeps to the air above the Bomb, so the two sound clearly different: one heavy and low, the other blooming upward.",
+          "The Warp Cannon's swallow is quieter and softer. It starts the instant a shot lands, so an on-beat hit sounds on the beat, and each swallow plays a note of the chord rather than the same sound every time."
+        ]
+      }
+    ],
+    "commits": [
+      "4849fad",
+      "252bfa7"
+    ]
+  },
+  {
     "id": "2026-11-14-e0de883",
     "date": "2026-11-14",
     "title": "Warp Cannon: a warmer, more musical shot",

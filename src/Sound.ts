@@ -13,7 +13,7 @@ import { HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATIONS } from "./g
 import { SOUND_LOAD_SCHEDULE, STREAK_SHIMMER_POOL_SIZE, FIRST_DOT_HUM_POOL_SIZE } from "./game/soundSchedule";
 import type { CaptureAudioContext } from "./game/audioCapture";
 import { BEAT_GRID } from "./game/rhythmConstants";
-import { FIRE_WARP_KEYS, FIRE_WARP_TONES } from "./game/warpCharge";
+import { FIRE_WARP_KEYS, WARP_CHORD_TONES, WARP_SWALLOW_KEYS } from "./game/warpCharge";
 
 type ToneModule = typeof import("tone");
 let toneModulePromise: Promise<ToneModule> | null = null;
@@ -432,7 +432,7 @@ type PercEnvelope = {
 // A bake key that indexes `count` variants, from play()'s pitchRatio.
 const keyIndex = (pitchRatio: number, count: number): number => Math.max(0, Math.min(count - 1, Math.round(pitchRatio)));
 
-type OneShotVoice = "fireWarp" | "fireWarpBeat" | "warpSwallow" | "bombBlast" | "bombBlastBeat" | "bombBounce";
+type OneShotVoice = "fireBomb" | "fireBombBeat" | "fireWarp" | "fireWarpBeat" | "warpSwallow" | "bombBlast" | "bombBlastBeat" | "bombBounce";
 
 // The playFire pluck's tuning: sine body, octave partial, bandpassed noise tick.
 // `instant` drops the attack ramps so the onset lands exactly on the keypress.
@@ -1460,11 +1460,14 @@ export class Sound {
     explosionLarge: 1.3,
     explosionMedium: 1.1,
     explosionSmall: 0.9,
+    // the sub and note ring out by 0.9s; on the beat, the room rings on 1.3s past them
+    fireBomb: 0.8,
+    fireBombBeat: 2.4,
     // a full-charge bloom is ~0.55s; the on-beat one rings down its eighth-note echo
     fireWarp: 0.9,
     fireWarpBeat: 2.0,
-    // gulp at up to 0.65s, then the far-side echo rings down
-    warpSwallow: 2.0,
+    // a big body rings out by 0.75s, then the far-side echo rings down
+    warpSwallow: 1.6,
     // rumble out to 2.25s plus the 1.3s room
     bombBlast: 3.6,
     bombBlastBeat: 3.6,
@@ -1650,8 +1653,8 @@ export class Sound {
       case "cometDestroyedSad": return (c, d) => this.buildCometDestroyedSadGraph(c, d);
       case "bonusLife": return (c, d) => this.buildBonusLifeGraph(c, d);
       case "fire": return (c, d, t) => this.buildFireGraph(c, d, t);
-      case "fireBomb": return (c, d, t) => this.buildFireBombGraph(c, d, t);
-      case "fireBombBeat": return (c, d, t) => this.buildFireBombBeatGraph(c, d, t);
+      case "fireBomb": return (c, d, t) => this.buildFireBombGraph(c, d, t, false);
+      case "fireBombBeat": return (c, d, t) => this.buildFireBombGraph(c, d, t, true);
       case "fireWarp": return (c, d, t) => this.buildFireWarpGraph(c, d, t, key, false);
       case "fireWarpBeat": return (c, d, t) => this.buildFireWarpGraph(c, d, t, key, true);
       case "bombBlast": return (c, d, t) => this.buildBombBlastGraph(c, d, t, false);
@@ -6396,11 +6399,11 @@ export class Sound {
     switch (name) {
       case "fire": this.playFire(); break;
       case "fireBeat": this.playFireBeat(); break;
-      case "fireBomb": this.playFireBomb(); break;
-      case "fireBombBeat": this.playFireBombBeat(); break;
+      case "fireBomb":
+      case "fireBombBeat": this.playOneShot(name, 1); break;
       case "fireWarp":
       case "fireWarpBeat": this.playOneShot(name, keyIndex(pitchRatio, FIRE_WARP_KEYS)); break;
-      case "warpSwallow":
+      case "warpSwallow": this.playOneShot(name, keyIndex(pitchRatio, WARP_SWALLOW_KEYS)); break;
       case "bombBounce": this.playOneShot(name, keyIndex(pitchRatio, 3)); break;
       case "bombBlast":
       case "bombBlastBeat": this.playOneShot(name, 1); break;
@@ -7117,9 +7120,10 @@ export class Sound {
     };
   }
 
-  // G2 C3 E3 G3 C4 E4 G4, and the rung each charge tier's three chord tones start on.
-  private static readonly FIRE_WARP_LADDER = [98, 130.81, 164.81, 196, 261.63, 329.63, 392];
-  private static readonly FIRE_WARP_LOWEST = [4, 3, 1, 0];
+  // C3 E3 G3 C4 E4 G4, and the rung each charge tier's three chord tones start
+  // on. C3 is the floor: below it is the bomb's.
+  private static readonly FIRE_WARP_LADDER = [130.81, 164.81, 196, 261.63, 329.63, 392];
+  private static readonly FIRE_WARP_LOWEST = [3, 2, 1, 0];
 
   // Warp Cannon muzzle voice: a hole blooming open rather than a pluck. A pair
   // of detuned triangles scoops up a fourth into a C-major chord tone through a
@@ -7127,10 +7131,12 @@ export class Sound {
   // tick. The scoop is over in 35 ms, so the note still lands where the shot
   // does. A bigger pellet sounds lower and longer, and successive shots walk
   // the chord (fireWarpKey) instead of repeating one note. On the beat it's
-  // louder, gains a sub octave, and echoes back an eighth note later.
+  // louder, gains a faint halo an octave up, and echoes back an eighth note
+  // later. It never reaches down into the sub: that's the bomb's
+  // (buildFireBombGraph).
   private buildFireWarpGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, key: number, onBeat: boolean) {
-    const tier = Math.floor(key / FIRE_WARP_TONES);
-    const hz = Sound.FIRE_WARP_LADDER[Sound.FIRE_WARP_LOWEST[tier] + (key % FIRE_WARP_TONES)];
+    const tier = Math.floor(key / WARP_CHORD_TONES);
+    const hz = Sound.FIRE_WARP_LADDER[Sound.FIRE_WARP_LOWEST[tier] + (key % WARP_CHORD_TONES)];
     const len = (onBeat ? 0.42 : 0.3) * (1 + 0.2 * tier);
     const bus = ctx.createGain();
     bus.gain.value = onBeat ? 1 : 0.65;
@@ -7150,7 +7156,7 @@ export class Sound {
       body.detune.value = cents;
     }
     this.percTone(ctx, bloom, t, { hz: hz * 1.5, peak: 0.045, attack: 0.012, decay: len * 0.6 });
-    if (onBeat) this.percTone(ctx, bus, t, { hz: hz / 2, peak: 0.14, attack: 0.005, decay: len });
+    if (onBeat) this.percTone(ctx, bus, t, { hz: hz * 2, peak: 0.035, attack: 0.03, decay: len * 1.3 });
     this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 900, q: 0.7, peak: 0.08, attack: 0.001, decay: 0.03 });
   }
 
@@ -7168,66 +7174,27 @@ export class Sound {
     this.playBaked("fireBeat", 1);
   }
 
-  // Bomb-upgrade muzzle voice, off the grid. Same pluck shape as playFire —
-  // sine body, octave partial, bandpassed tick — transposed two octaves down
-  // to G2/G3 with the tick dropped from a 1.6 kHz zing to a 520 Hz wooden
-  // knock. Two octaves keeps it the same pitch class as the G4 normal shot, so
-  // a mixed volley harmonizes instead of clashing; the longer decays are what
-  // sell the heavier shell.
-  private playFireBomb() {
-    if (this.playBaked("fireBomb", 1)) return;
-    if (!this.ctx || !this.master) return;
-    this.buildFireBombGraph(this.ctx, this.master, this.voiceTime("fireBomb"));
-  }
-
-  private buildFireBombGraph(ctx: BaseAudioContext, dest: AudioNode, t: number) {
-    this.buildPluckGraph(ctx, dest, t, {
-      bodyHz: cfgN("fireBomb", "bodyHz", 98),
-      bodyPeak: cfgN("fireBomb", "bodyPeak", 0.26),
-      bodyDecay: cfgN("fireBomb", "bodyDecay", 0.2),
-      partialHz: cfgN("fireBomb", "partialHz", 196),
-      partialPeak: cfgN("fireBomb", "partialPeak", 0.1),
-      partialDecay: cfgN("fireBomb", "partialDecay", 0.1),
-      tickHz: cfgN("fireBomb", "tickHz", 520),
-      tickQ: cfgN("fireBomb", "tickQ", 1.4),
-      tickPeak: cfgN("fireBomb", "tickPeak", 0.06),
-      tickDecay: cfgN("fireBomb", "tickDecay", 0.04),
+  // Bomb muzzle voice: a mortar's thoomp. Where the Warp Cannon blooms upward
+  // and stays out of the bass, the bomb owns the floor. A saturated sub drops
+  // out of the tube from C3 to C1, a C2 bass note rings under it on the bed's
+  // root, and a cough of barrel air follows the shell out. There's no tick and
+  // nothing above the low mids, so it reads as weight and not as a shot. On
+  // the beat it hits harder, adds the G2 fifth for a power chord, and booms
+  // into a small room.
+  private buildFireBombGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, onBeat: boolean) {
+    const bus = ctx.createGain();
+    bus.gain.value = onBeat ? 1 : 0.7;
+    bus.connect(dest);
+    if (onBeat) bus.connect(this.boomRoom(ctx, dest, 0.18));
+    const heavy = this.boomSaturator(ctx, onBeat ? 2.6 : 2);
+    heavy.connect(bus);
+    this.percTone(ctx, heavy, t, {
+      hz: 130.81, endHz: 32.7, glide: 0.14, peak: onBeat ? 0.9 : 0.65, attack: 0.002, decay: onBeat ? 0.55 : 0.4,
     });
-  }
-
-  // Bomb-upgrade muzzle voice, on the grid. Sits an octave under playFireBeat's
-  // C3 body (C2 with a G2 fifth on top), so it stacks with the bass bed rather
-  // than fighting it, and the body pitch-drops a fourth over its decay to read
-  // as a mortar cough rather than a pluck. Louder and longer-tailed than the
-  // off-beat bomb shot for the same reason fireBeat outweighs fire.
-  private playFireBombBeat() {
-    if (this.playBaked("fireBombBeat", 1)) return;
-    if (!this.ctx || !this.master) return;
-    this.buildFireBombBeatGraph(this.ctx, this.master, this.voiceTime("fireBombBeat"));
-  }
-
-  private buildFireBombBeatGraph(ctx: BaseAudioContext, dest: AudioNode, t: number) {
-    const bodyHz = cfgN("fireBombBeat", "bodyHz", 65.41);
-    const bodyEndHz = cfgN("fireBombBeat", "bodyEndHz", 49);
-    const bodyPeak = cfgN("fireBombBeat", "bodyPeak", 0.5);
-    const bodyDecay = cfgN("fireBombBeat", "bodyDecay", 0.42);
-    const fifthHz = cfgN("fireBombBeat", "fifthHz", 98);
-    const fifthPeak = cfgN("fireBombBeat", "fifthPeak", 0.2);
-    const fifthDecay = cfgN("fireBombBeat", "fifthDecay", 0.22);
-
-    this.percTone(ctx, dest, t, { hz: bodyHz, endHz: bodyEndHz, peak: bodyPeak, attack: 0.006, decay: bodyDecay });
-    this.buildPluckGraph(ctx, dest, t, {
-      bodyHz: fifthHz,
-      bodyPeak: fifthPeak,
-      bodyDecay: fifthDecay,
-      partialHz: fifthHz * 2,
-      partialPeak: fifthPeak * 0.35,
-      partialDecay: fifthDecay * 0.5,
-      tickHz: cfgN("fireBombBeat", "tickHz", 320),
-      tickQ: cfgN("fireBombBeat", "tickQ", 1.1),
-      tickPeak: cfgN("fireBombBeat", "tickPeak", 0.12),
-      tickDecay: cfgN("fireBombBeat", "tickDecay", 0.06),
-    });
+    this.percTone(ctx, bus, t, { type: "triangle", hz: 65.41, peak: 0.22, attack: 0.01, decay: onBeat ? 0.9 : 0.5 });
+    if (onBeat) this.percTone(ctx, bus, t, { type: "triangle", hz: 98, peak: 0.12, attack: 0.015, decay: 0.6 });
+    this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 900, endHz: 180, q: 0.8, peak: 0.3, attack: 0.002, decay: 0.22 });
+    this.percNoise(ctx, bus, t, { filter: "bandpass", hz: 260, q: 2.5, peak: 0.25, decay: 0.07 });
   }
 
   private buildPluckGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, p: Pluck) {
@@ -7314,27 +7281,34 @@ export class Sound {
     this.oneShotGraph(name, key)?.(this.ctx, this.master, this.voiceTime(name));
   }
 
-  // Warp Cannon swallow, by size tier: each step up drops a fourth and takes longer.
-  private static readonly WARP_SWALLOW_PITCH = [4 / 3, 1, 3 / 4];
-  private static readonly WARP_SWALLOW_STRETCH = [0.8, 1, 1.25];
-
-  private buildWarpSwallowGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, tier: number) {
-    const pitch = Sound.WARP_SWALLOW_PITCH[tier];
+  // Warp Cannon swallow: a body dropping through a hole in space. All of it
+  // starts on the hit, so an on-beat hit sounds on the beat. A pitched thwup
+  // falls an octave onto a chord tone over a soft thud and a low note for
+  // weight, then rings on through a bending flanger into a far-side echo a
+  // sixteenth note later. A bigger body sounds lower and longer, and the beat
+  // picks the chord tone (warpSwallowKey), so swallows walk the chord with the
+  // shots that made them instead of repeating one sound.
+  private buildWarpSwallowGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, key: number) {
+    const tier = Math.floor(key / WARP_CHORD_TONES);
+    const hz = Sound.WARP_SWALLOW_LADDER[Sound.WARP_SWALLOW_LOWEST[tier] + (key % WARP_CHORD_TONES)];
     const stretch = Sound.WARP_SWALLOW_STRETCH[tier];
-    const gulpAt = 0.52 * stretch;
-    const bent = this.spaceBendingFlanger(ctx, dest, this.farSideEcho(ctx, dest), t, gulpAt);
-    this.warpTear(ctx, dest, t, pitch);
-    this.warpImplode(ctx, dest, t, pitch, stretch);
-    this.warpVwoorp(ctx, bent, t, pitch, stretch);
-    this.warpSuction(ctx, dest, t, pitch, gulpAt);
-    this.warpGulp(ctx, bent, dest, t + gulpAt, pitch);
-    this.warpShimmer(ctx, bent, t, pitch, stretch);
+    const bus = ctx.createGain();
+    bus.gain.value = 0.7;
+    bus.connect(dest);
+    const echo = this.lowpassEcho(ctx, bus, { sec: BEAT_GRID / 4, cutoff: 900, feedback: 0.3, send: 0.3 });
+    const bent = this.spaceBendingFlanger(ctx, bus, echo, t, 0.3 * stretch);
+    this.percTone(ctx, bent, t, { hz: hz * 4, endHz: hz * 2, glide: 0.05, peak: 0.35, attack: 0.002, decay: 0.28 * stretch });
+    this.percTone(ctx, bent, t, { type: "triangle", hz: hz * 2, peak: 0.1, attack: 0.003, decay: 0.5 * stretch });
+    this.percTone(ctx, bent, t, { hz: hz * 4, peak: 0.02, attack: 0.01, decay: 0.6 * stretch });
+    this.percTone(ctx, bus, t, { hz, peak: 0.25, attack: 0.003, decay: 0.3 * stretch });
+    this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 600, endHz: 150, peak: 0.2, attack: 0.001, decay: 0.05 });
   }
 
-  // The swallow echoing back from the far side.
-  private farSideEcho(ctx: BaseAudioContext, dest: AudioNode): GainNode {
-    return this.lowpassEcho(ctx, dest, { sec: 0.13, cutoff: 1800, feedback: 0.38, send: 0.35 });
-  }
+  // C2 E2 G2 C3 E3 G3 (the thwup lands an octave up), the rung each size tier's
+  // three chord tones start on, and how much longer each tier rings.
+  private static readonly WARP_SWALLOW_LADDER = [65.41, 82.41, 98, 130.81, 164.81, 196];
+  private static readonly WARP_SWALLOW_LOWEST = [3, 1, 0];
+  private static readonly WARP_SWALLOW_STRETCH = [0.8, 1, 1.25];
 
   // A lowpassed feedback delay. Returns its send.
   private lowpassEcho(
@@ -7371,74 +7345,6 @@ export class Sound {
     feedback.connect(delay);
     delay.connect(dest);
     return input;
-  }
-
-  private warpTear(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number) {
-    this.percTone(ctx, dest, t, { hz: 1300 * pitch, endHz: 220 * pitch, glide: 0.07, peak: 0.18, decay: 0.1 });
-    this.percNoise(ctx, dest, t, { filter: "bandpass", hz: 1400, q: 0.8, peak: 0.18, attack: 0.001, decay: 0.03 });
-  }
-
-  private warpImplode(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number, stretch: number) {
-    const sat = this.boomSaturator(ctx, 2.2);
-    sat.connect(dest);
-    this.percTone(ctx, sat, t, {
-      hz: 150 * pitch, endHz: 34 * pitch, glide: 0.4 * stretch, peak: 0.95, attack: 0.006, decay: 0.55 * stretch,
-    });
-  }
-
-  // A detuned saw pair falling G4 → E2 through a resonant lowpass, its vibrato deepening.
-  private warpVwoorp(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number, stretch: number) {
-    const end = 0.58 * stretch;
-    const tone = ctx.createBiquadFilter();
-    tone.type = "lowpass";
-    tone.Q.value = 6;
-    this.glide(tone.frequency, 3000 * pitch, 300 * pitch, t, t + end);
-    tone.connect(dest);
-    const vibrato = this.deepeningVibrato(ctx, t, end);
-    for (const cents of [-12, 12]) {
-      const saw = this.percTone(ctx, tone, t, {
-        type: "sawtooth", hz: 392 * pitch, endHz: 82 * pitch, peak: 0.16,
-        attack: 0.12 * stretch, sustain: { level: 1, until: 0.4 * stretch }, decay: end,
-      });
-      saw.detune.value = cents;
-      vibrato.connect(saw.detune);
-    }
-  }
-
-  // An 18 Hz wobble whose depth grows from nothing to 70 cents by `end`.
-  private deepeningVibrato(ctx: BaseAudioContext, t: number, end: number): GainNode {
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 18;
-    const depth = ctx.createGain();
-    depth.gain.setValueAtTime(0, t);
-    depth.gain.linearRampToValueAtTime(70, t + end);
-    lfo.connect(depth);
-    lfo.start(t);
-    lfo.stop(t + end + 0.02);
-    return depth;
-  }
-
-  // Resonant noise swelling as its band falls, cut dead by the gulp: the inrush.
-  private warpSuction(ctx: BaseAudioContext, dest: AudioNode, t: number, pitch: number, gulpAt: number) {
-    this.percNoise(ctx, dest, t, {
-      filter: "bandpass", hz: 2400 * pitch, endHz: 160 * pitch, q: 4, peak: 0.3, attack: 0.85 * gulpAt, decay: gulpAt + 0.03,
-    });
-  }
-
-  private warpGulp(ctx: BaseAudioContext, bent: AudioNode, dest: AudioNode, t: number, pitch: number) {
-    this.percTone(ctx, bent, t, { hz: 280 * pitch, endHz: 50 * pitch, glide: 0.07, peak: 0.55, decay: 0.16 });
-    this.percNoise(ctx, dest, t, { filter: "lowpass", hz: 500, peak: 0.3, decay: 0.05 });
-  }
-
-  // C5, G5, C6: the swallow's afterglow sits on the bass bed's C-major chord.
-  private static readonly WARP_SHIMMER: ReadonlyArray<[hz: number, peak: number]> = [[523.25, 0.035], [783.99, 0.024], [1046.5, 0.014]];
-
-  private warpShimmer(ctx: BaseAudioContext, bent: AudioNode, t: number, pitch: number, stretch: number) {
-    for (const [hz, peak] of Sound.WARP_SHIMMER) {
-      this.percTone(ctx, bent, t, {
-        hz: hz * pitch, endHz: hz * pitch * 0.94, glide: 0.8 * stretch, peak, attack: 0.02, decay: 0.9 * stretch,
-      });
-    }
   }
 
   // Bomb detonation. On the beat it's louder and adds a power chord in the bomb shot's key.

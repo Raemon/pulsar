@@ -43,16 +43,25 @@ export const WARP_TAP_SEC = 0.25;
 export const warpReleaseWasTap = (ship: Ship, beatTime: number): boolean =>
   beatTime - ship.warpChargeStartBeatTime <= WARP_TAP_SEC;
 
-// The muzzle voice's bake key (Sound.buildFireWarpGraph): the tier picks the
-// register, and the beat in the bar picks one of its three chord tones (low,
-// middle, high, middle), so a run of shots walks an arpeggio in time with the music.
-export const FIRE_WARP_TONES = 3;
-export const FIRE_WARP_KEYS = (WARP_MAX_CHARGE + 1) * FIRE_WARP_TONES;
+// The Warp Cannon's voices (Sound.buildFireWarpGraph, buildWarpSwallowGraph)
+// are keyed by a size tier, which picks the register, and the beat in the bar,
+// which picks one of three chord tones (low, middle, high, middle). A run of
+// shots and swallows walks an arpeggio in time with the music.
+export const WARP_CHORD_TONES = 3;
 const TONE_BY_BEAT = [0, 1, 2, 1];
-export const fireWarpKey = (charge: number, beatTime: number): number => {
+const warpVoiceKey = (tier: number, beatTime: number): number => {
   const beat = Math.round(beatTime / BEAT_GRID);
-  return charge * FIRE_WARP_TONES + TONE_BY_BEAT[((beat % 4) + 4) % 4];
+  return tier * WARP_CHORD_TONES + TONE_BY_BEAT[((beat % 4) + 4) % 4];
 };
+
+// The muzzle voice, by the volley's charge tier.
+export const FIRE_WARP_KEYS = (WARP_MAX_CHARGE + 1) * WARP_CHORD_TONES;
+export const fireWarpKey = warpVoiceKey;
+
+// The swallow, by the body's size tier (warpCannon.swallowSizeTier).
+export const WARP_SWALLOW_TIERS = 3;
+export const WARP_SWALLOW_KEYS = WARP_SWALLOW_TIERS * WARP_CHORD_TONES;
+export const warpSwallowKey = warpVoiceKey;
 
 // Drop a charge in progress without firing it: whenever the warp trigger
 // isn't the one handling fire (a swap to bomb or laser, a live mine, a
