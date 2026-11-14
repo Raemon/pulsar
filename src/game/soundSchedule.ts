@@ -25,6 +25,10 @@ import { ENTITY_CONFIG as CFG } from "./entityConfig";
 import { BOSS_FORESHADOW_WAVES, BOSS_WAVES } from "./acts";
 import { CALIBRATION_BEAT_INTENSITY } from "./beatCalibration";
 import type { SoundName } from "../Sound";
+import { FIRE_WARP_KEYS } from "./warpCharge";
+
+// Every tier × chord tone of the Warp Cannon's muzzle voice (warpCharge.fireWarpKey).
+const fireWarpKeys = Array.from({ length: FIRE_WARP_KEYS }, (_, k) => k);
 
 export type SoundLoadEntry = {
   name: SoundName;
@@ -171,6 +175,8 @@ export const SOUND_LOAD_SCHEDULE: readonly SoundLoadEntry[] = [
   { name: "bombBlastBeat", keys: [1], wave: CFG.canister.firstWave },
   { name: "bombBounce", keys: [0, 1, 2], wave: CFG.canister.firstWave },
   { name: "warpSwallow", keys: [0, 1, 2], wave: CFG.canister.firstWave },
+  { name: "fireWarp", keys: fireWarpKeys, wave: CFG.canister.firstWave },
+  { name: "fireWarpBeat", keys: fireWarpKeys, wave: CFG.canister.firstWave },
   { name: "shieldPop", keys: [1], wave: CFG.canister.firstWave },
   // An extra life is a score threshold, not a spawn — first plausible around
   // the time canisters start showing up.

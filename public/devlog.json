@@ -1,5 +1,31 @@
 [
   {
+    "id": "2026-11-13-436710c",
+    "date": "2026-11-13",
+    "title": "Warp Cannon: hold to charge, and what you swallow comes back",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Hold fire to charge the Warp Cannon and release to shoot. The pellet grows one size per beat held, up to three: a tap fires a teeny pellet, a full charge a hole wider than a medium rock.",
+          "The charging pellet swells on your ship's nose, with a faint ring for each size banked.",
+          "A pellet too small for a rock takes only a bite out of it and leaves one smaller rock behind. A rock carrying a gem keeps it on the leftover.",
+          "Whatever the Warp Cannon swallows isn't gone for good. At the start of the next wave, portals open around you one by one and each swallowed body climbs back out."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "Swapping to the bomb or laser, or having a mine out, drops a Warp Cannon charge in progress instead of firing it later."
+        ]
+      }
+    ],
+    "commits": [
+      "436710c",
+      "a911e93"
+    ]
+  },
+  {
     "id": "2026-11-09-ac16a17",
     "date": "2026-11-09",
     "title": "Rhythm and streaks make rocks shatter harder",
@@ -1525,30 +1551,6 @@
     ],
     "commits": [
       "db469d9"
-    ]
-  },
-  {
-    "id": "2026-06-03-2af5e8d",
-    "date": "2026-06-03",
-    "title": "Dev log button and aim disc visual improvements",
-    "sections": [
-      {
-        "heading": "New",
-        "items": [
-          "A new \"dev log\" button in the overlay lets you open and close the latest dev log entry at any time.",
-          "An indicator dot appears on the dev log button when there is an unread entry.",
-          "The dev log panel can now be dismissed with the Escape key."
-        ]
-      },
-      {
-        "heading": "Fixed",
-        "items": [
-          "Aim disc color now correctly matches your ship's trajectory chevron color."
-        ]
-      }
-    ],
-    "commits": [
-      "2af5e8d"
     ]
   }
 ]
