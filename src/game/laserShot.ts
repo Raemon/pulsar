@@ -5,9 +5,12 @@ import { BEAT_GRID } from "./rhythmConstants";
 import { isDown } from "./controlBindings";
 import { isInBeatWindow } from "./rhythmGate";
 import { registerOnBeatFire, registerOffBeatFire } from "./gameUpdate";
-import { buildJaggedBolt, strokePolyline } from "./bassLightning";
 import { drawGlow } from "../glow";
-// Beam seed/jag visuals only — cosmetic stream so it can't desync replays.
+import {
+  laserGlowSprite, superLaserGlowSprite, laserCoreSprite, laserShimmerSprite, laserFlareSprite,
+  LASER_SHIMMER_TILE, beamTaperAt,
+} from "./laserSprites";
+// Beam shimmer seed only — cosmetic stream so it can't desync replays.
 import { cosmeticRng as rng } from "./rng";
 import { applyStrikes, strikeShot, strikeTargets } from "./weaponStrike";
 import { prongOffsets, shotLife, muzzleOf } from "../ship/shipWeapons";
@@ -59,6 +62,9 @@ export const maxLaserDots = (game: Game): number => {
 // to read as a flash, short enough that another shot a beat later doesn't
 // overlap the previous trail.
 const LASER_BEAM_LIFE = 0.1;
+// Purely visual tail after the damaging life ends: the beam pinches down to a
+// hairline and winks out over this long. No damage is dealt during it.
+const LASER_BEAM_FADE = 0.1;
 // The laser deliberately overshoots the reticule slot: bulletSpeed *
 // shotLife * LASER_BASE_RANGE_MULT, so the pierce/longshot/superBoosted range
 // upgrades stretch it exactly as they stretch a bullet. The base mult is
@@ -71,9 +77,6 @@ const LASER_RANGE_BY_DOTS = [0.5, 0.7, 0.85, 1.0, 1.2];
 const CHARGE_GLOW_RATE = 6;
 // Fire flash decays to zero over this many seconds.
 export const FIRE_FLASH_DECAY = 0.18;
-// Perpendicular jag amplitude (px) for the crackle arcs.
-const LASER_JAG_AMPLITUDE = 7;
-
 // Half-width (px) of the beam's hit swath by dot count — wider even at a tap so
 // the laser feels like a beam rather than a thread, then escalating faster per
 // dot (quadratic growth on top of a per-dot floor) so a full charge sweeps a
@@ -99,11 +102,9 @@ export class LaserBeam {
   maxLife: number;
   damage: number;
   // Charge dots 0..LASER_MAX_DOTS — drives the visual tier ramp (thickness,
-  // crackle, aura) so the damage tiers read distinctly.
+  // glow width, flare) so the damage tiers read distinctly.
   dots: number;
-  // Stable per-sample perpendicular jag for the crackle arc; wobble animates
-  // on top. Empty until dots warrant an arc.
-  jags: number[];
+  // Phase for the scintillation scroll so overlapping prong beams don't glitter in lockstep.
   seed: number;
   // Targets already damaged so a sweeping beam doesn't re-hit them each frame.
   // Any strikeable entity (see weaponStrike) regardless of type.
@@ -134,31 +135,26 @@ export class LaserBeam {
     this.maxLife = LASER_BEAM_LIFE;
     this.damage = damage;
     this.dots = dots;
-    this.seed = rng() * Math.PI * 2;
-    this.jags = [];
+    this.seed = rng();
     this.alreadyHit = new Set();
     this.firedOnBeat = false;
     // Eligibility is captured from every strikeable group at fire time, so adding
     // a new damageable entity to weaponStrike makes the beam hit it automatically
     // — no per-type wiring here.
     this.eligible = new Set(strikeTargets(game, true));
-    if (dots >= 1) {
-      const n = 14;
-      for (let i = 0; i < n; i++) this.jags.push((rng() * 2 - 1) * LASER_JAG_AMPLITUDE);
-    }
   }
 
   // Re-anchor to the ship, sweep-damage anything newly crossed, then age out.
+  // Once life runs out the beam only lingers as its visual fade tail.
   update(dt: number, game: Game) {
     this.heading = this.ship.heading + this.headingOffset;
     this.origin = muzzleOf(this.ship, this.headingOffset);
-    const dir = fromAngle(this.heading, 1);
-    applyBeamDamage(game, this, dir);
+    if (this.life > 0) applyBeamDamage(game, this, fromAngle(this.heading, 1));
     this.life -= dt;
   }
 
   get alive() {
-    return this.life > 0;
+    return this.life > -LASER_BEAM_FADE;
   }
 }
 
@@ -457,338 +453,346 @@ const closestApproach = (origin: Vec, dir: Vec, length: number, pos: Vec): numbe
   return Math.max(0, Math.min(length, tRaw));
 };
 
-// Small deterministic jag array for a charge crackle arc. Reseeds ~8x/sec via
-// a coarse time bucket so the bolt flickers without per-frame randomness.
-const CHARGE_ARC_SAMPLES = 8;
-const chargeArcJags = (index: number, beatTime: number): number[] => {
-  const bucket = Math.floor(beatTime * 8);
-  const jags: number[] = [];
-  for (let i = 0; i < CHARGE_ARC_SAMPLES; i++) {
-    const s = Math.sin((bucket + 1) * 12.9898 + index * 7.13 + i * 78.233) * 43758.5453;
-    jags.push(((s - Math.floor(s)) * 2 - 1) * (LASER_JAG_AMPLITUDE * 0.7));
-  }
-  return jags;
+const TAU = Math.PI * 2;
+// The laser's resting cyan, shared with the hull and the reticule's near gate.
+const LASER_HUE = 192;
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+// Stable pseudo-random 0..1 per (index, channel) so motes and wisps keep their
+// identity frame to frame without touching any RNG stream.
+const hash01 = (i: number, k: number): number => {
+  const s = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+  return s - Math.floor(s);
 };
 
-// Charge dots float in front of the ship — one per beat charged. Each dot
-// pulses on its own beat slot so a freshly-armed dot reads as "just landed".
-// Higher-tier dots get extra orbiting sparks + an energy thread connecting
-// back to the ship so a full charge reads as visibly "loaded up".
-export const renderLaserChargeDots = (
+// Lays a prebaked beam-style sprite from `from` along `dir` for `length`,
+// `height` thick, centred on the axis.
+const blitAlong = (
+  ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement,
+  from: Vec, angle: number, length: number, height: number, alpha: number,
+) => {
+  if (alpha <= 0.002 || length <= 0 || height <= 0) return;
+  ctx.save();
+  ctx.translate(from.x, from.y);
+  ctx.rotate(angle);
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.drawImage(sprite, 0, -height / 2, length, height);
+  ctx.restore();
+};
+
+// Anamorphic streak laid across the beam axis at `at` — the lens-flare tell of
+// an intensely bright point source.
+const paintCrossFlare = (
+  ctx: CanvasRenderingContext2D, at: Vec, angle: number, span: number, thick: number, alpha: number,
+) => {
+  if (alpha <= 0.002 || span <= 0) return;
+  ctx.save();
+  ctx.translate(at.x, at.y);
+  ctx.rotate(angle + Math.PI / 2);
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.drawImage(laserFlareSprite(), -span / 2, -thick / 2, span, thick);
+  ctx.restore();
+};
+
+// Charge buildup at one emitter. `c` is 0..1 charge across the reachable dots
+// (climbing smoothly between beats), `kick` 1→0 just after a dot lands.
+// Light motes spiral in and accelerate onto the muzzle, which swells into a
+// white-hot point; two focusing lines pinch from a wide cone down onto the beam
+// axis, their focus reaching further out the harder the shot is charged.
+const paintChargeEmitter = (
+  ctx: CanvasRenderingContext2D, m: Vec, angle: number, c: number, kick: number, fadeIn: number, t: number,
+) => {
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const px = -dy;
+  const py = dx;
+
+  const spread = 5 + 20 * (1 - c);
+  const focal = 30 + 110 * c;
+  const fx = m.x + dx * focal;
+  const fy = m.y + dy * focal;
+  const lineA = (0.12 + 0.28 * c + 0.3 * kick) * fadeIn;
+  ctx.lineCap = "round";
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgb(150, 230, 255)";
+  ctx.globalAlpha = lineA;
+  ctx.beginPath();
+  for (const side of [-1, 1]) {
+    ctx.moveTo(m.x - dx * 4 + px * spread * side, m.y - dy * 4 + py * spread * side);
+    ctx.lineTo(fx, fy);
+  }
+  ctx.stroke();
+  // Faint pilot filament down the axis, through the focus and on past it.
+  blitAlong(ctx, laserCoreSprite(), m, angle, focal + 70 + 110 * c, 1.6 + c, (0.2 + 0.45 * c + 0.3 * kick) * fadeIn);
+  // A dot landing sends a pulse racing down both focusing lines onto the focus.
+  if (kick > 0) {
+    const k = 1 - kick;
+    for (const side of [-1, 1]) {
+      const sx = m.x - dx * 4 + px * spread * side;
+      const sy = m.y - dy * 4 + py * spread * side;
+      drawGlow(ctx, sx + (fx - sx) * k, sy + (fy - sy) * k, 5, 0, 0.8 * kick, true);
+    }
+    drawGlow(ctx, fx, fy, 6 + 10 * k, LASER_HUE, 0.6 * k * kick * 4);
+  }
+
+  const motes = 10 + Math.round(16 * c);
+  const reach = 44 + 40 * c;
+  const rate = 1.1 + 1.7 * c;
+  ctx.strokeStyle = "rgb(195, 242, 255)";
+  for (let i = 0; i < motes; i++) {
+    const p = (t * rate + hash01(i, 1)) % 1;
+    // biased forward of the muzzle so the inflow doesn't stream through the hull
+    const base = angle + (hash01(i, 2) - 0.5) * TAU * 0.8;
+    const lead = Math.max(0, 1 - p - 0.06 - 0.06 * c);
+    const r0 = reach * Math.pow(1 - p, 1.7) + 2;
+    const r1 = reach * Math.pow(lead, 1.7) + 2;
+    const a0 = base + (1 - p) * 0.9;
+    const a1 = base + lead * 0.9;
+    ctx.globalAlpha = Math.sin(p * Math.PI) * (0.3 + 0.55 * c) * fadeIn * (0.55 + 0.45 * hash01(i, 3));
+    ctx.lineWidth = 0.8 + 1.1 * c * hash01(i, 4);
+    ctx.beginPath();
+    ctx.moveTo(m.x + Math.cos(a0) * r0, m.y + Math.sin(a0) * r0);
+    ctx.lineTo(m.x + Math.cos(a1) * r1, m.y + Math.sin(a1) * r1);
+    ctx.stroke();
+  }
+
+  const flicker = 0.88 + 0.12 * Math.sin(t * 53) * Math.sin(t * 31);
+  const heat = (0.25 + 0.75 * c) * fadeIn;
+  drawGlow(ctx, m.x, m.y, (8 + 24 * c + 14 * kick) * flicker, LASER_HUE, 0.3 + 0.45 * heat + 0.3 * kick);
+  drawGlow(ctx, m.x, m.y, (3 + 7 * c + 6 * kick) * flicker, 0, 0.55 + 0.45 * heat, true);
+  paintCrossFlare(ctx, m, angle, (12 + 64 * c + 46 * kick) * flicker, 5 + 2 * c, (0.25 + 0.6 * c + 0.4 * kick) * fadeIn);
+  ctx.globalAlpha = Math.min(1, 0.55 + heat);
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, 1.1 + 2 * c + 1.4 * kick, 0, TAU);
+  ctx.fill();
+  // Imploding ring as each dot locks in — energy snapping onto the emitter.
+  if (kick > 0) {
+    ctx.globalAlpha = kick * 0.75;
+    ctx.strokeStyle = "rgb(200, 245, 255)";
+    ctx.lineWidth = 0.8 + kick;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, 4 + 26 * kick, 0, TAU);
+    ctx.stroke();
+  }
+};
+
+// Seconds a freshly armed charge pip stays enlarged before settling.
+const PIP_POP = 0.18;
+// Charge pips: one bead per armed dot, strung along the beam axis ahead of the
+// muzzle so the tier count stays readable at a glance.
+const paintChargePips = (
+  ctx: CanvasRenderingContext2D, game: Game, dots: number, beatTime: number,
+) => {
+  const ship = game.ship;
+  const dir = fromAngle(ship.heading, 1);
+  const baseOffset = ship.radius + 14;
+  const dotGap = 14;
+  for (let i = 0; i < dots; i++) {
+    const x = ship.pos.x + dir.x * (baseOffset + i * dotGap);
+    const y = ship.pos.y + dir.y * (baseOffset + i * dotGap);
+    const age = Math.max(0, beatTime - (ship.laserChargeStartBeatTime + (i + 1) * BEAT_GRID));
+    const pop = Math.max(0, 1 - age / PIP_POP);
+    const breathe = 0.85 + 0.15 * Math.sin(beatTime * 9 + i * 1.7);
+    drawGlow(ctx, x, y, (6 + 9 * pop) * breathe, LASER_HUE, 0.45 + 0.45 * pop);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5 + 1.8 * pop, 0, TAU);
+    ctx.fill();
+  }
+};
+
+const paintCharge = (ctx: CanvasRenderingContext2D, game: Game, beatTime: number) => {
+  const ship = game.ship;
+  const maxDots = maxLaserDots(game);
+  const dots = laserDotCount(ship, beatTime, maxDots);
+  const start = ship.laserChargeStartBeatTime;
+  const nextDotFrac = dots >= maxDots ? 0 : clamp01((beatTime - (start + dots * BEAT_GRID)) / BEAT_GRID);
+  const c = Math.min(1, (dots + nextDotFrac) / Math.max(1, maxDots));
+  const held = Math.max(0, beatTime - start);
+  const fadeIn = Math.min(1, held / 0.12);
+  const sinceDot = dots > 0 ? beatTime - (start + dots * BEAT_GRID) : Infinity;
+  const kick = Math.max(0, 1 - sinceDot / 0.16);
+  drawGlow(ctx, ship.pos.x, ship.pos.y, ship.radius * (2.2 + 1.6 * c), LASER_HUE, (0.05 + 0.14 * c) * fadeIn);
+  for (const aim of laserAimFan(ship)) {
+    paintChargeEmitter(ctx, muzzleOf(ship, aim.headingOffset), ship.heading + aim.headingOffset, c, kick, fadeIn, beatTime);
+  }
+  paintChargePips(ctx, game, dots, beatTime);
+};
+
+// Matches the reticule's armed ring, so the refill arc closes into it exactly.
+const REFILL_RING_R = 9;
+// Fraction of the lockout spent visibly cooling off before the refill takes over.
+const COOL_SPAN = 0.6;
+
+// Refire lockout at one emitter. The muzzle starts white-hot and cools through
+// amber to nothing, shedding wisps of heat, while a thin arc sweeps round the
+// muzzle and a cyan pilot light swells back — the cell recharging. Once ready
+// only the steady pilot light remains.
+const paintReloadEmitter = (
+  ctx: CanvasRenderingContext2D, m: Vec, angle: number, cooldown: number, t: number,
+) => {
+  if (cooldown <= 0) {
+    const breathe = 0.8 + 0.2 * Math.sin(t * 4);
+    drawGlow(ctx, m.x, m.y, 7 * breathe, LASER_HUE, 0.4);
+    drawGlow(ctx, m.x, m.y, 2.5, 0, 0.55, true);
+    return;
+  }
+  const heat = clamp01((cooldown - (1 - COOL_SPAN)) / COOL_SPAN);
+  const refill = 1 - cooldown;
+  if (heat > 0) {
+    // hue slides from yellow-white down to a dull red as the emitter cools
+    const emberHue = 12 + 34 * heat;
+    drawGlow(ctx, m.x, m.y, 6 + 16 * heat, emberHue, 0.9 * heat ** 1.2);
+    drawGlow(ctx, m.x, m.y, 2.5 + 6 * heat, 0, heat ** 1.8, true);
+    const px = -Math.sin(angle);
+    const py = Math.cos(angle);
+    for (let k = 0; k < 6; k++) {
+      const life = (t * 1.7 + hash01(k, 5)) % 1;
+      const side = k % 2 ? 1 : -1;
+      const drift = 4 + 20 * life;
+      const sway = Math.sin(t * 7 + k * 2.1) * 3 * life;
+      const x = m.x + px * side * drift - Math.cos(angle) * (life * 12 - sway);
+      const y = m.y + py * side * drift - Math.sin(angle) * (life * 12 - sway);
+      drawGlow(ctx, x, y, 2.5 + 5 * life, emberHue - 6, heat * (1 - life) * 0.7);
+    }
+  }
+  const sweepStart = angle + Math.PI;
+  const sweepEnd = sweepStart + TAU * refill;
+  ctx.strokeStyle = `hsl(${LASER_HUE}, 100%, 72%)`;
+  ctx.globalAlpha = 0.12;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, REFILL_RING_R, 0, TAU);
+  ctx.stroke();
+  ctx.globalAlpha = 0.35 + 0.55 * refill;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, REFILL_RING_R, sweepStart, sweepEnd);
+  ctx.stroke();
+  const hx = m.x + Math.cos(sweepEnd) * REFILL_RING_R;
+  const hy = m.y + Math.sin(sweepEnd) * REFILL_RING_R;
+  drawGlow(ctx, hx, hy, 5, LASER_HUE, 0.45 + 0.5 * refill);
+  drawGlow(ctx, hx, hy, 1.8, 0, 0.8, true);
+  drawGlow(ctx, m.x, m.y, 2 + 5 * refill, LASER_HUE, 0.4 * refill * refill);
+};
+
+// Everything the laser draws at the ship's nose between shots: the charge
+// buildup while the trigger is held, otherwise the refire cooldown / ready
+// pilot light. Painted over the hull, under nothing.
+export const renderLaserEmitter = (
   ctx: CanvasRenderingContext2D, game: Game, beatTime: number,
 ) => {
   const ship = game.ship;
-  if (!ship.lasershotActive) return;
-  if (!ship.laserChargeActive) return;
-  const dots = laserDotCount(ship, beatTime, maxLaserDots(game));
-  const maxDots = maxLaserDots(game);
-  const dir = fromAngle(ship.heading, 1);
-  const perp = { x: -dir.y, y: dir.x };
-  // First dot sits a bit past the muzzle; subsequent dots step outward.
-  const baseOffset = ship.radius + 14;
-  const dotGap = 14;
+  if (!ship.alive || !ship.lasershotActive) return;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-
-  // Gathering-energy aura around the ship — drawn from the instant charging
-  // begins (even before the first dot) so the buildup reads as continuously
-  // sucking power in, then swelling and tightening as each dot lands. `charge`
-  // ramps 0..1 across the reachable dots; the partial progress toward the NEXT
-  // dot keeps it climbing smoothly between beats rather than stepping.
-  {
-    const nextDotFrac = Math.min(1, Math.max(0,
-      (beatTime - (ship.laserChargeStartBeatTime + dots * BEAT_GRID)) / BEAT_GRID));
-    const charge = Math.min(1, (dots + nextDotFrac) / Math.max(1, maxDots));
-    const cx = ship.pos.x;
-    const cy = ship.pos.y;
-    // Breathing ring of in-rushing light: a wide soft disc that pulses fast and
-    // brightens with charge. Rotating inflow streaks ride on top.
-    const auraPulse = 0.6 + 0.4 * Math.sin(beatTime * 16);
-    const auraR = ship.radius * (2.6 + charge * 2.2);
-    const auraA = (0.06 + charge * 0.18) * auraPulse;
-    const aura = ctx.createRadialGradient(cx, cy, ship.radius * 0.6, cx, cy, auraR);
-    aura.addColorStop(0, `rgba(180, 240, 255, ${(auraA * 0.9).toFixed(3)})`);
-    aura.addColorStop(0.6, `rgba(120, 210, 255, ${(auraA * 0.5).toFixed(3)})`);
-    aura.addColorStop(1, "rgba(90, 180, 255, 0)");
-    ctx.fillStyle = aura;
-    ctx.beginPath();
-    ctx.arc(cx, cy, auraR, 0, Math.PI * 2);
-    ctx.fill();
-
-    // In-rushing streaks — short comet-lines spiralling INWARD toward the ship,
-    // the "drawing power in" cue. Count + speed climb with charge.
-    const streaks = 5 + Math.round(charge * 9);
-    for (let s = 0; s < streaks; s++) {
-      const baseAng = (s / streaks) * Math.PI * 2 + beatTime * (1.2 + charge * 1.5);
-      // Each streak's radius oscillates inward over a short cycle (the inflow).
-      const phase = (beatTime * (1.6 + charge) + s * 0.7) % 1;
-      const rOuter = auraR * (1 - phase) + ship.radius * 1.3 * phase;
-      const rInner = rOuter - (6 + charge * 14);
-      const ox = cx + Math.cos(baseAng) * rOuter;
-      const oy = cy + Math.sin(baseAng) * rOuter;
-      const ix = cx + Math.cos(baseAng) * rInner;
-      const iy = cy + Math.sin(baseAng) * rInner;
-      const sa = (0.25 + charge * 0.4) * (1 - phase);
-      ctx.strokeStyle = `rgba(210, 245, 255, ${sa.toFixed(3)})`;
-      ctx.lineWidth = 1 + charge * 1.4;
-      ctx.beginPath();
-      ctx.moveTo(ox, oy);
-      ctx.lineTo(ix, iy);
-      ctx.stroke();
-    }
-
-    // Tight bright corona hugging the hull — intensifies sharply near full charge
-    // so a maxed buildup looks ready to burst.
-    if (charge > 0.05) {
-      drawGlow(ctx, cx, cy, ship.radius * (1.4 + charge * 0.8), 195, 0.12 + charge * 0.4);
-    }
-  }
-
-  if (dots <= 0) { ctx.restore(); return; }
-
-  // Connecting thread — a wobbling line from the muzzle through every armed dot.
-  // Reads as "energy being routed forward". Brighter as more dots accumulate.
-  const muzzleX = ship.pos.x + dir.x * (ship.radius + 4);
-  const muzzleY = ship.pos.y + dir.y * (ship.radius + 4);
-  const threadEndX = ship.pos.x + dir.x * (baseOffset + (dots - 1) * dotGap);
-  const threadEndY = ship.pos.y + dir.y * (baseOffset + (dots - 1) * dotGap);
-  const threadPulse = 0.55 + 0.45 * Math.sin(beatTime * 14);
-  ctx.strokeStyle = `rgba(150, 230, 255, ${(0.18 * dots * threadPulse).toFixed(3)})`;
-  ctx.lineWidth = 1.4 + dots * 0.4;
-  ctx.beginPath();
-  ctx.moveTo(muzzleX, muzzleY);
-  // Mid wobble point so the thread squirms instead of being a straight line.
-  const midX = (muzzleX + threadEndX) * 0.5 + perp.x * Math.sin(beatTime * 9) * 2;
-  const midY = (muzzleY + threadEndY) * 0.5 + perp.y * Math.sin(beatTime * 9) * 2;
-  ctx.quadraticCurveTo(midX, midY, threadEndX, threadEndY);
-  ctx.stroke();
-
-  for (let i = 0; i < dots; i++) {
-    const px = ship.pos.x + dir.x * (baseOffset + i * dotGap);
-    const py = ship.pos.y + dir.y * (baseOffset + i * dotGap);
-    // Per-dot age in seconds since this dot first appeared. The dot at index
-    // i appeared at startBeatTime + (i+1)*BEAT_GRID.
-    const dotAgeSec = Math.max(0, beatTime - (ship.laserChargeStartBeatTime + (i + 1) * BEAT_GRID));
-    // Birth-pop: huge burst on the first ~0.18s — settles to steady pulse.
-    const popT = Math.min(1, dotAgeSec / 0.18);
-    const popBoost = 1 + (1 - popT) * 2.4;
-    // Per-tier brightness: higher-index dots glow brighter on top of pulse.
-    const tierBoost = 1 + i * 0.22;
-    const pulse = (0.7 + 0.3 * Math.sin(beatTime * 7 + i * 1.7)) * tierBoost;
-    const r = 3.6 * popBoost;
-
-    // Outer wide halo — soft cyan, fades quickly to transparent.
-    const wideHalo = ctx.createRadialGradient(px, py, 0, px, py, r * 4.5);
-    wideHalo.addColorStop(0, `rgba(160, 235, 255, ${(0.5 * pulse).toFixed(3)})`);
-    wideHalo.addColorStop(0.4, `rgba(120, 210, 255, ${(0.28 * pulse).toFixed(3)})`);
-    wideHalo.addColorStop(1, "rgba(80, 180, 255, 0)");
-    ctx.fillStyle = wideHalo;
-    ctx.beginPath();
-    ctx.arc(px, py, r * 4.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Inner halo
-    const halo = ctx.createRadialGradient(px, py, 0, px, py, r * 2.4);
-    halo.addColorStop(0, `rgba(230, 250, 255, ${(0.85 * pulse).toFixed(3)})`);
-    halo.addColorStop(1, "rgba(140, 220, 255, 0)");
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(px, py, r * 2.4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Bright white core
-    ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, 0.95 * pulse).toFixed(3)})`;
-    ctx.beginPath();
-    ctx.arc(px, py, r * 0.85, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Crackle arc — a jagged bolt leaping back from this dot to the previous
-    // one (or the muzzle for the first dot), in the bass-lightning dialect.
-    // Higher tiers crackle harder; the jag reseeds a few times a second so it
-    // flickers without allocating fresh randomness every frame.
-    if (i >= 1) {
-      const fromX = ship.pos.x + dir.x * (baseOffset + (i - 1) * dotGap);
-      const fromY = ship.pos.y + dir.y * (baseOffset + (i - 1) * dotGap);
-      const jags = chargeArcJags(i, beatTime);
-      const tSec = beatTime * 6;
-      const pts = buildJaggedBolt(fromX, fromY, px, py, jags, i * 1.7, tSec, 0);
-      const arcA = (0.4 + 0.3 * Math.sin(beatTime * 17 + i)) * tierBoost;
-      strokePolyline(ctx, pts, 2.4, `rgba(150, 230, 255, ${(0.22 * arcA).toFixed(3)})`);
-      strokePolyline(ctx, pts, 1, `rgba(235, 250, 255, ${(0.6 * arcA).toFixed(3)})`);
-      drawGlow(ctx, px, py, r * 1.4, 195, 0.35 * arcA);
-      ctx.globalAlpha = 1;
-    }
-
-    // Rotating sparkle ring — three orbiting micro-dots around each charge dot.
-    // Higher-tier dots spin faster so the energy reads as building.
-    const ringR = r * 1.8;
-    const spinRate = 4 + i * 1.8;
-    const sparkCount = 3 + i;
-    for (let s = 0; s < sparkCount; s++) {
-      const ang = beatTime * spinRate + (s * (Math.PI * 2)) / sparkCount + i * 0.6;
-      const sx = px + Math.cos(ang) * ringR;
-      const sy = py + Math.sin(ang) * ringR;
-      const sparkAlpha = (0.55 + 0.35 * Math.sin(beatTime * 11 + s * 1.3)) * tierBoost;
-      ctx.fillStyle = `rgba(220, 245, 255, ${Math.min(1, sparkAlpha * 0.7).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 1.2 + 0.4 * Math.sin(beatTime * 13 + s), 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Birth-pop ring — a quickly-expanding hollow ring on dot arrival, fades fast.
-    if (popT < 1) {
-      const ringRadius = r * (1.5 + popT * 3);
-      const ringAlpha = (1 - popT) * 0.7;
-      ctx.strokeStyle = `rgba(200, 240, 255, ${ringAlpha.toFixed(3)})`;
-      ctx.lineWidth = 2 * (1 - popT) + 0.5;
-      ctx.beginPath();
-      ctx.arc(px, py, ringRadius, 0, Math.PI * 2);
-      ctx.stroke();
+  if (ship.laserChargeActive) {
+    paintCharge(ctx, game, beatTime);
+  } else {
+    const cooldown = laserCooldownFrac(game);
+    for (const aim of laserAimFan(ship)) {
+      paintReloadEmitter(ctx, muzzleOf(ship, aim.headingOffset), ship.heading + aim.headingOffset, cooldown, beatTime);
     }
   }
   ctx.restore();
 };
 
+// Seconds the ignition overdrive (overbright core, swollen glow, cross flare)
+// takes to settle into the steady beam.
+const IGNITION = 0.06;
+// Lifetime of the shock ring thrown off the emitter on ignition.
+const SHOCK_RING_LIFE = 0.14;
+// Scroll speeds (px/s) of the two scintillation layers; differing rates make
+// them beat against each other into a sparkle rather than a sliding pattern.
+const SHIMMER_FAST = 2600;
+const SHIMMER_SLOW = 1100;
+
+// Scrolls the tileable shimmer strip along the beam's local +x, fading each
+// tile with the beam's own tip taper.
+const paintShimmer = (
+  ctx: CanvasRenderingContext2D, length: number, height: number, offset: number, alpha: number,
+) => {
+  if (alpha <= 0.002) return;
+  const tile = LASER_SHIMMER_TILE;
+  const strip = laserShimmerSprite();
+  const shift = ((offset % tile) + tile) % tile;
+  for (let x = shift - tile; x < length; x += tile) {
+    const sx = Math.max(0, -x);
+    const w = Math.min(tile - sx, length - (x + sx));
+    if (w <= 0) continue;
+    ctx.globalAlpha = Math.min(1, alpha * beamTaperAt((x + sx + w / 2) / length));
+    ctx.drawImage(strip, sx, 0, w, strip.height, x + sx, -height / 2, w, height);
+  }
+};
+
+// The beam itself, in three phases over its life:
+//  - ignition: an overbright frame or two — swollen glow, a white flash and
+//    anamorphic flare across the emitter, and a shock ring thrown outward;
+//  - sustain: a coherent white core with crisp edges inside a saturated cyan
+//    Gaussian glow (sized to the hit swath), glittering with scrolling
+//    scintillation;
+//  - decay (the post-damage fade tail): the glow drains first while the core
+//    pinches down to a hairline and winks out.
+// Every layer is a prebaked sprite stretched along the beam (see laserSprites),
+// so the cost is a handful of blits per beam.
 export const renderLasers = (ctx: CanvasRenderingContext2D, lasers: LaserBeam[]) => {
   if (lasers.length === 0) return;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  ctx.lineCap = "round";
   for (const beam of lasers) {
-    const t = beam.life / beam.maxLife;
-    // Fast attack, slow tail — beam stamps fully bright then fades.
-    const alpha = t > 0.85 ? (1 - t) / 0.15 : t / 0.85;
-    const ageFrac = 1 - t; // 0 → freshly fired, 1 → about to vanish
-    const cosH = Math.cos(beam.heading);
-    const sinH = Math.sin(beam.heading);
-    const ex = beam.origin.x + cosH * beam.length;
-    const ey = beam.origin.y + sinH * beam.length;
-    // Charge tier as a 0..1 ramp off the dot count — the damage tiers map to
-    // evenly-spaced thickness/effect steps rather than the raw damage, which
-    // would saturate and render the top tiers identically.
+    const age = beam.maxLife - beam.life;
+    const decay = beam.life < 0 ? clamp01(-beam.life / LASER_BEAM_FADE) : 0;
+    const live = 1 - decay;
+    const ignite = Math.max(0, 1 - age / IGNITION);
     const tier = beam.dots / LASER_MAX_DOTS;
-    // Width driver scaled so the visible beam roughly fills its hit swath: the
-    // gameplay half-width sets the floor, charge thickens it further. The super
-    // beam (torus-charge bolt) blows past the normal ceiling so it reads as a
-    // categorically bigger weapon than a maxed held charge.
     const superMul = beam.isSuper ? 2.4 : 1;
-    const w = (1 + beam.dots + beamHalfWidth(beam.dots) * 0.4) * superMul;
+    // The hit swath half-width — the soft glow fills it so the visible lane
+    // matches what the beam actually catches.
+    const swath = beamHalfWidth(beam.dots) * superMul;
+    const core = (3 + beam.dots * 2.2) * (beam.isSuper ? 2.2 : 1);
+    const L = beam.length;
 
-    // A stroke that tapers to nothing over the far end of the beam, so the tip
-    // dissolves instead of stopping flat. The super beam holds full brightness
-    // most of its run before the tip dissolves, so a screen-spanning bolt stays
-    // solid edge to edge rather than fading out halfway.
-    const fadingStroke = (rgb: string, peak: number, width: number) => {
-      const grad = ctx.createLinearGradient(beam.origin.x, beam.origin.y, ex, ey);
-      grad.addColorStop(0, `rgba(${rgb}, ${peak.toFixed(3)})`);
-      // Super beam stays bright nearly to the tip; normal beams taper sooner.
-      grad.addColorStop(beam.isSuper ? 0.85 : 0.6, `rgba(${rgb}, ${(peak * (beam.isSuper ? 0.92 : 0.7)).toFixed(3)})`);
-      grad.addColorStop(1, `rgba(${rgb}, 0)`);
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = width;
+    ctx.save();
+    ctx.translate(beam.origin.x, beam.origin.y);
+    ctx.rotate(beam.heading);
+    const glowSprite = beam.isSuper ? superLaserGlowSprite() : laserGlowSprite();
+    // The super beam's swath is already huge; it needs less bloom on top to stay a beam, not a whiteout.
+    const bloomH = swath * (beam.isSuper ? 2.6 : 4.2) * (1 + 0.5 * ignite) * (1 - 0.5 * decay);
+    ctx.globalAlpha = Math.min(1, (beam.isSuper ? 0.3 : 0.28 + 0.2 * tier) * live * live * (1 + 0.9 * ignite));
+    ctx.drawImage(glowSprite, 0, -bloomH / 2, L, bloomH);
+    const glowH = (swath * (beam.isSuper ? 0.9 : 2) + 6) * (1 + 0.3 * ignite) * (1 - 0.6 * decay);
+    ctx.globalAlpha = Math.min(1, 0.85 * live ** 1.5 * (1 + 0.4 * ignite));
+    ctx.drawImage(laserGlowSprite(), 0, -glowH / 2, L, glowH);
+    const coreSprite = laserCoreSprite();
+    const coreH = core * (1 + 0.7 * ignite) * live * live;
+    if (coreH > 0.5) {
+      ctx.globalAlpha = 1;
+      ctx.drawImage(coreSprite, 0, -coreH / 2, L, coreH);
+    }
+    // Hairline spine — stays crisp through the decay after the body has pinched away.
+    ctx.globalAlpha = Math.pow(live, 0.5);
+    ctx.drawImage(coreSprite, 0, -1, L, 2);
+
+    const shimmerA = live * live * (0.55 + 0.3 * tier);
+    paintShimmer(ctx, L, core * 2.2, age * SHIMMER_FAST + beam.seed * 997, shimmerA);
+    paintShimmer(ctx, L, core * 1.3, age * SHIMMER_SLOW + beam.seed * 431 + 128, shimmerA * 0.8);
+    ctx.restore();
+
+    // Emitter: ignition flash + cross flare, settling to a hot point while the beam holds.
+    const o = beam.origin;
+    const flash = ignite + 0.35 * live;
+    drawGlow(ctx, o.x, o.y, (12 + swath * 0.9) * (0.7 + 0.8 * ignite), 0, Math.min(1, 0.95 * flash), true);
+    drawGlow(ctx, o.x, o.y, (20 + swath * 1.6) * (0.8 + 0.6 * ignite), LASER_HUE, Math.min(1, 0.6 * flash));
+    paintCrossFlare(ctx, o, beam.heading, (50 + swath * 3.2) * (0.5 + 0.9 * ignite) * superMul, 6 + 4 * tier, flash * 0.9);
+    if (age < SHOCK_RING_LIFE) {
+      const k = age / SHOCK_RING_LIFE;
+      ctx.globalAlpha = (1 - k) ** 2 * 0.8;
+      ctx.strokeStyle = "rgb(200, 245, 255)";
+      ctx.lineWidth = 0.6 + 2.2 * (1 - k);
       ctx.beginPath();
-      ctx.moveTo(beam.origin.x, beam.origin.y);
-      ctx.lineTo(ex, ey);
+      ctx.arc(o.x, o.y, 8 + k * (26 + swath * 1.3), 0, TAU);
       ctx.stroke();
-    };
-
-    // Super beam wears an extra colossal halo + a hot magenta-white edge so it
-    // reads as a different class of weapon from the cyan held-charge laser.
-    if (beam.isSuper) {
-      fadingStroke("180, 230, 255", 0.16 * alpha, 40 + w * 9);
-      fadingStroke("210, 180, 255", 0.22 * alpha, 18 + w * 5);
-    }
-    // Outermost diffuse aura — wide and soft, now present even at a tap (a faint
-    // floor + charge ramp) so the smallest beam still reads as "bending the air".
-    fadingStroke("140, 200, 255", (0.1 + 0.14 * tier) * alpha, 26 + w * 8);
-    // Outer glow — wide, soft, cyan-tinged. Wider at higher tiers.
-    fadingStroke("120, 220, 255", 0.34 * alpha, 14 + w * 5);
-    // Mid layer — brighter, narrower.
-    fadingStroke("180, 240, 255", 0.62 * alpha, 6 + w * 2.1);
-    // Core — near-white, hot.
-    fadingStroke("255, 255, 255", alpha, 2.6 + w * 0.85);
-    // Hot white inner sliver — now on every shot so the beam always has a blazing
-    // centre line; grows with charge for the high-tier "plasma lance" look.
-    fadingStroke("255, 255, 255", Math.min(1, alpha * 1.0), 1 + tier * 2.2 + (beam.isSuper ? 3 : 0));
-
-    // Energy throb — a fast bright pulse riding the core so the beam looks alive
-    // and surging rather than a static painted line. Brightest right after fire.
-    {
-      const throb = 0.5 + 0.5 * Math.sin((1 - t) * 40 + beam.seed * 6);
-      fadingStroke("220, 250, 255", alpha * 0.5 * throb * (1 - ageFrac), 2 + w * 1.2);
-    }
-
-    // Crackle arcs — jagged offshoots branching off the core, in the same
-    // oscilloscope dialect as bass lightning. Now from the first charged dot so
-    // even a small charge spits lightning; denser/brighter at higher tiers.
-    if (beam.dots >= 1 && beam.jags.length > 0) {
-      const tSec = (1 - t) * 6 + beam.seed;
-      const pts = buildJaggedBolt(
-        beam.origin.x, beam.origin.y, ex, ey, beam.jags, beam.seed, tSec, 6,
-      );
-      strokePolyline(ctx, pts, 3 + tier * 3, `rgba(150, 230, 255, ${(0.2 * alpha).toFixed(3)})`);
-      strokePolyline(ctx, pts, 1.4, `rgba(235, 250, 255, ${(0.7 * alpha).toFixed(3)})`);
-      // Second, independently-seeded arc on high charge so the beam writhes with
-      // a tangle of lightning rather than a single jag.
-      if (beam.dots >= 3) {
-        const pts2 = buildJaggedBolt(
-          beam.origin.x, beam.origin.y, ex, ey, beam.jags, beam.seed + 2.3, tSec * 1.3, 6,
-        );
-        strokePolyline(ctx, pts2, 1.2, `rgba(200, 240, 255, ${(0.5 * alpha).toFixed(3)})`);
-      }
-    }
-
-    // Muzzle burst — bright circular flash at the origin, dims fast over life.
-    const burstAlpha = (1 - ageFrac) * alpha;
-    const burstR = (8 + w * 5) * (0.6 + (1 - ageFrac) * 0.8);
-    const burstGrad = ctx.createRadialGradient(
-      beam.origin.x, beam.origin.y, 0,
-      beam.origin.x, beam.origin.y, burstR,
-    );
-    burstGrad.addColorStop(0, `rgba(255, 255, 255, ${(0.85 * burstAlpha).toFixed(3)})`);
-    burstGrad.addColorStop(0.4, `rgba(180, 240, 255, ${(0.45 * burstAlpha).toFixed(3)})`);
-    burstGrad.addColorStop(1, "rgba(120, 200, 255, 0)");
-    ctx.fillStyle = burstGrad;
-    ctx.beginPath();
-    ctx.arc(beam.origin.x, beam.origin.y, burstR, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Traveling sparks — small bright pips evenly spaced along the beam, drifting
-    // forward over the beam's life. Density + size scale with tier.
-    if (beam.dots >= 1) {
-      const sparkCount = 4 + beam.dots * 4;
-      const driftPhase = (1 - t); // 0..1 across beam lifetime
-      const perpX = -sinH;
-      const perpY = cosH;
-      for (let s = 0; s < sparkCount; s++) {
-        const baseFrac = (s + 0.5) / sparkCount;
-        const frac = (baseFrac + driftPhase * 0.25) % 1;
-        const sx = beam.origin.x + cosH * beam.length * frac;
-        const sy = beam.origin.y + sinH * beam.length * frac;
-        // Small lateral jitter so sparks don't sit perfectly on the centre line.
-        const jitter = Math.sin(s * 12.3 + beam.maxLife * 31) * (1 + tier * 1.5);
-        const jx = sx + perpX * jitter;
-        const jy = sy + perpY * jitter;
-        const sparkR = 1.2 + tier * 1.6 + Math.sin(s * 7 + driftPhase * 9) * 0.4;
-        const sparkAlpha = alpha * (0.55 + 0.35 * Math.sin(s * 3.1 + driftPhase * 11));
-        ctx.fillStyle = `rgba(255, 255, 255, ${sparkAlpha.toFixed(3)})`;
-        ctx.beginPath();
-        ctx.arc(jx, jy, sparkR, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // Endpoint glow — far tip dissolves rather than blooming, so the faded
-    // beam end doesn't pick up a hard bright cap.
-    if (beam.dots >= 1) {
-      const tipR = (6 + w * 4) * (0.6 + (1 - ageFrac) * 0.7);
-      const tipGrad = ctx.createRadialGradient(ex, ey, 0, ex, ey, tipR);
-      tipGrad.addColorStop(0, `rgba(200, 240, 255, ${(0.22 * alpha * tier).toFixed(3)})`);
-      tipGrad.addColorStop(1, "rgba(140, 220, 255, 0)");
-      ctx.fillStyle = tipGrad;
-      ctx.beginPath();
-      ctx.arc(ex, ey, tipR, 0, Math.PI * 2);
-      ctx.fill();
     }
   }
   ctx.restore();
