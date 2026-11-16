@@ -14,10 +14,6 @@ const SLOT_1_POOL: readonly string[] = [
   "Aim for the target.",
 ];
 
-// The one hint that must wait out the start-of-run controls pane before it
-//   can appear — IntroSequence suppresses it while the pane is still showing.
-export const FIRE_HIT_HINT = "Fire on the beat. Hit on the beat.";
-
 const SLOT_2_POOL: readonly string[] = [
   "Aim carefully.",
   "One shot. One kill.",

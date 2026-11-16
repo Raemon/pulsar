@@ -683,8 +683,7 @@ const tickControlsGate = (game: Game) => {
 };
 
 // Fades the normal-mode start-of-run controls hint and releases whatever was
-//   waiting behind it: the deferred first-combo-loss hint fires here, and
-//   IntroSequence lifts its FIRE_HIT_HINT suppression on the dismiss event.
+//   waiting behind it: the deferred first-combo-loss hint fires here.
 const dismissControlsHint = (game: Game) => {
   if (!game.controlsHintActive) return;
   game.controlsHintActive = false;

@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { BEAT_GRID } from "../game/rhythmConstants";
-import { FIRE_HIT_HINT } from "../game/introHints";
-
-// matches the .tutorial-controls-hint CSS opacity transition, so we keep the
-//   FIRE_HIT_HINT suppressed until the pane has visually finished fading out.
-const CONTROLS_PANE_FADE_MS = 1000;
 
 // Beat-locked intro overlay. Three flavors share one component:
 //   - "latency":    "Latency calibrated" — fades in, holds, fades out.
@@ -61,10 +56,6 @@ export const IntroSequence = () => {
   const rafRef = useRef<number | null>(null);
   const detailRef = useRef<StartDetail | null>(null);
   const doneRef = useRef(false);
-  // true while the start-of-run controls pane is showing (and through its
-  //   fade-out); FIRE_HIT_HINT stays hidden until this clears.
-  const controlsPaneActiveRef = useRef(false);
-  const controlsPaneTimerRef = useRef<number | null>(null);
 
   const stopLoop = () => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -114,31 +105,9 @@ export const IntroSequence = () => {
       startBeatRef.current = null;
       if (rafRef.current === null) rafRef.current = requestAnimationFrame(loop);
     };
-    const clearControlsPaneTimer = () => {
-      if (controlsPaneTimerRef.current !== null) {
-        window.clearTimeout(controlsPaneTimerRef.current);
-        controlsPaneTimerRef.current = null;
-      }
-    };
-    const onControlsShow = () => {
-      clearControlsPaneTimer();
-      controlsPaneActiveRef.current = true;
-    };
-    const onControlsDismiss = () => {
-      clearControlsPaneTimer();
-      controlsPaneTimerRef.current = window.setTimeout(() => {
-        controlsPaneActiveRef.current = false;
-        controlsPaneTimerRef.current = null;
-      }, CONTROLS_PANE_FADE_MS);
-    };
     window.addEventListener("intro-sequence:start", onStart as EventListener);
-    window.addEventListener("controls-hint:show", onControlsShow);
-    window.addEventListener("controls-hint:dismiss", onControlsDismiss);
     return () => {
       window.removeEventListener("intro-sequence:start", onStart as EventListener);
-      window.removeEventListener("controls-hint:show", onControlsShow);
-      window.removeEventListener("controls-hint:dismiss", onControlsDismiss);
-      clearControlsPaneTimer();
       stopLoop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,13 +119,6 @@ export const IntroSequence = () => {
     const beat = (bt - startBeatRef.current) / BEAT_SEC;
     const detail = detailRef.current;
     if (!detail) { rafRef.current = requestAnimationFrame(loop); return; }
-
-    // FIRE_HIT_HINT can't appear while the start-of-run controls pane is up — its
-    //   on-beat window passes silently if the player hasn't cleared the pane yet.
-    const gate = (text: string, opacity: number): LineState =>
-      text === FIRE_HIT_HINT && controlsPaneActiveRef.current
-        ? { text, opacity: 0 }
-        : { text, opacity };
 
     if (detail.kind === "latency") {
       // beats 0..1 silence to let the black settle, 1..4 fade in, 4..6 hold, 6..8 fade out, then done.
@@ -177,9 +139,9 @@ export const IntroSequence = () => {
       const outFrac = Math.max(0, Math.min(1, (beat - holdEnd) / textFadeOutBeats));
       const outMul = 1 - smooth(outFrac);
       setLines([
-        gate(detail.hints?.[0] ?? "", op0 * outMul),
-        gate(detail.hints?.[1] ?? "", op1 * outMul),
-        gate(detail.hints?.[2] ?? "", op2 * outMul),
+        { text: detail.hints?.[0] ?? "", opacity: op0 * outMul },
+        { text: detail.hints?.[1] ?? "", opacity: op1 * outMul },
+        { text: detail.hints?.[2] ?? "", opacity: op2 * outMul },
         { text: "Become one with the Pulsar", opacity: opClose * outMul },
       ]);
       const bgStart = holdEnd + 4; 
@@ -194,7 +156,7 @@ export const IntroSequence = () => {
       //   (same 4 beats), ending together — the world wakes up the moment the
       //   text starts fading.
       const op = envelope(beat, 0, 1, 4, 2);
-      setLines([gate(detail.hints?.[0] ?? "", op)]);
+      setLines([{ text: detail.hints?.[0] ?? "", opacity: op }]);
       const bgStart = 4;
       const bgFade = 4;
       if (beat >= bgStart) fireUnfreeze();
