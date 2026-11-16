@@ -687,7 +687,7 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     score: 400,
     radius: 30,
     hue: 238,
-    damageReduction: 4,
+    damageReduction: 3,
     outlineSamples: 7,
   },
   solidCrystalSmall: {
