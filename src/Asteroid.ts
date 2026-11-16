@@ -7,6 +7,7 @@ import { ENTITY_CONFIG, ENTITY_STATS, entityStat } from "./game/entityConfig";
 import { SHIP_BODY_RADIUS, SHIP_HALO_OFFSET, SHIP_NOSE_MUL, SHIP_WING_ANGLE, haloReach } from "./ship/shipHitbox";
 import { PRONG_ANGLE_STEP } from "./ship/shipWeapons";
 import { drawGlow } from "./glow";
+import { renderBeatShield } from "./game/beatShieldRender";
 
 const HUE_PALETTE = [185, 200, 220, 250, 280, 310, 330];
 
@@ -6124,8 +6125,6 @@ export class Asteroid {
 
     if (this.kind === "superBassCrystal") this.renderSuperBassPulse(ctx);
 
-    if (isBeatShieldKind(this.kind) && this.beatShieldUp) this.renderBeatShieldPlaceholder(ctx);
-
     // Glass prison: live eye-glow pulse over the baked silhouette. One pair of
     // faint red pinpricks per captive, breathing in and out so the figures
     // inside read as "alive, watching" — and so the player can COUNT what a
@@ -6191,18 +6190,9 @@ export class Asteroid {
 
     this.renderCracks(ctx);
 
-    ctx.restore();
-  }
+    if (isBeatShieldKind(this.kind)) renderBeatShield(ctx, this, time);
 
-  // Placeholder beat shield: one thin additive ring while the shield is up.
-  // The final look is designed separately and should read beatShieldUp /
-  // beatShieldOpen / beatShieldPhase rather than recomputing beat timing.
-  private renderBeatShieldPlaceholder(ctx: CanvasRenderingContext2D) {
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = `hsla(${this.hue}, 90%, 75%, 0.55)`;
-    ctx.beginPath();
-    ctx.arc(0, 0, this.radius * 1.35, 0, TAU);
-    ctx.stroke();
+    ctx.restore();
   }
 
   // Live pulse over the baked purple square, all in square shapes so the void
