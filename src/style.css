@@ -2567,6 +2567,23 @@ li.lb-self .lb-name-link:hover {
   opacity: 1;
 }
 
+#wave-announce .wave-announce__hint {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-top: 18px;
+  transform: translateX(-50%) scaleX(0.82);
+  transform-origin: center;
+  font-size: clamp(13px, 1.45vw, 22px);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: none;
+  white-space: nowrap;
+  color: #c8efff;
+  text-shadow: 0 0 18px rgba(76, 182, 255, 0.35);
+  opacity: 0.9;
+}
+
 /* Wave-clear summary — non-blocking text over the playfield while the next
    wave spawns. Centered on the screen. Each row appears on a beat with a
    paired sound; the bonus drains four ticks per beat with an ascending

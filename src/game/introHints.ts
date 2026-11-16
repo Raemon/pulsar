@@ -25,7 +25,7 @@ const SLOT_2_POOL: readonly string[] = [
   "It's okay to wait.",
   "Patience.",
   "Drift gently.",
-  "Trust your instincts. Also your targeting system.",
+  "Trust your instincts. (Also your targeting system.)",
   "Fire on the beat. Hit on the beat.",
   "Build rhythm, carefully.",
   "Find the rhythm.",
@@ -49,6 +49,36 @@ const SLOT_3_POOL: readonly string[] = [
   "Don't get lost.",
   "Unfold the photo on your cockpit dashboard.",
 ];
+
+// One line under the "Wave N" title, for pilots who have never hit 12×.
+//   Drawn at random each wave, including the Wave 0 title after the first
+//   clear. The line just shown is skipped so two waves don't repeat it.
+const WAVE_INTRO_HINTS: readonly string[] = [
+  "Fire on the beat. Hit on the beat.",
+  "Use your targeting system.",
+  "Drift awhile. Line up the perfect shot.",
+  "Line up the perfect shot.",
+  "Use your side thrusters.",
+  "Fire (and hit) on the beat.",
+  "One shot. One kill.",
+  "Patience. Drift gently.",
+  "Slow down.",
+  "Feel the beat.",
+  "Feel the beat. Fire on the beat. Hit on the beat.",
+  "Slow down and dance with the asteroids.",
+  "Sometimes, the key is to slow down.",
+  "Use retro thrusters to slow down."
+];
+
+let lastWaveIntroHint: string | null = null;
+
+export const waveIntroHint = (): string => {
+  const fresh = WAVE_INTRO_HINTS.filter((hint) => hint !== lastWaveIntroHint);
+  const pool = fresh.length > 0 ? fresh : WAVE_INTRO_HINTS;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  lastWaveIntroHint = pick;
+  return pick;
+};
 
 const SLOT_POOLS: readonly (readonly string[])[] = [SLOT_1_POOL, SLOT_2_POOL, SLOT_3_POOL];
 

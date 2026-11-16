@@ -21,7 +21,8 @@ import { tickWaveEvents } from "./waveEvents";
 import { detonateShockwave } from "./shockwave";
 import { actOfWave } from "./acts";
 import { tickSepulchre } from "./sepulchre";
-import { spawnWave, isBossWave, updateBgBeatIntensity, spawnTutorialSmall, spawnTutorialBig, rhythmSpeedMul, displayWave } from "./waveDirector";
+import { spawnWave, isBossWave, updateBgBeatIntensity, spawnTutorialSmall, spawnTutorialBig, rhythmSpeedMul, displayWave, isVeteranPilot } from "./waveDirector";
+import { waveIntroHint } from "./introHints";
 import { showWaveSummary, hideWaveSummary, buildSummarySchedule, SummarySchedule } from "./waveSummary";
 import { beginWaveTransition, tickWaveTransition } from "./waveTransition";
 import {
@@ -1506,6 +1507,20 @@ export const showWaveAnnounce = (game: Game, wave = game.wave) => {
   }
   const inner = el.firstElementChild as HTMLSpanElement;
   inner.textContent = `Wave ${displayWave(wave)}`;
+  // Skip-cascade titles pass an explicit wave the player never flies; only the
+  //   wave actually entered (wave === game.wave) carries the teaching line.
+  const hintText = wave === game.wave && !isVeteranPilot() ? waveIntroHint() : null;
+  let hintEl = el.querySelector(".wave-announce__hint") as HTMLDivElement | null;
+  if (hintText) {
+    if (!hintEl) {
+      hintEl = document.createElement("div");
+      hintEl.className = "wave-announce__hint";
+      el.appendChild(hintEl);
+    }
+    hintEl.textContent = hintText;
+  } else if (hintEl) {
+    hintEl.textContent = "";
+  }
   el.classList.remove("show");
   void el.offsetWidth;
   el.classList.add("show");
@@ -1588,9 +1603,9 @@ export const advanceWave = (game: Game, targetWave?: number, extraSpawnDelaySec 
     spawnWave(game);
     // Whatever the Warp Cannon swallowed last wave climbs back out now.
     releaseWarpedBodies(game);
-    // The single-target warm-ups carry no numbered banner (the summary already
-    //   read "Wave Complete"); the density waves announce their number as usual.
-    if (!holdForWarmupCrystal) showWaveAnnounce(game);
+    // Rock→crystal stays on internal wave 1, so this banner reads "Wave 0".
+    //   Later spawns announce the density wave they enter.
+    showWaveAnnounce(game);
     syncHud(game);
     game.waveTransitioning = false;
   });
