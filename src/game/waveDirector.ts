@@ -1,5 +1,5 @@
 import type { Game } from "../Game";
-import { Asteroid, AsteroidKind, AsteroidSize, BASS_KINDS, BASS_MEASURE_LENGTH, isBurstGem, isTorusFragment, SIZE_SPAWN_SPEED, spawnAsteroidAtEdge, spawnBossAt } from "../Asteroid";
+import { Asteroid, AsteroidKind, AsteroidSize, BASS_KINDS, BASS_MEASURE_LENGTH, isBeatShieldKind, isBurstGem, isTorusFragment, SIZE_SPAWN_SPEED, spawnAsteroidAtEdge, spawnBossAt } from "../Asteroid";
 import { spawnGemSwarm } from "../Gem";
 import { spawnComet as spawnCometAtEdge, spawnMeteorShower, COMET_LIFETIME, type Comet } from "../Comet";
 import { AlienSize, spawnAlienAtEdge, type Alien } from "../Alien";
@@ -39,6 +39,10 @@ const spawnSpeedRange = (a: Asteroid): [number, number] => {
   const [lo, hi] = SIZE_SPAWN_SPEED[a.size];
   if (a.kind === "solidCrystal") {
     const m = CFG.solidCrystal.largeSpawnSpeedMul;
+    return [lo * m, hi * m];
+  }
+  if (isBeatShieldKind(a.kind)) {
+    const m = CFG.beatShieldCrystal.spawnSpeedMul;
     return [lo * m, hi * m];
   }
   if (a.kind === "glassPrison") {
@@ -296,6 +300,10 @@ export const spawnAsteroidAway = (
   if (a.kind === "solidCrystal") {
     a.vel.x *= CFG.solidCrystal.largeSpawnSpeedMul;
     a.vel.y *= CFG.solidCrystal.largeSpawnSpeedMul;
+  }
+  if (isBeatShieldKind(a.kind)) {
+    a.vel.x *= CFG.beatShieldCrystal.spawnSpeedMul;
+    a.vel.y *= CFG.beatShieldCrystal.spawnSpeedMul;
   }
   if (a.kind === "glassPrison") {
     a.vel.x *= CFG.glassPrison.spawnSpeedMul;
@@ -736,7 +744,8 @@ const spawnFirstLevelDrifter = (
   const pos = v(cx + Math.cos(angle) * dist, cy + Math.sin(angle) * dist);
   // Heavy solid crystals keep their slowdown multiplier on top of the already
   //   gentle opener band.
-  const mul = kind === "solidCrystal" ? CFG.solidCrystal.largeSpawnSpeedMul : 1;
+  const mul = kind === "solidCrystal" ? CFG.solidCrystal.largeSpawnSpeedMul
+    : kind && isBeatShieldKind(kind) ? CFG.beatShieldCrystal.spawnSpeedMul : 1;
   const band: [number, number] = [FIRST_LEVEL_DRIFT.speed[0] * mul, FIRST_LEVEL_DRIFT.speed[1] * mul];
   const speed = rand(band[0], band[1]);
   const vel = v(Math.cos(angle) * speed, Math.sin(angle) * speed);
@@ -856,6 +865,10 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
       : game.wave >= CFG.metalChunk.firstWave && game.wave <= CFG.metalChunk.lastEarlyWave ? CFG.metalChunk.perSpawnChance
       : 0;
     if (metalChunkChance > 0 && rng() < metalChunkChance) { slotKinds.push("metalChunk"); continue; }
+    // Beat-shield crystal: solidCrystal's tier, rolled just ahead of it on the
+    // waves after its guaranteed intro.
+    const isBeatShield = game.wave > CFG.beatShieldCrystal.firstWave && rng() < CFG.beatShieldCrystal.perSpawnChance;
+    if (isBeatShield) { slotKinds.push("beatShieldCrystal"); continue; }
     const isSolid = game.wave > CFG.solidCrystal.firstWave && rng() < CFG.solidCrystal.perSpawnChance;
     if (isSolid) { slotKinds.push("solidCrystal"); continue; }
     const isGem = game.wave > CFG.asteroidWithGem.firstWave && rng() < CFG.asteroidWithGem.perSpawnChance;
@@ -866,8 +879,11 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
   }
   // No guaranteed intro spawn for the burst gem — it's meant to be a rare
   // surprise across display levels 2-9, met only via the low per-rock roll.
-  if (game.wave === CFG.solidCrystal.firstWave && normalCount > 0 && !slotKinds.includes("solidCrystal")) {
-    slotKinds[Math.floor(rng() * normalCount)] = "solidCrystal";
+  // The beat-shield crystal's intro wave gets one guaranteed so the player meets
+  // the on-beat-only shield right away. It took over this slot from
+  // solidCrystal, which no longer has a guaranteed intro — it only rolls.
+  if (game.wave === CFG.beatShieldCrystal.firstWave && normalCount > 0 && !slotKinds.includes("beatShieldCrystal")) {
+    slotKinds[Math.floor(rng() * normalCount)] = "beatShieldCrystal";
   }
   // Introductory glassPrison wave is guaranteed one prison so the player meets
   // the new mechanic right away rather than rolling for it.
@@ -889,10 +905,11 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
   if (game.wave === CFG.torus.firstWave && normalCount > 0 && !slotKinds.includes("torus")) {
     slotKinds[Math.floor(rng() * normalCount)] = "torus";
   }
-  // Rookie warm-up stage 2: the lone wave-1 rock is a single solid crystal —
-  // a gentle first look at the tough faceted kind before the density wave.
+  // Rookie warm-up stage 2: the lone wave-1 rock is a single beat-shield
+  // crystal — a gentle first look at the shot that only lands on the beat
+  // before the density wave.
   if (game.wave === 1 && game.warmupCrystalStage === 2 && normalCount > 0) {
-    slotKinds[0] = "solidCrystal";
+    slotKinds[0] = "beatShieldCrystal";
   }
 
   // Build the concrete spawn descriptors. Special slots (gem / solid / prison)
@@ -904,8 +921,8 @@ const spawnWaveAsteroids = (game: Game, claimed: BeatClaimSet, isFirstLevel: boo
   let normalLargeCount = 0;
   for (const kind of slotKinds) {
     if (kind === "normal") { normalLargeCount++; continue; }
-    // Solid crystal + metal chunk are medium-sized; the other specials spawn large.
-    specialSpawns.push({ kind, size: kind === "solidCrystal" || kind === "metalChunk" ? "medium" : "large" });
+    // Solid / beat-shield crystal + metal chunk are medium-sized; the other specials spawn large.
+    specialSpawns.push({ kind, size: kind === "solidCrystal" || kind === "beatShieldCrystal" || kind === "metalChunk" ? "medium" : "large" });
   }
   // Huge rocks only start appearing at display wave 3 (internal wave 4).
   const allowHuge = displayWave(game.wave) >= 3;

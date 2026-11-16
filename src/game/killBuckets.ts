@@ -15,6 +15,7 @@ export type KillBucket =
   | "asteroidWithGem"
   | "burstGem"
   | "solidCrystal"
+  | "beatShieldCrystal"
   | "metalChunk"
   | "alien_big"
   | "alien_medium"

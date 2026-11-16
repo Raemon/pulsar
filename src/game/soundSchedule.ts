@@ -128,13 +128,16 @@ export const SOUND_LOAD_SCHEDULE: readonly SoundLoadEntry[] = [
   // comboChime keys by fundamental; the low anchors are the first few kills.
   { name: "comboChime", keys: [65.41, 98.0, 146.83], wave: 1 },
   { name: "death", keys: [1], wave: 1 },
-  // The warm-up crystal can appear in wave 1 (waveDirector's warmupCrystalStage),
-  // ahead of solidCrystal's own firstWave. 0.55 is the non-lethal chip.
+  // The warm-up beat-shield crystal can appear in wave 1 (waveDirector's
+  // warmupCrystalStage), ahead of its own firstWave; it and solidCrystal share
+  // these shatters. 0.55 is the non-lethal chip.
   { name: "crystalShatterLarge", keys: [0, 1, 0.55], wave: 1 },
   { name: "crystalShatterSmall", keys: [0, 1, 0.55], wave: 1 },
   // The glassy crystal-asteroid tink. playTink ignores pitchRatio, so the
-  // 0.5–0.9 values collisions.ts passes all land on the one render.
-  { name: "tink", keys: [1], wave: CFG.asteroidWithGem.firstWave },
+  // 0.5–0.9 values collisions.ts passes all land on the one render. Wave 1,
+  // not asteroidWithGem.firstWave: every shot the warm-up beat-shield crystal's
+  // shield deflects tinks.
+  { name: "tink", keys: [1], wave: 1 },
 
   // ── End of wave 1: the summary drain ───────────────────────────────────
   { name: "waveClear", keys: [1], wave: 1 },

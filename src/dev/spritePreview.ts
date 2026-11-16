@@ -11,7 +11,8 @@
 // built and drawn directly; keep it that way — if you find yourself needing
 // something out of Game to preview a body, lift that state onto the entity
 // rather than booting the engine here.
-import { Asteroid, AsteroidKind, AsteroidSize } from "../Asteroid";
+import { Asteroid, AsteroidKind, AsteroidSize, isBeatShieldKind } from "../Asteroid";
+import { BEAT_GRID, BEAT_WINDOW } from "../game/rhythmConstants";
 import { Alien, AlienSize } from "../Alien";
 import { Canister, PowerupKind } from "../Canister";
 import { Gem } from "../Gem";
@@ -59,6 +60,8 @@ const SIZES_FOR: Partial<Record<AsteroidKind, AsteroidSize[]>> = {
   glassPrison: ["large"],
   bigGlassPrison: ["large"],
   solidCrystalSmall: ["small"],
+  beatShieldCrystal: ["medium"],
+  beatShieldCrystalSmall: ["small"],
   burstGemMedium: ["medium"],
   burstGemBig: ["large"],
   metalChunk: ["medium"],
@@ -76,7 +79,7 @@ const SIZES_FOR: Partial<Record<AsteroidKind, AsteroidSize[]>> = {
 // Grouped so the page reads as a contact sheet of the game's material families
 // rather than one flat wall of rocks.
 const ASTEROID_GROUPS: { group: string; kinds: AsteroidKind[] }[] = [
-  { group: "Rock", kinds: ["normal", "asteroidWithGem", "solidCrystal", "solidCrystalSmall"] },
+  { group: "Rock", kinds: ["normal", "asteroidWithGem", "solidCrystal", "solidCrystalSmall", "beatShieldCrystal", "beatShieldCrystalSmall"] },
   { group: "Bassteroid", kinds: ["bassA", "bassB", "bassC", "bassD"] },
   { group: "Phased", kinds: ["citadel", "warble"] },
   { group: "Cathedral", kinds: ["bell", "cathedralKeystone", "glassShard", "columnDrum", "rubbleBlock", "chime"] },
@@ -121,6 +124,13 @@ const makeAsteroid = (group: string, kind: AsteroidKind, size: AsteroidSize): Su
         a.beatPhase = cycle;
         a.beatFlash = Math.max(0, 1 - cycle * 2.6);
         a.haloEcho = Math.max(0, 1 - cycle * 0.85);
+      }
+      // The beat shield, opening and closing on a fake beat clock.
+      if (isBeatShieldKind(a.kind) && opts.phase) {
+        const time = performance.now() / 1000;
+        a.beatShieldPhase = (time - Math.round(time / BEAT_GRID) * BEAT_GRID) / BEAT_WINDOW;
+        a.beatShieldUp = Math.abs(a.beatShieldPhase) > 1;
+        a.beatShieldOpen = Math.max(0, 1 - Math.abs(a.beatShieldPhase));
       }
     },
   };
