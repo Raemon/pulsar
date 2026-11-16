@@ -307,6 +307,25 @@ export const ENTITY_CONFIG = {
     },
   },
 
+  // Beat-shield crystal: a 1 HP crystal that is shielded (fully immune) outside
+  // the beat window and only takes damage from an on-beat hit — then DR 3 still
+  // applies. It takes over solidCrystal's guaranteed intro on firstWave (and the
+  // rookie warm-up rock), then rolls per spawn like solidCrystal afterwards.
+  // Combat stats (hp/score/radius/damageReduction) live in ENTITY_STATS.
+  beatShieldCrystal: {
+    firstWave: 2,
+    perSpawnChance: 0.08,
+    // Slower again than solidCrystal's 0.5, fed to the rhythm aligner scaled.
+    spawnSpeedMul: 0.4,
+    // Both tiers' weight in applyKnockback / bomb bounces (a metalChunk is 16).
+    knockbackMass: 40,
+    // A shove may turn the crystal but never lift it past this speed (px/s) or
+    // its pre-shove speed, whichever is higher — sustained fire can't speed it up.
+    maxShoveSpeed: 45,
+    // Split pieces leave at the parent's speed plus this kick (px/s), unboosted.
+    smallKick: [20, 35] as [number, number],
+  },
+
   // Burst gem — a heavy, chunky solid-gold diamond. Tough in HP terms and almost
   // inert in motion (heavy → drifts in slowly). The killing hit doesn't drop a
   // pickup itself; instead it bursts into a fan of fast-flying collectible Gems,
@@ -694,6 +713,21 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     hp: 2,
     score: 200,
     hue: 238,
+    damageReduction: 3,
+    outlineSamples: 6,
+  },
+  beatShieldCrystal: {
+    hp: 1,
+    score: 450,
+    radius: 30,
+    hue: 320,
+    damageReduction: 3,
+    outlineSamples: 7,
+  },
+  beatShieldCrystalSmall: {
+    hp: 1,
+    score: 225,
+    hue: 320,
     damageReduction: 3,
     outlineSamples: 6,
   },

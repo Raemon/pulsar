@@ -66,7 +66,9 @@ const exchangeMomentum = (b: Bullet, body: Asteroid | Alien | undefined, normal:
   if (!body) return addScaledMut(b.vel, normal, -exchange);
   const bodyShare = BOMB_MASS / (BOMB_MASS + body.knockbackMass());
   const shove = Math.max(exchange * bodyShare, -MAX_SHOVE_SPEED);
+  const speedBefore = Math.hypot(body.vel.x, body.vel.y);
   addScaledMut(body.vel, normal, shove);
+  if ("capShoveSpeed" in body) body.capShoveSpeed(speedBefore);
   addScaledMut(b.vel, normal, shove - exchange);
 };
 

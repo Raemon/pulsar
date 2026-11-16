@@ -2,6 +2,7 @@ import type { Game } from "../Game";
 import { toroidalDelta, cosmeticRand } from "../vec";
 import { rng } from "./rng";
 import { Asteroid } from "../Asteroid";
+import { pingBeatShield } from "./beatShield";
 import { Alien } from "../Alien";
 import { Comet } from "../Comet";
 import { Bullet, BULLET_DAMAGE_BEAT_BOOSTED } from "../Bullet";
@@ -109,7 +110,9 @@ const insufficientDamageHint = (game: Game, a: Asteroid, wasDriftShot: boolean):
 // tier — a bounced on-beat shot is still on-beat if it goes on to land elsewhere.
 // Half the momentum the blocked damage *would* have transferred still shoves the
 // crystal, so a fully-armoured rock can still be nudged by sustained fire.
-const deflectBulletOff = (game: Game, b: Bullet, a: Asteroid, blockedDmg: number, wasDriftShot: boolean) => {
+// `shielded`: a beat-shield crystal's shield ate the shot — no shove at all, and
+// the tip teaches the beat rather than damage.
+const deflectBulletOff = (game: Game, b: Bullet, a: Asteroid, blockedDmg: number, wasDriftShot: boolean, shielded = false) => {
   let [nx, ny] = toroidalDelta(b.pos.x - a.pos.x, b.pos.y - a.pos.y, game.w, game.h);
   const len = Math.hypot(nx, ny) || 1;
   nx /= len;
@@ -124,7 +127,7 @@ const deflectBulletOff = (game: Game, b: Bullet, a: Asteroid, blockedDmg: number
     b.vel.x -= 2 * vdotn * nx;
     b.vel.y -= 2 * vdotn * ny;
   }
-  if (!b.hasAppliedKnockback) {
+  if (!b.hasAppliedKnockback && !shielded) {
     b.hasAppliedKnockback = true;
     a.applyKnockback(inVx, inVy, blockedDmg * 0.5);
   }
@@ -151,7 +154,7 @@ const deflectBulletOff = (game: Game, b: Bullet, a: Asteroid, blockedDmg: number
   if (wasDriftShot ? !a.driftGlanceTipShown : !a.glanceTipShown) {
     a.glanceTipShown = true;
     if (wasDriftShot) a.driftGlanceTipShown = true;
-    game.popups.push(popupInsufficientDamage(b.pos, insufficientDamageHint(game, a, wasDriftShot)));
+    game.popups.push(popupInsufficientDamage(b.pos, shielded ? "SHIELDED — HIT IT ON THE BEAT" : insufficientDamageHint(game, a, wasDriftShot)));
   }
 };
 
@@ -179,6 +182,12 @@ const hitAsteroidWithBullets = (game: Game, a: Asteroid): Asteroid[] | null => {
     // drift tier scales the bonus: tier1→2× … tier6→7× damage (was a flat 4×).
     const driftTier = onBeat ? b.driftTierAtHit() : 0;
     const dmg = b.damage() * (driftTier > 0 ? driftTier + 1 : 1);
+    // A beat-shield crystal's shield eats any hit that isn't on-beat — checked
+    // before the swallow below, so a Warp Cannon shot can't bypass it either.
+    if (a.beatShieldBlocks(onBeat)) {
+      deflectBulletOff(game, b, a, dmg, driftTier > 0, true);
+      return null;
+    }
     // Peek at the outcome before consuming the bullet: a hit too weak to break
     // the target's armour deflects instead of landing — no damage, no combo,
     // and the shot ricochets off the surface so it can travel on. Armour is
@@ -260,7 +269,9 @@ const nearestShipImage = (game: Game, pos: { x: number; y: number }) => {
 // encapsulates the in-place splice when a ram kills, so the outer loop stays a simple sweep.
 const handleSingleShipAsteroidImpact = (game: Game, a: Asteroid, asteroidIdx: number) => {
   const ramDamage = 4;
-  const { killed } = a.applyDamage(ramDamage, false, game.ship.pos);
+  // Contact has no fire time, so a ram is on-beat if it lands in a beat window.
+  const shielded = a.beatShieldBlocks(isInBeatWindow(game, game.perceivedBeatTime));
+  const { killed } = shielded ? { killed: false } : a.applyDamage(ramDamage, false, game.ship.pos);
   if (killed) {
     const children = onAsteroidKilledByRam(game, a, game.ship.vel);
     for (const c of children) game.asteroids.push(c);
@@ -270,7 +281,8 @@ const handleSingleShipAsteroidImpact = (game: Game, a: Asteroid, asteroidIdx: nu
     // gentle bump barely nudges a rock and a full-speed slam shoves it hard.
     const shipSpeed = Math.hypot(game.ship.vel.x, game.ship.vel.y);
     a.applyKnockback(game.ship.vel.x, game.ship.vel.y, ramDamage, shipSpeed);
-    onAsteroidCrackedByRam(game, a);
+    if (shielded) pingBeatShield(game, a, game.ship.pos);
+    else onAsteroidCrackedByRam(game, a);
   }
   if (game.ship.shieldActive) {
     game.ship.shieldActive = false;
@@ -360,6 +372,10 @@ const alienBulletDamagesAsteroid = (game: Game, ab: AlienBullet): boolean => {
     const a = game.asteroids[i];
     if (a === ab.owner) continue;
     if (!a.collidesWith(ab.pos, ab.radius)) continue;
+    if (a.beatShieldBlocks(isInBeatWindow(game, game.perceivedBeatTime))) {
+      pingBeatShield(game, a, ab.pos);
+      return true;
+    }
     const { killed } = a.applyDamage(1, false, ab.pos);
     game.shake = Math.min(game.shake + (killed ? 0.3 : 0.15), 1.2);
     if (killed) {

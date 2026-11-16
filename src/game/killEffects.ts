@@ -1,5 +1,5 @@
 import type { Game } from "../Game";
-import { Asteroid, isBurstGem, isGlassPrison, isMetalHull, isPhasedKind } from "../Asteroid";
+import { Asteroid, isBurstGem, isGlassPrison, isMetalHull, isPhasedKind, isBeatShieldKind } from "../Asteroid";
 import { Alien } from "../Alien";
 import { AlienBullet } from "../AlienBullet";
 import { Comet } from "../Comet";
@@ -70,6 +70,7 @@ const asteroidBucket = (a: Asteroid): KillBucket => {
   if (a.kind === "asteroidWithGem") return "asteroidWithGem";
   if (isBurstGem(a.kind)) return "burstGem";
   if (a.kind === "solidCrystal" || a.kind === "solidCrystalSmall") return "solidCrystal";
+  if (isBeatShieldKind(a.kind)) return "beatShieldCrystal";
   if (isMetalHull(a.kind) || a.isSuperBassCrystal()) return "metalChunk";
   if (isGlassPrison(a.kind)) return "glassPrison";
   if (a.kind === "wraith") return "wraith";
@@ -88,8 +89,8 @@ export const hitSoundFor = (
   // Solid crystal asteroids shatter like cut glass — the whole body IS the
   // gem, so a noise explosion would feel wrong. Large parent + small frags
   // each get their own size-scaled shatter.
-  if (a.kind === "solidCrystal") return "crystalShatterLarge";
-  if (a.kind === "solidCrystalSmall" || a.kind === "superBassCrystal") return "crystalShatterSmall";
+  if (a.kind === "solidCrystal" || a.kind === "beatShieldCrystal") return "crystalShatterLarge";
+  if (a.kind === "solidCrystalSmall" || a.kind === "beatShieldCrystalSmall" || a.kind === "superBassCrystal") return "crystalShatterSmall";
   // gold gem is a big cut-crystal body; its shards shatter small.
   if (isBurstGem(a.kind)) return "crystalShatterLarge";
   // A cathedral glass shard is still lit stained glass — it rings/shatters
@@ -355,7 +356,7 @@ export const shatterSpeedMul = (game: Game): number => {
 
 // Boss fans are choreographed; metal wedges (and the crystal they free) are meant to linger.
 const isShatterBoostExempt = (c: Asteroid): boolean =>
-  c.isBossFamily() || c.kind === "metalShard" || c.kind === "superBassCrystal";
+  c.isBossFamily() || c.kind === "metalShard" || c.kind === "superBassCrystal" || isBeatShieldKind(c.kind);
 
 // Scale only the outward kick relative to the parent — scaling the whole velocity
 //   would compound each split generation, since children inherit the parent's speed.

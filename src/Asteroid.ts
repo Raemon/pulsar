@@ -163,7 +163,16 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // lightning source on those beats — an on-beat kill that lands on its pulse
 // arcs from it and pays its resonance bounty, exactly like a Bassteroid piece.
 // Rare across display-levels 5-9, then a common obstacle afterwards.
-export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard" | "superBassCrystal";
+//
+// "beatShieldCrystal" is a slow, heavy 1 HP crystal behind DR 3 that is
+// shielded — immune to everything — outside the beat window. Only an on-beat
+// hit (fired and landed inside the window) reaches its armour. It breaks into
+// 2 "beatShieldCrystalSmall" pieces with the same shield; smalls don't split.
+// game/beatShield.ts owns the shield state renderers read.
+export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard" | "superBassCrystal" | "beatShieldCrystal" | "beatShieldCrystalSmall";
+
+export const isBeatShieldKind = (kind: AsteroidKind): boolean =>
+  kind === "beatShieldCrystal" || kind === "beatShieldCrystalSmall";
 
 // Phased kinds share the ghost render path and phase drone. bassClock drives
 // the warble's cosine and the citadel/bearer's longer square cycles.
@@ -1139,6 +1148,7 @@ const fragmentsScore = (kind: AsteroidKind, size: AsteroidSize, splitLevel: numb
   if (kind === "citadel") return 3 * whole("warble", "large");
   if (kind === "metalChunk") return 2 * whole("metalShard", "small") + whole("superBassCrystal", "small");
   if (kind === "solidCrystal") return 2 * whole("solidCrystalSmall", "small");
+  if (kind === "beatShieldCrystal") return 2 * whole("beatShieldCrystalSmall", "small");
   if (kind === "bell") {
     return sum(
       size === "large" ? ["glassShard", "cathedralKeystone", "columnDrum", "rubbleBlock"]
@@ -1154,7 +1164,7 @@ const fragmentsScore = (kind: AsteroidKind, size: AsteroidSize, splitLevel: numb
   }
   if (
     kind === "wraith" || kind === "torusChunk" || kind === "superBassCrystal" || kind === "metalShard"
-    || kind === "solidCrystalSmall" || kind === "bossPlate" || kind === "bossIrisShard" || kind === "bossEmber"
+    || kind === "solidCrystalSmall" || kind === "beatShieldCrystalSmall" || kind === "bossPlate" || kind === "bossIrisShard" || kind === "bossEmber"
     || isBurstGem(kind) || CATHEDRAL_DEBRIS_KINDS.includes(kind) || size === "small"
   ) return 0;
   // splitRegular, at its larger recipe where it rolls one: a gem-bearing large
@@ -1481,6 +1491,18 @@ export class Asteroid {
   // flag only swaps paintSolidCrystalBody's material.
   isPrisonShard = false;
 
+  // Beat-shield render state, written every frame by game/beatShield.ts
+  // (tickBeatShields) off perceivedBeatTime; constant on every other kind.
+  // Visual only — damage is gated per hit on that hit's own onBeat judgement
+  // (beatShieldBlocks), never on these.
+  //   beatShieldUp: true outside the beat window (shield closed / immune).
+  //   beatShieldOpen: 0..1 — 0 at and outside the window edges, 1 dead on the beat.
+  //   beatShieldPhase: signed beats-from-centre in window half-widths — −1 as
+  //     the window opens, 0 on the beat, +1 as it closes; |x| > 1 outside it.
+  beatShieldUp = true;
+  beatShieldOpen = 0;
+  beatShieldPhase = -2;
+
   constructor(pos: Vec, vel: Vec, size: AsteroidSize, hue?: number, kind: AsteroidKind = "normal", inheritBass?: BassShip) {
     this.pos = pos;
     this.vel = vel;
@@ -1776,7 +1798,7 @@ export class Asteroid {
       // treatment as the burst gems) so the crisp diamond points survive.
       freqs = [3, 5];
       ampScale = 0.5;
-    } else if (kind === "solidCrystal" || kind === "solidCrystalSmall") {
+    } else if (kind === "solidCrystal" || kind === "solidCrystalSmall" || isBeatShieldKind(kind)) {
       // Pure crystal: a low harmonic count + low outlineSamples (set in the
       // constructor) make the silhouette a hard-edged polygon. Avoid any
       // freq that divides outlineSamples (7 for large, 6 for small) — those
@@ -1939,7 +1961,7 @@ export class Asteroid {
     if (this.kind === "warble") this.paintWarbleBody(ctx);
     if (isCitadel) this.paintCitadelShell(ctx);
     if (this.kind === "asteroidWithGem") this.paintEmbeddedGem(ctx);
-    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall") this.paintSolidCrystalBody(ctx);
+    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isBeatShieldKind(this.kind)) this.paintSolidCrystalBody(ctx);
     if (isBurstGem(this.kind)) this.paintBurstGemBody(ctx);
     if (isGlassPrison(this.kind)) this.paintGlassPrisonBody(ctx);
     if (this.kind === "bell") this.paintCathedralFragmentBody(ctx);
@@ -3717,7 +3739,7 @@ export class Asteroid {
       ctx.closePath();
     };
     // Small variant is more fragile — render with a thinner shell rim.
-    const isSmall = this.kind === "solidCrystalSmall";
+    const isSmall = this.kind === "solidCrystalSmall" || this.kind === "beatShieldCrystalSmall";
     // Outer dark shell — gives the rim visible depth before the bright band.
     ctx.strokeStyle = `hsla(${H - 10}, 70%, 22%, 0.85)`;
     ctx.lineWidth = isSmall ? 2.0 : 4.5;
@@ -4333,7 +4355,7 @@ export class Asteroid {
   }
 
   computeOutline(): number[] {
-    const isClamped = this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
+    const isClamped = this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isBeatShieldKind(this.kind) || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
     const isDiamond = isDiamondCut(this.kind) || this.isPrisonShard;
     const isCube = isSquareKind(this.kind);
     const isWedge = this.kind === "warble";
@@ -4364,7 +4386,7 @@ export class Asteroid {
     }
     // Mirror the clamp in computeOutline so the collision surface matches
     // the visible silhouette for the high-amp crystal / cathedral harmonics.
-    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal") {
+    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isBeatShieldKind(this.kind) || isGlassPrison(this.kind) || this.kind === "bell" || isBurstGem(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal") {
       r = Math.max(0.45, Math.min(1.55, r));
     }
     if (isDiamondCut(this.kind) || this.isPrisonShard) r *= this.diamondProfile(angle);
@@ -4493,10 +4515,34 @@ export class Asteroid {
   applyKnockback(dirX: number, dirY: number, amount: number, referenceSpeed: number = 120) {
     const len = Math.hypot(dirX, dirY);
     if (len === 0) return;
+    const speedBefore = Math.hypot(this.vel.x, this.vel.y);
     const fraction = Math.min(1, amount / this.knockbackMass());
     const dv = fraction * referenceSpeed;
     this.vel.x += (dirX / len) * dv;
     this.vel.y += (dirY / len) * dv;
+    this.capShoveSpeed(speedBefore);
+  }
+
+  // Beat-shield crystals stay a slow drift however hard they're shoved: a push
+  // may turn one but never lift it past max(maxShoveSpeed, its pre-shove speed).
+  // No-op for every other kind. Callers that write vel directly (bomb bounces)
+  // pass the speed they read before writing.
+  capShoveSpeed(speedBefore: number) {
+    if (!isBeatShieldKind(this.kind)) return;
+    const cap = Math.max(ENTITY_CONFIG.beatShieldCrystal.maxShoveSpeed, speedBefore);
+    const speed = Math.hypot(this.vel.x, this.vel.y);
+    if (speed <= cap) return;
+    this.vel.x *= cap / speed;
+    this.vel.y *= cap / speed;
+  }
+
+  // True when a hit should glance off a beat-shield crystal's shield. `onBeat`
+  // is the hit's own on-beat judgement — for a bullet or beam that's "fired in
+  // a beat window AND landed in one" (collisions.isHitOnBeat), for a bomb the
+  // detonating press, and for contact damage (ram, alien fire) just whether
+  // perceivedBeatTime is in a window at impact.
+  beatShieldBlocks(onBeat: boolean): boolean {
+    return isBeatShieldKind(this.kind) && !onBeat;
   }
 
   update(dt: number, w: number, h: number) {
@@ -5084,6 +5130,7 @@ export class Asteroid {
 
   // Counting damageReduction keeps a low-hp armoured crystal from weighing nothing.
   knockbackMass(): number {
+    if (isBeatShieldKind(this.kind)) return ENTITY_CONFIG.beatShieldCrystal.knockbackMass;
     return Math.max(1, this.maxHp + this.damageReduction);
   }
 
@@ -5666,6 +5713,32 @@ export class Asteroid {
       return fragmentList;
     }
     if (this.kind === "solidCrystalSmall") return [];
+    // Beat-shield crystal: same 2-piece forward fan as the solid crystal, but
+    // the pieces stay heavy and slow — parent speed plus a small kick, no fast
+    // shard burst — and keep the beat shield.
+    if (this.kind === "beatShieldCrystal") {
+      const baseAngle = impactDir
+        ? Math.atan2(impactDir.y, impactDir.x)
+        : Math.atan2(this.vel.y, this.vel.x);
+      const parentSpeed = Math.hypot(this.vel.x, this.vel.y);
+      const ejectDist = this.radius * 0.55;
+      const [kickLo, kickHi] = ENTITY_CONFIG.beatShieldCrystal.smallKick;
+      const fanOffsets = [-0.7, 0.7];
+      const fragmentList: Asteroid[] = [];
+      for (const offset of fanOffsets) {
+        const childAngle = baseAngle + offset + rand(-0.12, 0.12);
+        const childPos = {
+          x: this.pos.x + Math.cos(childAngle) * ejectDist,
+          y: this.pos.y + Math.sin(childAngle) * ejectDist,
+        };
+        const speedMag = parentSpeed + rand(kickLo, kickHi);
+        const child = new Asteroid(childPos, fromAngle(childAngle, speedMag), "small", this.hue, "beatShieldCrystalSmall");
+        child.rotSpeed = rand(0.6, 1.2) * (rng() < 0.5 ? -1 : 1);
+        fragmentList.push(child);
+      }
+      return fragmentList;
+    }
+    if (this.kind === "beatShieldCrystalSmall") return [];
     // Burst gem: emits no asteroid fragments. Its whole payout is a fan of
     // fast-flying Gem pickups, spawned in killEffects (which has the gem array
     // and the killing-shot direction).
@@ -6051,6 +6124,8 @@ export class Asteroid {
 
     if (this.kind === "superBassCrystal") this.renderSuperBassPulse(ctx);
 
+    if (isBeatShieldKind(this.kind) && this.beatShieldUp) this.renderBeatShieldPlaceholder(ctx);
+
     // Glass prison: live eye-glow pulse over the baked silhouette. One pair of
     // faint red pinpricks per captive, breathing in and out so the figures
     // inside read as "alive, watching" — and so the player can COUNT what a
@@ -6117,6 +6192,17 @@ export class Asteroid {
     this.renderCracks(ctx);
 
     ctx.restore();
+  }
+
+  // Placeholder beat shield: one thin additive ring while the shield is up.
+  // The final look is designed separately and should read beatShieldUp /
+  // beatShieldOpen / beatShieldPhase rather than recomputing beat timing.
+  private renderBeatShieldPlaceholder(ctx: CanvasRenderingContext2D) {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `hsla(${this.hue}, 90%, 75%, 0.55)`;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius * 1.35, 0, TAU);
+    ctx.stroke();
   }
 
   // Live pulse over the baked purple square, all in square shapes so the void
