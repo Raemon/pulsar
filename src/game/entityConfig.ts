@@ -720,16 +720,16 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     hp: 1,
     score: 450,
     radius: 30,
-    hue: 320,
+    hue: 222,
     damageReduction: 3,
-    outlineSamples: 7,
+    outlineSamples: 16,
   },
   beatShieldCrystalSmall: {
     hp: 1,
     score: 225,
-    hue: 320,
+    hue: 222,
     damageReduction: 3,
-    outlineSamples: 6,
+    outlineSamples: 16,
   },
 
   // Solid gold — gem and shards share the cut-gold material; tiers differ in

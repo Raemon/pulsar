@@ -165,7 +165,7 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // arcs from it and pays its resonance bounty, exactly like a Bassteroid piece.
 // Rare across display-levels 5-9, then a common obstacle afterwards.
 //
-// "beatShieldCrystal" is a slow, heavy 1 HP crystal behind DR 3 that is
+// "beatShieldCrystal" is a slow, heavy 1 HP deep-blue crystal cube behind DR 3 that is
 // shielded — immune to everything — outside the beat window. Only an on-beat
 // hit (fired and landed inside the window) reaches its armour. It breaks into
 // 2 "beatShieldCrystalSmall" pieces with the same shield; smalls don't split.
@@ -371,7 +371,7 @@ export const isDiamondCut = (kind: AsteroidKind): boolean => isBurstGem(kind) ||
 // The two hull-metal tiers share the plate material, DR 8 armour, and the
 // opaque steel render; they differ only in size and whether they split further.
 export const isMetalHull = (kind: AsteroidKind): boolean => kind === "metalChunk" || kind === "metalShard";
-const isSquareKind = (kind: AsteroidKind): boolean => kind === "metalChunk" || kind === "superBassCrystal";
+const isSquareKind = (kind: AsteroidKind): boolean => kind === "metalChunk" || kind === "superBassCrystal" || isBeatShieldKind(kind);
 
 // The cathedral ("bell") asteroid rolls one of these archetypes at spawn. Each
 // reads as a different fragment of a civilization's basilica carved out of the
@@ -1799,7 +1799,7 @@ export class Asteroid {
       // treatment as the burst gems) so the crisp diamond points survive.
       freqs = [3, 5];
       ampScale = 0.5;
-    } else if (kind === "solidCrystal" || kind === "solidCrystalSmall" || isBeatShieldKind(kind)) {
+    } else if (kind === "solidCrystal" || kind === "solidCrystalSmall") {
       // Pure crystal: a low harmonic count + low outlineSamples (set in the
       // constructor) make the silhouette a hard-edged polygon. Avoid any
       // freq that divides outlineSamples (7 for large, 6 for small) — those
@@ -1819,7 +1819,7 @@ export class Asteroid {
       // the 8 samples.
       freqs = [3, 5];
       ampScale = 0.5;
-    } else if (kind === "superBassCrystal") {
+    } else if (kind === "superBassCrystal" || isBeatShieldKind(kind)) {
       // cubeProfile carries a clean square; the harmonics only pick its tilt,
       // so the amplitude is near zero to keep the faces dead flat.
       freqs = [1, 3, 5];
@@ -1884,7 +1884,7 @@ export class Asteroid {
     // / filament veins / nuclei cores that would otherwise make them "alive".
     // Metal hull is likewise inert plate: it paints its own opaque steel body,
     // and the purple square freed from it its own opaque body.
-    const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
+    const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal" || isBeatShieldKind(this.kind);
     // The fortress kinds lay down their own laminated armour body instead — the
     // soft membrane/filament pass would read organic under the plate bands, and
     // its bright baked nuclei would bleed up through the stone. Both paint their
@@ -1962,7 +1962,8 @@ export class Asteroid {
     if (this.kind === "warble") this.paintWarbleBody(ctx);
     if (isCitadel) this.paintCitadelShell(ctx);
     if (this.kind === "asteroidWithGem") this.paintEmbeddedGem(ctx);
-    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall" || isBeatShieldKind(this.kind)) this.paintSolidCrystalBody(ctx);
+    if (this.kind === "solidCrystal" || this.kind === "solidCrystalSmall") this.paintSolidCrystalBody(ctx);
+    if (isBeatShieldKind(this.kind)) this.paintBeatCubeBody(ctx);
     if (isBurstGem(this.kind)) this.paintBurstGemBody(ctx);
     if (isGlassPrison(this.kind)) this.paintGlassPrisonBody(ctx);
     if (this.kind === "bell") this.paintCathedralFragmentBody(ctx);
@@ -3466,6 +3467,106 @@ export class Asteroid {
     ctx.restore();
   }
 
+  // The beat-shield cube: deep sapphire glass. The tungsten block's fan-facet
+  // lighting, saturated and lit from within by a dim core so the bare cube
+  // reads as crystal rather than metal when its shield drops.
+  private paintBeatCubeBody(ctx: CanvasRenderingContext2D) {
+    const H = this.hue, R = this.radius;
+    const lightX = -0.7, lightY = -0.72;
+    const n = this.outlineSamples;
+    const vert = (i: number): { x: number; y: number } => {
+      const k = (i % n + n) % n;
+      const a = (k / n) * TAU;
+      return { x: Math.cos(a) * this.outline[k], y: Math.sin(a) * this.outline[k] };
+    };
+    const facingOf = (x: number, y: number) => {
+      const l = Math.hypot(x, y) || 1;
+      return (x / l) * lightX + (y / l) * lightY;
+    };
+    ctx.save();
+    this.traceOutline(ctx);
+    ctx.clip();
+    ctx.globalCompositeOperation = "source-over";
+
+    const body = ctx.createRadialGradient(-R * 0.32, -R * 0.42, R * 0.05, 0, 0, R * 1.4);
+    body.addColorStop(0, `hsla(${H - 6}, 80%, 38%, 1)`);
+    body.addColorStop(0.5, `hsla(${H + 2}, 85%, 18%, 1)`);
+    body.addColorStop(1, `hsla(${H + 10}, 90%, 7%, 1)`);
+    ctx.fillStyle = body;
+    ctx.fillRect(-R * 1.5, -R * 1.5, R * 3, R * 3);
+
+    for (let i = 0; i < n; i++) {
+      const p0 = vert(i), p1 = vert(i + 1);
+      const f = facingOf(p0.x + p1.x, p0.y + p1.y);
+      const L = Math.max(6, 10 + Math.max(0, f) * 30 + Math.min(0, f) * 6);
+      ctx.fillStyle = `hsla(${H - f * 6}, ${78 + Math.max(0, f) * 10}%, ${L}%, 0.55)`;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = "lighter";
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.75);
+    core.addColorStop(0, `hsla(${H - 14}, 95%, 55%, 0.24)`);
+    core.addColorStop(1, `hsla(${H - 14}, 95%, 50%, 0)`);
+    ctx.fillStyle = core;
+    ctx.fillRect(-R, -R, R * 2, R * 2);
+    ctx.globalCompositeOperation = "source-over";
+
+    // Creases only at the cube's corners, where the outline turns sharply.
+    const edgeAngle = (i: number) => {
+      const p0 = vert(i), p1 = vert(i + 1);
+      return Math.atan2(p1.y - p0.y, p1.x - p0.x);
+    };
+    for (let i = 0; i < n; i++) {
+      let turn = edgeAngle(i) - edgeAngle(i - 1);
+      while (turn > Math.PI) turn -= TAU;
+      while (turn < -Math.PI) turn += TAU;
+      if (Math.abs(turn) < 0.45) continue;
+      const p = vert(i);
+      const lit = facingOf(p.x, p.y) > 0.2;
+      ctx.strokeStyle = lit ? `hsla(${H - 12}, 80%, 78%, 0.45)` : `hsla(${H + 6}, 90%, 4%, 0.6)`;
+      ctx.lineWidth = lit ? 1 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(p.x * 0.1, p.y * 0.1);
+      ctx.lineTo(p.x * 0.92, p.y * 0.92);
+      ctx.stroke();
+    }
+
+    const spec = ctx.createRadialGradient(-R * 0.4, -R * 0.46, 0, -R * 0.4, -R * 0.46, R * 0.4);
+    spec.addColorStop(0, `hsla(${H - 20}, 70%, 88%, 0.5)`);
+    spec.addColorStop(0.4, `hsla(${H - 12}, 70%, 66%, 0.16)`);
+    spec.addColorStop(1, `hsla(${H}, 70%, 50%, 0)`);
+    ctx.fillStyle = spec;
+    ctx.fillRect(-R, -R, R * 1.2, R * 1.2);
+
+    let best = vert(0), bestF = -2;
+    for (let i = 0; i < n; i++) {
+      const p = vert(i);
+      const f = facingOf(p.x, p.y);
+      if (f > bestF) { bestF = f; best = p; }
+    }
+    ctx.fillStyle = `hsla(${H - 24}, 60%, 95%, 0.75)`;
+    ctx.beginPath();
+    ctx.arc(best.x * 0.9, best.y * 0.9, Math.max(1.1, R * 0.05), 0, TAU);
+    ctx.fill();
+
+    ctx.lineJoin = "miter";
+    ctx.miterLimit = 4;
+    ctx.strokeStyle = `hsla(${H + 6}, 80%, 3%, 0.96)`;
+    ctx.lineWidth = 3.2;
+    this.traceOutline(ctx);
+    ctx.stroke();
+    ctx.strokeStyle = `hsla(${H - 12}, 85%, 72%, 0.6)`;
+    ctx.lineWidth = 1.1;
+    this.traceOutline(ctx, 0.95);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // The superBassCrystal: a flat slab of void, far darker than the tungsten it
   // came out of. Near-black fill with only the faintest upper-left lift, and a
   // hairline cold edge so the square still separates from the starfield. The
@@ -4294,7 +4395,7 @@ export class Asteroid {
     return 1 / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
   }
 
-  private squareTilt(): number {
+  squareTilt(): number {
     const step = TAU / this.outlineSamples;
     const rawTilt = this.harmonics.reduce((s, h) => s + h.phase * h.freq, 0);
     return Math.round(rawTilt / step) * step;
@@ -6098,7 +6199,7 @@ export class Asteroid {
     // Cathedral pieces are dead derelict stone — blit opaque like a solid plate
     // so the rock sits against the starfield instead of glowing through it.
     // Metal hull and its purple square are the same: drawn opaque, not glowing through.
-    const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal";
+    const isArchitectural = this.kind === "bell" || this.kind === "pallbearer" || CATHEDRAL_DEBRIS_KINDS.includes(this.kind) || isMetalHull(this.kind) || this.kind === "superBassCrystal" || isBeatShieldKind(this.kind);
     ctx.globalCompositeOperation = isArchitectural ? "source-over" : "lighter";
 
     // A warble dims its whole body toward the void as it phases out. Under the

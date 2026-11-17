@@ -1,4 +1,5 @@
 import type { Game } from "../Game";
+import { noteRhythmComboClimb } from "./waveDirector";
 import type { Bullet } from "../Bullet";
 import { Vec } from "../vec";
 import { BEAT_GRID, FAR_SHOT_BIG_BEATS, FAR_SHOT_MIN_BEATS, FAR_SHOT_POINTS } from "./rhythmConstants";
@@ -194,6 +195,7 @@ const awardRhythmBonus = (game: Game, entry: Game["pendingRhythmBonuses"][number
   game.beatCombo += 1;
   if (game.beatCombo > game.maxCombo) game.maxCombo = game.beatCombo;
   if (game.beatCombo > game.maxComboThisWave) game.maxComboThisWave = game.beatCombo;
+  noteRhythmComboClimb(game, game.beatCombo - 1);
   syncComboHud(game);
   game.sound.playComboChime(game.beatCombo, entry.pos);
   game.popups.push(popupCombo(entry.pos, game.beatCombo));

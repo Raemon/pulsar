@@ -21,7 +21,7 @@ import { tickWaveEvents } from "./waveEvents";
 import { detonateShockwave } from "./shockwave";
 import { actOfWave } from "./acts";
 import { tickSepulchre } from "./sepulchre";
-import { spawnWave, isBossWave, updateBgBeatIntensity, spawnTutorialSmall, spawnTutorialBig, rhythmSpeedMul, displayWave, isVeteranPilot } from "./waveDirector";
+import { spawnWave, isBossWave, updateBgBeatIntensity, spawnTutorialSmall, spawnTutorialBig, rhythmSpeedMul, displayWave, isVeteranPilot, noteRhythmComboClimb } from "./waveDirector";
 import { waveIntroHint } from "./introHints";
 import { showWaveSummary, hideWaveSummary, buildSummarySchedule, SummarySchedule } from "./waveSummary";
 import { beginWaveTransition, tickWaveTransition } from "./waveTransition";
@@ -1003,6 +1003,7 @@ const awardDriftBonus = (game: Game, entry: Game["pendingDriftBonuses"][number])
   game.beatCombo += entry.amount;
   if (game.beatCombo > game.maxCombo) game.maxCombo = game.beatCombo;
   if (game.beatCombo > game.maxComboThisWave) game.maxComboThisWave = game.beatCombo;
+  noteRhythmComboClimb(game, game.beatCombo - entry.amount);
   game.driftBonusesThisWave += 1;
   syncComboHud(game);
   game.sound.playComboChime(game.beatCombo, entry.pos);
@@ -1520,6 +1521,10 @@ export const showWaveAnnounce = (game: Game, wave = game.wave) => {
   } else if (hintEl) {
     hintEl.textContent = "";
   }
+  // Lift the title by the hint's footprint so the hint, not the title, now
+  //   sits where the bare title would — the gap to the ship stays the same.
+  const hintLift = hintText && hintEl ? hintEl.offsetHeight + parseFloat(getComputedStyle(hintEl).marginTop) : 0;
+  el.style.setProperty("--hint-lift", `${hintLift}px`);
   el.classList.remove("show");
   void el.offsetWidth;
   el.classList.add("show");
