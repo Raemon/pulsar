@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadBeatOffset, clampBeatOffset } from "../game/beatCalibration";
 import { getRecentName, saveRecentName } from "../game/highscores";
+import { isVeteranPilot, setVeteranPilot } from "../game/veteran";
 import {
   CHANNEL_LABELS,
   CHANNEL_ORDER,
@@ -27,8 +28,8 @@ import {
 // Settings panel opened by the HUD gear. Two tabs:
 //   Audio    — per-channel volume + rhythm latency calibration
 //   Controls — keyboard bindings
-// Callsign sits above the tab strip so it's always editable regardless of
-// which tab is open.
+// Callsign and the Show Tutorial toggle sit above the tab strip so they're
+// always reachable regardless of which tab is open.
 
 const OFFSET_MIN_MS = -200;
 const OFFSET_MAX_MS = 350;
@@ -49,6 +50,7 @@ export const SettingsDialog = () => {
   const [tab, setTab] = useState<Tab>("audio");
   const [offsetMs, setOffsetMs] = useState(0);
   const [callsign, setCallsign] = useState("");
+  const [showTutorial, setShowTutorial] = useState(() => !isVeteranPilot());
   const [bindings, setBindings] = useState<Bindings>(() => getBindings());
   const [volumes, setVolumes] = useState<Record<AudioChannel, number>>(() => ({
     basePulse: getChannelVolume("basePulse"),
@@ -63,6 +65,7 @@ export const SettingsDialog = () => {
   const openDialog = () => {
     setOffsetMs(Math.round((loadBeatOffset() ?? 0) * 1000));
     setCallsign(getRecentName());
+    setShowTutorial(!isVeteranPilot());
     setBindings(getBindings());
     setVolumes({
       basePulse: getChannelVolume("basePulse"),
@@ -222,6 +225,17 @@ export const SettingsDialog = () => {
               placeholder="—"
               onChange={(e) => updateCallsign(e.target.value)}
             />
+          </label>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={showTutorial}
+              onChange={(e) => {
+                setShowTutorial(e.target.checked);
+                setVeteranPilot(!e.target.checked);
+              }}
+            />
+            <span>Show Tutorial</span>
           </label>
         </section>
 

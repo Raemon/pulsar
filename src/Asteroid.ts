@@ -173,6 +173,9 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // game/beatShield.ts owns the shield state renderers read.
 export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard" | "superBassCrystal" | "beatShieldCrystal" | "beatShieldCrystalSmall";
 
+// The beat cube's flat table face, as a fraction of its half-side.
+export const BEAT_CUBE_TABLE = 0.55;
+
 export const isBeatShieldKind = (kind: AsteroidKind): boolean =>
   kind === "beatShieldCrystal" || kind === "beatShieldCrystalSmall";
 
@@ -3468,6 +3471,13 @@ export class Asteroid {
     ctx.restore();
   }
 
+  // Corner k (0..3, clockwise) of a square with this half-side, squared up to
+  // the cube's silhouette. Shared by the solid and glass beat-cube painters.
+  cubeCorner(k: number, half: number): Vec {
+    const a = this.squareTilt() + Math.PI / 4 + (k * Math.PI) / 2;
+    return v(Math.cos(a) * half * Math.SQRT2, Math.sin(a) * half * Math.SQRT2);
+  }
+
   // The beat-shield cube: deep sapphire with a step cut — a flat table face
   // ringed by four bevels, each flat-shaded by its true normal against the
   // upper-left light, so it reads as cut gem rather than a pyramid. A dim core
@@ -3475,12 +3485,8 @@ export class Asteroid {
   private paintBeatCubeBody(ctx: CanvasRenderingContext2D) {
     const H = this.hue, R = this.radius;
     const lightX = -0.7, lightY = -0.72;
-    const tilt = this.squareTilt();
-    const corner = (k: number, half: number) => {
-      const a = tilt + Math.PI / 4 + (k * Math.PI) / 2;
-      return { x: Math.cos(a) * half * Math.SQRT2, y: Math.sin(a) * half * Math.SQRT2 };
-    };
-    const table = R * 0.55;
+    const corner = (k: number, half: number) => this.cubeCorner(k, half);
+    const table = R * BEAT_CUBE_TABLE;
     ctx.save();
     this.traceOutline(ctx);
     ctx.clip();
