@@ -1460,17 +1460,17 @@ export class Sound {
     explosionLarge: 1.3,
     explosionMedium: 1.1,
     explosionSmall: 0.9,
-    // the sub and note ring out by 0.9s; on the beat, the room rings on 1.3s past them
-    fireBomb: 0.8,
-    fireBombBeat: 2.4,
+    // the drum rings out by 1.1s, then its dotted-eighth echo rings down
+    fireBomb: 2.2,
+    fireBombBeat: 2.8,
     // a full-charge bloom is ~0.55s; the on-beat one rings down its eighth-note echo
     fireWarp: 0.9,
     fireWarpBeat: 2.0,
     // a full-charge swallow rings out by 0.8s, then its eighth-note echo rings down
     warpSwallow: 2.2,
-    // rumble out to 2.25s plus the 1.3s room
-    bombBlast: 3.6,
-    bombBlastBeat: 3.6,
+    // rumble out to 2.25s plus the 1.3s room, and the drum's echo ringing down
+    bombBlast: 4.0,
+    bombBlastBeat: 4.0,
     bombBounce: 0.9,
     // convolver tail (1.3s IR) rings on past the 1.15s sub stop
     asteroidBoomBeat: 2.7,
@@ -7191,29 +7191,68 @@ export class Sound {
     this.playBaked("fireBeat", 1);
   }
 
-  // Bomb muzzle voice: a mortar's thoomp. Where the Warp Cannon blooms upward
-  // and stays out of the bass, the bomb owns the floor. The two are tied
-  // differently, too: a warp swallow echoes its shot's note, but the bomb's
-  // launch and blast are a cadence. Everything the live shell does sits on G,
-  // the dominant over the bed's C: this launch and its bounce's clang
-  // (BOMB_CLANG_MODES). So it hangs unresolved until the blast lands on C
-  // (buildBombBlastGraph), with the same mortar thump a fifth further down. A saturated sub drops out of the tube (mortarThump), a G2
-  // bass note rings under it, and a cough of barrel air follows the shell out.
-  // There's no tick and nothing above the low mids, so it reads as weight and
-  // not as a shot. On the beat it hits harder, adds the D3 fifth for a G power
-  // chord, and booms into a small room.
+  // The bomb's own instrument: a deep struck bronze drum, half timpani, half
+  // temple gong. A sine body that drops a fifth into its note as the skin is
+  // hit, a detuned octave beating against it, and a few bronze partials just
+  // off the harmonic series, all through a lowpass whose opening follows how
+  // hard it's struck (0..1), so a launch is dark and a blast flares bright
+  // before it closes down. The launch and the blast are both this one drum, and
+  // both ring into the same dotted-eighth echo (bombEcho), so the blast sounds
+  // like the launch coming back, bigger, a fifth lower. No other weapon uses
+  // anything like it: the Warp Cannon blooms (warpBloom), the gun plucks.
+  private static readonly BOMB_DRUM_PARTIALS: ReadonlyArray<{ ratio: number; peak: number; decay: number }> = [
+    { ratio: 2, peak: 0.42, decay: 0.7 },
+    { ratio: 2.99, peak: 0.24, decay: 0.45 },
+    { ratio: 4.16, peak: 0.12, decay: 0.28 },
+    { ratio: 5.43, peak: 0.06, decay: 0.18 },
+  ];
+
+  private bombDrum(ctx: BaseAudioContext, dest: AudioNode, t: number, p: { hz: number; peak: number; len: number; strike: number }) {
+    const skin = ctx.createBiquadFilter();
+    skin.type = "lowpass";
+    skin.Q.value = 0.9;
+    skin.frequency.setValueAtTime(500 + 3500 * p.strike, t);
+    skin.frequency.exponentialRampToValueAtTime(220 + 200 * p.strike, t + p.len * 0.8);
+    skin.connect(dest);
+    this.percTone(ctx, skin, t, { hz: p.hz * 1.5, endHz: p.hz, glide: 0.07, peak: p.peak, attack: 0.002, decay: p.len });
+    for (const cents of [-6, 6]) {
+      const octave = this.percTone(ctx, skin, t, { hz: p.hz * 2, peak: p.peak * 0.22, attack: 0.004, decay: p.len * 0.75 });
+      octave.detune.value = cents;
+    }
+    for (const m of Sound.BOMB_DRUM_PARTIALS) {
+      this.percTone(ctx, skin, t, { hz: p.hz * m.ratio, peak: p.peak * m.peak * (0.5 + 0.5 * p.strike), attack: 0.002, decay: p.len * m.decay });
+    }
+    // The mallet: a soft felt thud, not a click.
+    this.percNoise(ctx, skin, t, { filter: "lowpass", hz: 300 + 900 * p.strike, q: 0.7, peak: 0.12 + 0.25 * p.strike, attack: 0.001, decay: 0.04 });
+  }
+
+  // A dotted-eighth echo, darker each time round. Returns its send.
+  private bombEcho(ctx: BaseAudioContext, dest: AudioNode, send: number): GainNode {
+    return this.lowpassEcho(ctx, dest, { sec: BEAT_GRID * 0.75, cutoff: 650, feedback: 0.42, send });
+  }
+
+  // Bomb muzzle voice: the bomb drum struck lightly on G2, the dominant over
+  // the bed's C. Everything the live shell does sits on G: this launch and its
+  // bounce's clang (BOMB_CLANG_MODES). So it hangs unresolved until the blast
+  // strikes the same drum on C (buildBombBlastGraph). A saturated sub drops
+  // out of the tube under it (mortarThump), and the drum rings into its echo.
+  // Nothing above the low mids, so it reads as weight and not as a shot. On
+  // the beat it's struck harder, adds the D3 fifth for a G power chord, and
+  // echoes louder.
   private buildFireBombGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, onBeat: boolean) {
     const bus = ctx.createGain();
     bus.gain.value = onBeat ? 1 : 0.7;
     bus.connect(dest);
-    if (onBeat) bus.connect(this.boomRoom(ctx, dest, 0.18));
-    const heavy = this.boomSaturator(ctx, onBeat ? 2.6 : 2);
+    const echo = this.bombEcho(ctx, dest, onBeat ? 0.45 : 0.28);
+    const heavy = this.boomSaturator(ctx, onBeat ? 2.4 : 1.9);
     heavy.connect(bus);
-    this.mortarThump(ctx, heavy, t, { hz: 98, glide: 0.14, peak: onBeat ? 0.9 : 0.65, decay: onBeat ? 0.55 : 0.4 });
-    this.percTone(ctx, bus, t, { type: "triangle", hz: 98, peak: 0.2, attack: 0.01, decay: onBeat ? 0.9 : 0.5 });
-    if (onBeat) this.percTone(ctx, bus, t, { type: "triangle", hz: 146.83, peak: 0.1, attack: 0.015, decay: 0.6 });
-    this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 900, endHz: 180, q: 0.8, peak: 0.3, attack: 0.002, decay: 0.22 });
-    this.percNoise(ctx, bus, t, { filter: "bandpass", hz: 260, q: 2.5, peak: 0.25, decay: 0.07 });
+    this.mortarThump(ctx, heavy, t, { hz: 98, glide: 0.14, peak: onBeat ? 0.6 : 0.45, decay: onBeat ? 0.4 : 0.3 });
+    const drum = ctx.createGain();
+    drum.connect(bus);
+    drum.connect(echo);
+    this.bombDrum(ctx, drum, t, { hz: 98, peak: onBeat ? 0.42 : 0.32, len: onBeat ? 1.1 : 0.75, strike: onBeat ? 0.4 : 0.2 });
+    if (onBeat) this.bombDrum(ctx, drum, t, { hz: 146.83, peak: 0.14, len: 0.8, strike: 0.25 });
+    this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 700, endHz: 160, q: 0.7, peak: 0.16, attack: 0.003, decay: 0.2 });
   }
 
   private buildPluckGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, p: Pluck) {
@@ -7363,52 +7402,43 @@ export class Sound {
     this.percTone(ctx, dest, t, { hz: p.hz * 2, endHz: p.hz / 2, glide: p.glide, peak: p.peak, attack: 0.002, decay: p.decay });
   }
 
-  // Bomb detonation, the cadence's resolution onto C (see buildFireBombGraph).
-  // On the beat it's louder and adds a C power chord.
+  // Bomb detonation, the cadence's resolution onto C (see buildFireBombGraph):
+  // the launch's drum struck full force on C2, with a C3 drum over it, ringing
+  // into the same dotted-eighth echo. Under it the launch's mortar thump a
+  // fifth down, and a blast of air that swells and closes like a breath
+  // instead of crackling. On the beat it's louder and adds a C power chord.
   private buildBombBlastGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, onBeat: boolean) {
     const bus = ctx.createGain();
-    bus.gain.value = onBeat ? 1 : 0.7;
+    bus.gain.value = onBeat ? 0.9 : 0.68;
     bus.connect(dest);
-    bus.connect(this.boomRoom(ctx, dest, 0.3));
+    bus.connect(this.boomRoom(ctx, dest, 0.25));
     const heavy = this.boomSaturator(ctx, 2.5);
     heavy.connect(bus);
-    this.blastFront(ctx, bus, t);
+    const drum = ctx.createGain();
+    drum.connect(heavy);
+    drum.connect(this.bombEcho(ctx, dest, 0.5));
+    this.bombDrum(ctx, drum, t, { hz: 65.41, peak: 0.75, len: 2.0, strike: 1 });
+    this.bombDrum(ctx, drum, t, { hz: 130.81, peak: 0.28, len: 1.4, strike: 0.7 });
     this.blastKick(ctx, heavy, t, onBeat);
-    this.blastRoar(ctx, bus, t);
-    this.blastDebris(ctx, bus, t);
+    this.blastAir(ctx, bus, t);
     this.blastRumble(ctx, bus, t);
-    if (onBeat) this.blastOnBeat(ctx, heavy, bus, t);
-  }
-
-  // The noise transients of the blast front: crack, snap, crunch.
-  private blastFront(ctx: BaseAudioContext, bus: AudioNode, t: number) {
-    this.percNoise(ctx, bus, t, { filter: "highpass", hz: 1800, q: 0.7, peak: 0.7, attack: 0.0008, decay: 0.03 });
-    this.percNoise(ctx, bus, t, { filter: "bandpass", hz: 3200, endHz: 900, q: 1.2, peak: 0.35, decay: 0.09 });
-    this.percNoise(ctx, bus, t, { filter: "bandpass", hz: 900, endHz: 400, q: 1.6, peak: 0.45, decay: 0.28 });
+    if (onBeat) this.blastOnBeat(ctx, heavy, t);
   }
 
   // The launch's mortar thump resolved to C, and a C2 body dropping out under the blast.
   private blastKick(ctx: BaseAudioContext, heavy: AudioNode, t: number, onBeat: boolean) {
-    this.mortarThump(ctx, heavy, t, { hz: 65.41, glide: 0.5, peak: onBeat ? 1.4 : 1.2, decay: onBeat ? 1.5 : 1.2 });
-    this.percTone(ctx, heavy, t, { type: "triangle", hz: 65.41, endHz: 41.2, glide: 0.6, peak: 0.55, attack: 0.004, decay: 0.9 });
+    this.mortarThump(ctx, heavy, t, { hz: 65.41, glide: 0.45, peak: onBeat ? 1.0 : 0.85, decay: onBeat ? 1.3 : 1.1 });
+    this.percTone(ctx, heavy, t, { type: "triangle", hz: 65.41, endHz: 41.2, glide: 0.6, peak: 0.4, attack: 0.004, decay: 0.9 });
   }
 
-  private blastRoar(ctx: BaseAudioContext, bus: AudioNode, t: number) {
-    const gritty = this.boomSaturator(ctx, 1.6);
-    gritty.connect(bus);
-    this.percNoise(ctx, gritty, t, { filter: "lowpass", hz: 7000, endHz: 110, q: 0.8, peak: 0.75, attack: 0.004, decay: 1.4 });
-  }
-
-  private blastDebris(ctx: BaseAudioContext, bus: AudioNode, t: number) {
-    this.percNoise(ctx, bus, t, {
-      at: 0.05, filter: "bandpass", hz: 2600, q: 0.9, peak: 0.9, attack: 0.01, decay: 1.8,
-      sustain: { level: 0.4, until: 1.1 }, buffer: this.crackleBuffer(ctx, 1.82),
-    });
+  // The pressure wave: smooth lowpassed noise opening fast and closing slowly.
+  private blastAir(ctx: BaseAudioContext, bus: AudioNode, t: number) {
+    this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 2400, endHz: 90, q: 0.6, peak: 0.42, attack: 0.012, decay: 1.2 });
   }
 
   private blastRumble(ctx: BaseAudioContext, bus: AudioNode, t: number) {
     this.percNoise(ctx, this.tremolo(ctx, bus, t, 2.25, 7, 0.3), t, {
-      filter: "lowpass", hz: 160, endHz: 70, q: 0.7, peak: 0.55, attack: 0.05, decay: 2.2,
+      filter: "lowpass", hz: 160, endHz: 70, q: 0.7, peak: 0.45, attack: 0.05, decay: 2.2,
       sustain: { level: 0.35, until: 1.2 },
     });
   }
@@ -7429,16 +7459,11 @@ export class Sound {
     return amp;
   }
 
-  // A C power chord (C2 G2 C3) resolving the on-beat launch's G one, a slapback kick, and a sizzle.
-  private blastOnBeat(ctx: BaseAudioContext, heavy: AudioNode, bus: AudioNode, t: number) {
-    const chord = ctx.createBiquadFilter();
-    chord.type = "lowpass";
-    chord.Q.value = 3;
-    this.glide(chord.frequency, 1400, 180, t, t + 0.9);
-    chord.connect(heavy);
-    for (const hz of [65.41, 98, 130.81]) this.percTone(ctx, chord, t, { type: "sawtooth", hz, peak: 0.2, attack: 0.006, decay: 1.1 });
-    this.percTone(ctx, heavy, t, { at: 0.18, hz: 90, endHz: 30, glide: 0.4, peak: 0.45, decay: 0.7 });
-    this.percNoise(ctx, bus, t, { filter: "highpass", hz: 5000, q: 0.7, peak: 0.08, attack: 0.01, decay: 1.0 });
+  // A G2 drum over the blast's C, completing a C power chord that resolves the
+  // on-beat launch's G one, and a slapback kick.
+  private blastOnBeat(ctx: BaseAudioContext, heavy: AudioNode, t: number) {
+    this.bombDrum(ctx, heavy, t, { hz: 98, peak: 0.22, len: 1.4, strike: 0.6 });
+    this.percTone(ctx, heavy, t, { at: 0.18, hz: 90, endHz: 30, glide: 0.4, peak: 0.4, decay: 0.7 });
   }
 
   // Bomb shell rebounding, by impact tier (glancing, solid, full): an iron clonk.

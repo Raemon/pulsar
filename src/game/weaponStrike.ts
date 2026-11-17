@@ -17,6 +17,7 @@ import {
 } from "./killEffects";
 import { explodeCanister, expireGem, crackGemForCanister } from "./collisions";
 import { syncHud } from "./hud";
+import { pingBeatShield } from "./beatShield";
 
 // A strike is a weapon hit that doesn't come from a flying bullet touching its
 // target — a laser beam's sweep, a bomb's blast. It reaches every target in its
@@ -106,6 +107,12 @@ const strikeGroups = (game: Game, includePickups: boolean): StrikeGroup[] => {
 // bullet's deflects (collisions.deflectBulletOff).
 const strikeAsteroid = (game: Game, a: Asteroid, s: Strike): StrikeTarget[] => {
   if (s.bossImpact && a.isBossFamily()) game.sound.play("bossHit", 1, a.pos);
+  // s.onBeat is the weapon's own rule: a beam must be fired and land on-beat,
+  // a bomb blast goes off on the detonating press.
+  if (a.beatShieldBlocks(s.onBeat)) {
+    pingBeatShield(game, a, s.shot.pos);
+    return [a];
+  }
   const { killed, bounced } = a.applyDamage(s.damage, false, s.shot.pos);
   if (bounced) {
     a.flashAmount = Math.max(a.flashAmount, 0.5);

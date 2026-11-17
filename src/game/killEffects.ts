@@ -1,5 +1,5 @@
 import type { Game } from "../Game";
-import { Asteroid, isBurstGem, isGlassPrison, isMetalHull, isPhasedKind } from "../Asteroid";
+import { Asteroid, isBurstGem, isGlassPrison, isMetalHull, isPhasedKind, isBeatShieldKind } from "../Asteroid";
 import { Alien } from "../Alien";
 import { AlienBullet } from "../AlienBullet";
 import { Comet } from "../Comet";
@@ -30,7 +30,7 @@ import {
   emitWraithDeath,
 } from "./particleBursts";
 import { snapshotAsteroidKill, snapshotAlienKill, snapshotCometKill } from "./killSnapshot";
-import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet, markVeteranPilot, VETERAN_COMBO_THRESHOLD } from "./waveDirector";
+import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet, noteRhythmComboClimb } from "./waveDirector";
 import { BASS_KIND_SOUND } from "./bassClock";
 import { maybeSpawnSkipPortal } from "./waveSkip";
 import { swallowIntoWarp, swallowOpenFrom, warpBite } from "./warpCannon";
@@ -70,6 +70,7 @@ const asteroidBucket = (a: Asteroid): KillBucket => {
   if (a.kind === "asteroidWithGem") return "asteroidWithGem";
   if (isBurstGem(a.kind)) return "burstGem";
   if (a.kind === "solidCrystal" || a.kind === "solidCrystalSmall") return "solidCrystal";
+  if (isBeatShieldKind(a.kind)) return "beatShieldCrystal";
   if (isMetalHull(a.kind) || a.isSuperBassCrystal()) return "metalChunk";
   if (isGlassPrison(a.kind)) return "glassPrison";
   if (a.kind === "wraith") return "wraith";
@@ -88,8 +89,8 @@ export const hitSoundFor = (
   // Solid crystal asteroids shatter like cut glass — the whole body IS the
   // gem, so a noise explosion would feel wrong. Large parent + small frags
   // each get their own size-scaled shatter.
-  if (a.kind === "solidCrystal") return "crystalShatterLarge";
-  if (a.kind === "solidCrystalSmall" || a.kind === "superBassCrystal") return "crystalShatterSmall";
+  if (a.kind === "solidCrystal" || a.kind === "beatShieldCrystal") return "crystalShatterLarge";
+  if (a.kind === "solidCrystalSmall" || a.kind === "beatShieldCrystalSmall" || a.kind === "superBassCrystal") return "crystalShatterSmall";
   // gold gem is a big cut-crystal body; its shards shatter small.
   if (isBurstGem(a.kind)) return "crystalShatterLarge";
   // A cathedral glass shard is still lit stained glass — it rings/shatters
@@ -117,7 +118,7 @@ export const applyHitToCombo = (game: Game, isOnBeatHit: boolean, hitPos: Vec, b
     game.beatCombo += 1;
     if (game.beatCombo > game.maxCombo) game.maxCombo = game.beatCombo;
     if (game.beatCombo > game.maxComboThisWave) game.maxComboThisWave = game.beatCombo;
-    if (game.beatCombo >= VETERAN_COMBO_THRESHOLD) markVeteranPilot();
+    noteRhythmComboClimb(game, game.beatCombo - 1);
     trackRhythmComboHit(game, hitPos, beatsAway);
     // Dismiss the post-rhythm-loss "fire and hit on the beat" hint as soon as
     // the player lands one — reaching here means an on-beat fire was followed
@@ -355,7 +356,7 @@ export const shatterSpeedMul = (game: Game): number => {
 
 // Boss fans are choreographed; metal wedges (and the crystal they free) are meant to linger.
 const isShatterBoostExempt = (c: Asteroid): boolean =>
-  c.isBossFamily() || c.kind === "metalShard" || c.kind === "superBassCrystal";
+  c.isBossFamily() || c.kind === "metalShard" || c.kind === "superBassCrystal" || isBeatShieldKind(c.kind);
 
 // Scale only the outward kick relative to the parent — scaling the whole velocity
 //   would compound each split generation, since children inherit the parent's speed.

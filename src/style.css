@@ -2540,7 +2540,7 @@ li.lb-self .lb-name-link:hover {
   position: fixed;
   top: 38%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, calc(-50% - var(--hint-lift, 0px)));
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-weight: 700;
   font-size: clamp(28px, 5vw, 60px);
@@ -2554,7 +2554,7 @@ li.lb-self .lb-name-link:hover {
   opacity: 0;
   pointer-events: none;
   z-index: 50;
-  transition: opacity 0.9s ease-out;
+  transition: opacity 0.9s ease-out, transform 0.25s ease-out;
 }
 
 #wave-announce > span {
@@ -2565,6 +2565,23 @@ li.lb-self .lb-name-link:hover {
 
 #wave-announce.show {
   opacity: 1;
+}
+
+#wave-announce .wave-announce__hint {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-top: 18px;
+  transform: translateX(-50%) scaleX(0.82);
+  transform-origin: center;
+  font-size: clamp(13px, 1.45vw, 22px);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: none;
+  white-space: nowrap;
+  color: #c8efff;
+  text-shadow: 0 0 18px rgba(76, 182, 255, 0.35);
+  opacity: 0.9;
 }
 
 /* Wave-clear summary — non-blocking text over the playfield while the next
