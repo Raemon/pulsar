@@ -18,6 +18,7 @@ const CORNER_FRAC = 0.2;
 const SPRITE_PAD = 5;
 // Fraction of the up-time spent re-forming, and where the gather starts.
 const REFORM_FRAC = 0.22;
+const REFORM_FROM = 0.93;
 const GATHER_START = 0.3;
 const GATHER_RING_REACH = 0.75;
 const POP_FRAC = 0.3;
@@ -145,8 +146,9 @@ const getPlateSprites = (rawS: number, small: boolean): PlateSprites => {
 const easeOutBack = (x: number) => 1 + 2.4 * Math.pow(x - 1, 3) + 1.4 * Math.pow(x - 1, 2);
 
 // Drawn in the asteroid's local (translated + rotated) frame, last, over the
-// body, squared up to the cube's own tilt so the plate's faces stay parallel to
-// the cube's. Per frame: two sprite blits + one ring stroke while up; while
+// body. The plate's faces stay parallel to the cube's, but it is turned by
+// whichever quarter-turn keeps its baked upper-left light within 45° of true,
+// so the glint doesn't whirl with the rock. Per frame: two sprite blits + one ring stroke while up; while
 // down, the fading pop blits + the cube's outline stroke + one glow blit.
 export const renderBeatShield = (ctx: CanvasRenderingContext2D, a: Asteroid, time: number) => {
   const timing = plateTiming(a);
@@ -155,7 +157,9 @@ export const renderBeatShield = (ctx: CanvasRenderingContext2D, a: Asteroid, tim
   const sprites = getPlateSprites(S, small);
   const fit = S / (sprites.half - SPRITE_PAD);
   ctx.save();
-  ctx.rotate(a.squareTilt());
+  const quarter = Math.PI / 2;
+  const faceAngle = a.rotation + a.squareTilt();
+  ctx.rotate(-a.rotation + (faceAngle - Math.round(faceAngle / quarter) * quarter));
 
   const blit = (sprite: HTMLCanvasElement, scale: number, alpha: number) => {
     if (alpha <= 0.01) return;
@@ -167,7 +171,7 @@ export const renderBeatShield = (ctx: CanvasRenderingContext2D, a: Asteroid, tim
   };
 
   if (a.beatShieldUp) {
-    // Re-form: snaps back in from 80% with a small overshoot and a flash, never
+    // Re-form: snaps back in from REFORM_FROM (still covering the cube) with a small overshoot and a flash, never
     // from zero — the rock is immune again on this very frame, so it must
     // already look shielded. Gather: the plate tightens + brightens while a
     // square closes in from outside and touches the rim exactly as the window opens.
@@ -175,7 +179,7 @@ export const renderBeatShield = (ctx: CanvasRenderingContext2D, a: Asteroid, tim
     const presence = 0.55 + 0.45 * reform;
     const gather = clamp01((timing.approach - GATHER_START) / (1 - GATHER_START));
     const g2 = gather * gather;
-    const scale = (0.8 + 0.2 * easeOutBack(reform)) * (1 - 0.06 * g2);
+    const scale = (REFORM_FROM + (1 - REFORM_FROM) * easeOutBack(reform)) * (1 - 0.06 * g2);
     const shimmer = 0.08 * Math.sin(time * 11 + a.membranePhase);
     ctx.globalCompositeOperation = "source-over";
     blit(sprites.shell, scale, presence);
@@ -192,15 +196,23 @@ export const renderBeatShield = (ctx: CanvasRenderingContext2D, a: Asteroid, tim
     }
     ctx.restore();
   } else {
-    // Pop: the plate flings outward and thins away in the first third of the
-    // window. Exposed: the cube's own edge lights up hot for the whole window
+    // Pop: the plate's bright rim and grid fling outward and thin away in the
+    // first third of the window (the dim slab itself would read as grey smoke
+    // under "lighter"). Exposed: the cube's own edge lights up hot for the whole window
     // and fades over its last fifth, so the closing is readable too.
     const wp = timing.windowPhase;
     const pop = clamp01(wp / POP_FRAC);
     const popFade = (1 - pop) * (1 - pop);
     ctx.globalCompositeOperation = "lighter";
-    blit(sprites.shell, 1 + 0.3 * pop, popFade * 0.9);
     if (sprites.lattice) blit(sprites.lattice, 1 + 0.45 * pop, popFade);
+    if (popFade > 0.01) {
+      ctx.globalAlpha = 1;
+      ctx.lineJoin = "round";
+      ctx.lineWidth = (small ? 1.2 : 2) * (1 - 0.5 * pop);
+      ctx.strokeStyle = `hsla(${SHIELD_HUE - 10}, 90%, 85%, ${popFade})`;
+      roundedSquare(ctx, S * (1 + 0.3 * pop));
+      ctx.stroke();
+    }
     ctx.restore();
     ctx.save();
     ctx.globalCompositeOperation = "lighter";

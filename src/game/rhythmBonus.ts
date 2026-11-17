@@ -1,5 +1,4 @@
 import type { Game } from "../Game";
-import { noteRhythmComboClimb } from "./waveDirector";
 import type { Bullet } from "../Bullet";
 import { Vec } from "../vec";
 import { BEAT_GRID, FAR_SHOT_BIG_BEATS, FAR_SHOT_MIN_BEATS, FAR_SHOT_POINTS } from "./rhythmConstants";
@@ -8,6 +7,7 @@ import { checkBonusLife } from "./bonusLife";
 import { popupCombo, popupFarShot, popupRapidRhythm, popupStreakBonus, popupTwinShot } from "./popups";
 import { resetStreak, STREAK_MAX_GAP } from "./streakBurst";
 import { spawnDriftBurst } from "./driftBurst";
+import { noteRhythmComboClimb } from "./waveDirector";
 
 // Beat bonuses on top of the per-hit combo increment:
 //   Rapid Rhythm — combo hits on two back-to-back beats pays +1 rhythm.

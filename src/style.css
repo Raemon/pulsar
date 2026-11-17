@@ -2554,7 +2554,7 @@ li.lb-self .lb-name-link:hover {
   opacity: 0;
   pointer-events: none;
   z-index: 50;
-  transition: opacity 0.9s ease-out;
+  transition: opacity 0.9s ease-out, transform 0.25s ease-out;
 }
 
 #wave-announce > span {

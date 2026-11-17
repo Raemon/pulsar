@@ -3467,22 +3467,19 @@ export class Asteroid {
     ctx.restore();
   }
 
-  // The beat-shield cube: deep sapphire glass. The tungsten block's fan-facet
-  // lighting, saturated and lit from within by a dim core so the bare cube
-  // reads as crystal rather than metal when its shield drops.
+  // The beat-shield cube: deep sapphire with a step cut — a flat table face
+  // ringed by four bevels, each flat-shaded by its true normal against the
+  // upper-left light, so it reads as cut gem rather than a pyramid. A dim core
+  // lights it from within.
   private paintBeatCubeBody(ctx: CanvasRenderingContext2D) {
     const H = this.hue, R = this.radius;
     const lightX = -0.7, lightY = -0.72;
-    const n = this.outlineSamples;
-    const vert = (i: number): { x: number; y: number } => {
-      const k = (i % n + n) % n;
-      const a = (k / n) * TAU;
-      return { x: Math.cos(a) * this.outline[k], y: Math.sin(a) * this.outline[k] };
+    const tilt = this.squareTilt();
+    const corner = (k: number, half: number) => {
+      const a = tilt + Math.PI / 4 + (k * Math.PI) / 2;
+      return { x: Math.cos(a) * half * Math.SQRT2, y: Math.sin(a) * half * Math.SQRT2 };
     };
-    const facingOf = (x: number, y: number) => {
-      const l = Math.hypot(x, y) || 1;
-      return (x / l) * lightX + (y / l) * lightY;
-    };
+    const table = R * 0.55;
     ctx.save();
     this.traceOutline(ctx);
     ctx.clip();
@@ -3495,18 +3492,37 @@ export class Asteroid {
     ctx.fillStyle = body;
     ctx.fillRect(-R * 1.5, -R * 1.5, R * 3, R * 3);
 
-    for (let i = 0; i < n; i++) {
-      const p0 = vert(i), p1 = vert(i + 1);
-      const f = facingOf(p0.x + p1.x, p0.y + p1.y);
-      const L = Math.max(6, 10 + Math.max(0, f) * 30 + Math.min(0, f) * 6);
-      ctx.fillStyle = `hsla(${H - f * 6}, ${78 + Math.max(0, f) * 10}%, ${L}%, 0.55)`;
+    for (let k = 0; k < 4; k++) {
+      const o0 = corner(k, R * 1.05), o1 = corner(k + 1, R * 1.05);
+      const i0 = corner(k, table), i1 = corner(k + 1, table);
+      const nx = (o0.x + o1.x) / 2, ny = (o0.y + o1.y) / 2;
+      const f = (nx * lightX + ny * lightY) / (Math.hypot(nx, ny) || 1);
+      const L = Math.max(5, 12 + Math.max(0, f) * 30 + Math.min(0, f) * 7);
+      ctx.fillStyle = `hsla(${H - f * 6}, ${80 + Math.max(0, f) * 8}%, ${L}%, 0.7)`;
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
+      ctx.moveTo(o0.x, o0.y);
+      ctx.lineTo(o1.x, o1.y);
+      ctx.lineTo(i1.x, i1.y);
+      ctx.lineTo(i0.x, i0.y);
       ctx.closePath();
       ctx.fill();
     }
+
+    ctx.beginPath();
+    for (let k = 0; k < 4; k++) {
+      const p = corner(k, table);
+      if (k === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    const face = ctx.createLinearGradient(-table, -table, table, table);
+    face.addColorStop(0, `hsla(${H - 8}, 82%, 34%, 0.85)`);
+    face.addColorStop(1, `hsla(${H + 6}, 88%, 15%, 0.85)`);
+    ctx.fillStyle = face;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = `hsla(${H - 12}, 80%, 74%, 0.4)`;
+    ctx.stroke();
 
     ctx.globalCompositeOperation = "lighter";
     const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.75);
@@ -3516,42 +3532,22 @@ export class Asteroid {
     ctx.fillRect(-R, -R, R * 2, R * 2);
     ctx.globalCompositeOperation = "source-over";
 
-    // Creases only at the cube's corners, where the outline turns sharply.
-    const edgeAngle = (i: number) => {
-      const p0 = vert(i), p1 = vert(i + 1);
-      return Math.atan2(p1.y - p0.y, p1.x - p0.x);
-    };
-    for (let i = 0; i < n; i++) {
-      let turn = edgeAngle(i) - edgeAngle(i - 1);
-      while (turn > Math.PI) turn -= TAU;
-      while (turn < -Math.PI) turn += TAU;
-      if (Math.abs(turn) < 0.45) continue;
-      const p = vert(i);
-      const lit = facingOf(p.x, p.y) > 0.2;
-      ctx.strokeStyle = lit ? `hsla(${H - 12}, 80%, 78%, 0.45)` : `hsla(${H + 6}, 90%, 4%, 0.6)`;
-      ctx.lineWidth = lit ? 1 : 1.5;
-      ctx.beginPath();
-      ctx.moveTo(p.x * 0.1, p.y * 0.1);
-      ctx.lineTo(p.x * 0.92, p.y * 0.92);
-      ctx.stroke();
-    }
-
     const spec = ctx.createRadialGradient(-R * 0.4, -R * 0.46, 0, -R * 0.4, -R * 0.46, R * 0.4);
-    spec.addColorStop(0, `hsla(${H - 20}, 70%, 88%, 0.5)`);
-    spec.addColorStop(0.4, `hsla(${H - 12}, 70%, 66%, 0.16)`);
+    spec.addColorStop(0, `hsla(${H - 20}, 70%, 88%, 0.45)`);
+    spec.addColorStop(0.4, `hsla(${H - 12}, 70%, 66%, 0.14)`);
     spec.addColorStop(1, `hsla(${H}, 70%, 50%, 0)`);
     ctx.fillStyle = spec;
     ctx.fillRect(-R, -R, R * 1.2, R * 1.2);
 
-    let best = vert(0), bestF = -2;
-    for (let i = 0; i < n; i++) {
-      const p = vert(i);
-      const f = facingOf(p.x, p.y);
-      if (f > bestF) { bestF = f; best = p; }
+    let glint = corner(0, R * 0.9), bestF = -2;
+    for (let k = 0; k < 4; k++) {
+      const p = corner(k, R * 0.9);
+      const f = p.x * lightX + p.y * lightY;
+      if (f > bestF) { bestF = f; glint = p; }
     }
     ctx.fillStyle = `hsla(${H - 24}, 60%, 95%, 0.75)`;
     ctx.beginPath();
-    ctx.arc(best.x * 0.9, best.y * 0.9, Math.max(1.1, R * 0.05), 0, TAU);
+    ctx.arc(glint.x, glint.y, Math.max(1.1, R * 0.05), 0, TAU);
     ctx.fill();
 
     ctx.lineJoin = "miter";
@@ -3841,7 +3837,7 @@ export class Asteroid {
       ctx.closePath();
     };
     // Small variant is more fragile — render with a thinner shell rim.
-    const isSmall = this.kind === "solidCrystalSmall" || this.kind === "beatShieldCrystalSmall";
+    const isSmall = this.kind === "solidCrystalSmall";
     // Outer dark shell — gives the rim visible depth before the bright band.
     ctx.strokeStyle = `hsla(${H - 10}, 70%, 22%, 0.85)`;
     ctx.lineWidth = isSmall ? 2.0 : 4.5;

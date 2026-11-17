@@ -158,7 +158,7 @@ export const displayWave = (wave: number): number => wave - 1;
 // rule keep their flag.
 const VETERAN_KEY = "pulsar.veteran";
 const VETERAN_STREAKS_KEY = "pulsar.veteranStreaks";
-export const VETERAN_COMBO_THRESHOLD = 12;
+const VETERAN_COMBO_THRESHOLD = 12;
 const VETERAN_STREAKS_NEEDED = 3;
 
 export const isVeteranPilot = (): boolean => {
