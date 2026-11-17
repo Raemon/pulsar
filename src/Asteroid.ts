@@ -7,7 +7,7 @@ import { ENTITY_CONFIG, ENTITY_STATS, entityStat } from "./game/entityConfig";
 import { SHIP_BODY_RADIUS, SHIP_HALO_OFFSET, SHIP_NOSE_MUL, SHIP_WING_ANGLE, haloReach } from "./ship/shipHitbox";
 import { PRONG_ANGLE_STEP } from "./ship/shipWeapons";
 import { drawGlow } from "./glow";
-import { renderBeatShield } from "./game/beatShieldRender";
+import { renderBeatFragility, beatBodyAlpha } from "./game/beatShieldRender";
 
 const HUE_PALETTE = [185, 200, 220, 250, 280, 310, 330];
 
@@ -165,9 +165,10 @@ export type AsteroidSize = "huge" | "large" | "medium" | "small";
 // arcs from it and pays its resonance bounty, exactly like a Bassteroid piece.
 // Rare across display-levels 5-9, then a common obstacle afterwards.
 //
-// "beatShieldCrystal" is a slow, heavy 1 HP deep-blue crystal cube behind DR 3 that is
-// shielded — immune to everything — outside the beat window. Only an on-beat
-// hit (fired and landed inside the window) reaches its armour. It breaks into
+// "beatShieldCrystal" is a slow, heavy 1 HP deep-blue crystal cube behind DR 3
+// that is shielded — immune to everything — outside the beat window. It thins
+// to near-clear glass for an instant on each beat to mark that fragility. Only
+// an on-beat hit (fired and landed inside the window) reaches its armour. It breaks into
 // 2 "beatShieldCrystalSmall" pieces with the same shield; smalls don't split.
 // game/beatShield.ts owns the shield state renderers read.
 export type AsteroidKind = "normal" | "bassA" | "bassB" | "bassC" | "bassD" | "chime" | "bell" | "warble" | "citadel" | "boss" | "bossHemisphere" | "bossEye" | "bossPlate" | "bossIrisShard" | "bossEmber" | "sepulchre" | "pallbearer" | "asteroidWithGem" | "burstGemMedium" | "burstGemBig" | "solidCrystal" | "solidCrystalSmall" | "glassPrison" | "bigGlassPrison" | "wraith" | "cathedralKeystone" | "glassShard" | "columnDrum" | "rubbleBlock" | "torus" | "torusArc" | "torusChunk" | "metalChunk" | "metalShard" | "superBassCrystal" | "beatShieldCrystal" | "beatShieldCrystalSmall";
@@ -4391,7 +4392,7 @@ export class Asteroid {
     return 1 / Math.max(Math.abs(Math.cos(a)), Math.abs(Math.sin(a)));
   }
 
-  squareTilt(): number {
+  private squareTilt(): number {
     const step = TAU / this.outlineSamples;
     const rawTilt = this.harmonics.reduce((s, h) => s + h.phase * h.freq, 0);
     return Math.round(rawTilt / step) * step;
@@ -6208,7 +6209,10 @@ export class Asteroid {
     if (isWarble && this.warbleBlurSprite) {
       this.renderWarbleBody(ctx);
     } else if (this.sprite) {
+      // The beat cube thins to glass on the beat (beatShieldRender).
+      ctx.globalAlpha = isBeatShieldKind(this.kind) ? beatBodyAlpha(this) : 1;
       ctx.drawImage(this.sprite, -this.spriteHalfSize, -this.spriteHalfSize);
+      ctx.globalAlpha = 1;
     }
     ctx.globalCompositeOperation = "lighter";
 
@@ -6287,7 +6291,7 @@ export class Asteroid {
 
     this.renderCracks(ctx);
 
-    if (isBeatShieldKind(this.kind)) renderBeatShield(ctx, this, time);
+    if (isBeatShieldKind(this.kind)) renderBeatFragility(ctx, this);
 
     ctx.restore();
   }
