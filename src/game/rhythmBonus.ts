@@ -7,6 +7,7 @@ import { checkBonusLife } from "./bonusLife";
 import { popupCombo, popupFarShot, popupRapidRhythm, popupStreakBonus, popupTwinShot } from "./popups";
 import { resetStreak, STREAK_MAX_GAP } from "./streakBurst";
 import { spawnDriftBurst } from "./driftBurst";
+import { noteRhythmComboClimb } from "./waveDirector";
 
 // Beat bonuses on top of the per-hit combo increment:
 //   Rapid Rhythm — combo hits on two back-to-back beats pays +1 rhythm.
@@ -194,6 +195,7 @@ const awardRhythmBonus = (game: Game, entry: Game["pendingRhythmBonuses"][number
   game.beatCombo += 1;
   if (game.beatCombo > game.maxCombo) game.maxCombo = game.beatCombo;
   if (game.beatCombo > game.maxComboThisWave) game.maxComboThisWave = game.beatCombo;
+  noteRhythmComboClimb(game, game.beatCombo - 1);
   syncComboHud(game);
   game.sound.playComboChime(game.beatCombo, entry.pos);
   game.popups.push(popupCombo(entry.pos, game.beatCombo));

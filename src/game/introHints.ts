@@ -46,7 +46,7 @@ const SLOT_3_POOL: readonly string[] = [
   "Unfold the photo on your cockpit dashboard.",
 ];
 
-// One line under the "Wave N" title, for pilots who have never hit 12×.
+// One line under the "Wave N" title, for pilots who are not yet veterans (12× on three streaks).
 //   Drawn at random each wave, including the Wave 0 title after the first
 //   clear. The line just shown is skipped so two waves don't repeat it.
 const WAVE_INTRO_HINTS: readonly string[] = [

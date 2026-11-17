@@ -151,11 +151,15 @@ export const isBossForeshadowWave = (wave: number): boolean => BOSS_FORESHADOW_W
 // the player-facing label is shifted down by one so the warm-up rock is "Wave 0".
 export const displayWave = (wave: number): number => wave - 1;
 
-// Persistent across runs: once the player has ever reached a 12x rhythm combo,
-// they've outgrown the single-rock warm-up. Future normal-mode runs (not tutorial)
-// skip straight to internal wave 2 — the first proper wave.
+// Persistent across runs: once the player has climbed to a 12x rhythm combo on
+// VETERAN_STREAKS_NEEDED separate streaks, they've outgrown the single-rock
+// warm-up. Future normal-mode runs (not tutorial) skip straight to internal
+// wave 2 — the first proper wave. Pilots stamped under the older one-streak
+// rule keep their flag.
 const VETERAN_KEY = "pulsar.veteran";
-export const VETERAN_COMBO_THRESHOLD = 12;
+const VETERAN_STREAKS_KEY = "pulsar.veteranStreaks";
+const VETERAN_COMBO_THRESHOLD = 12;
+const VETERAN_STREAKS_NEEDED = 3;
 
 export const isVeteranPilot = (): boolean => {
   try {
@@ -165,9 +169,14 @@ export const isVeteranPilot = (): boolean => {
   }
 };
 
-export const markVeteranPilot = () => {
+// Call after any combo increase with the combo it climbed from; counts one
+// streak each time the combo crosses the threshold. Replays never count.
+export const noteRhythmComboClimb = (game: Game, before: number) => {
+  if (game.replayPlayer || before >= VETERAN_COMBO_THRESHOLD || game.beatCombo < VETERAN_COMBO_THRESHOLD) return;
   try {
-    localStorage.setItem(VETERAN_KEY, "1");
+    const streaks = (Number(localStorage.getItem(VETERAN_STREAKS_KEY)) || 0) + 1;
+    localStorage.setItem(VETERAN_STREAKS_KEY, String(streaks));
+    if (streaks >= VETERAN_STREAKS_NEEDED) localStorage.setItem(VETERAN_KEY, "1");
   } catch {
     // localStorage may be blocked (private mode); next run just won't skip.
   }
