@@ -1,5 +1,29 @@
 [
   {
+    "id": "2026-11-17-befa9a1",
+    "date": "2026-11-17",
+    "title": "Beat cube glass effect and Show Tutorial setting",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Beat cubes now flash to clear glass exactly on the beat — bright bevel seams, a lit rim, and a specular band sweeping across the face — then snap solid again within about 60ms.",
+          "Settings now has a Show Tutorial toggle, letting you re-enable tutorial hints after they have been retired."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "The tutorial auto-hides itself the first time you reach a 12x rhythm combo on three separate streaks; the new toggle lets you turn it back on manually any time."
+        ]
+      }
+    ],
+    "commits": [
+      "befa9a1",
+      "9625ddd"
+    ]
+  },
+  {
     "id": "2026-11-14-752218f",
     "date": "2026-11-14",
     "title": "Warp hits echo their shots, and the Bomb lands a cadence",
@@ -1516,104 +1540,6 @@
       "d4487e1",
       "3c176d8",
       "aa58c5f"
-    ]
-  },
-  {
-    "id": "2026-06-04-b73a06c",
-    "date": "2026-06-04",
-    "title": "Replays, per-channel audio, and visual overhaul",
-    "sections": [
-      {
-        "heading": "New",
-        "items": [
-          "Gameplay replays can now be saved and uploaded after posting a high score — watch your run from the leaderboard.",
-          "Leaderboard entries show a replay button when a recording is available.",
-          "Audio settings now have separate volume sliders for Base Pulse, Sound Effects, Music, and Vocals.",
-          "Rhythm latency calibration has moved into the Audio settings tab for easier access."
-        ]
-      },
-      {
-        "heading": "Changed",
-        "items": [
-          "Background planets are now backlit: their bodies sit in deep shadow with a thin crescent rim-light on the pulsar-facing side, plus a corona flare during eclipses.",
-          "Planets now render in front of the pulsar disc and nebula, so they correctly occlude it when crossing."
-        ]
-      },
-      {
-        "heading": "Tuning",
-        "items": [
-          "White bullet (super-boosted) combo threshold raised from 8 to 12 — harder to reach but the yellow halo tier now lasts longer."
-        ]
-      }
-    ],
-    "commits": [
-      "b73a06c",
-      "d79a44f",
-      "ce900b1",
-      "4ae0ca6",
-      "a2e584d",
-      "5160bf0"
-    ]
-  },
-  {
-    "id": "2026-06-04-f05b6e2",
-    "date": "2026-06-04",
-    "title": "Prong aiming improvements and Pilot's Log vocals option",
-    "sections": [
-      {
-        "heading": "New",
-        "items": [
-          "Added a setting to disable Pilot's Log vocals while still unlocking log entries normally."
-        ]
-      },
-      {
-        "heading": "Fixed",
-        "items": [
-          "Prong shots now correctly show hover rings on both prong reticules, and drift-lock can trigger off either prong.",
-          "Aim disc tick lengths now render correctly on each individual prong reticule."
-        ]
-      }
-    ],
-    "commits": [
-      "f05b6e2",
-      "706895c"
-    ]
-  },
-  {
-    "id": "2026-06-04-1d4bce6",
-    "date": "2026-06-04",
-    "title": "Aliens now arc and drift off-screen instead of wrapping",
-    "sections": [
-      {
-        "heading": "Changed",
-        "items": [
-          "Aliens fly a curving, arcing path across the field instead of moving in straight lines.",
-          "Aliens no longer wrap around the screen edges — they drift off and disappear.",
-          "Alien engine drone sounds stop correctly when an alien leaves the screen.",
-          "Prong reticule now properly anchors the drift-shot bonus to the first prong angle."
-        ]
-      }
-    ],
-    "commits": [
-      "1d4bce6"
-    ]
-  },
-  {
-    "id": "2026-06-03-db469d9",
-    "date": "2026-06-03",
-    "title": "Solid crystal gem drops and fragment changes",
-    "sections": [
-      {
-        "heading": "Changed",
-        "items": [
-          "Solid crystals now use weighted probabilities for gem drops: 60% chance of 0 gems, 25% for 1, 10% for 2, and 5% for 3.",
-          "Destroying a large solid crystal now produces 2 fragments instead of 3.",
-          "The in-game bonus label has been renamed from \"DRIFT BONUS\" to \"DRIFT SHOT\"."
-        ]
-      }
-    ],
-    "commits": [
-      "db469d9"
     ]
   }
 ]
