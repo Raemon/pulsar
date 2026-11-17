@@ -7,7 +7,7 @@ import { checkBonusLife } from "./bonusLife";
 import { popupCombo, popupFarShot, popupRapidRhythm, popupStreakBonus, popupTwinShot } from "./popups";
 import { resetStreak, STREAK_MAX_GAP } from "./streakBurst";
 import { spawnDriftBurst } from "./driftBurst";
-import { noteRhythmComboClimb } from "./waveDirector";
+import { noteRhythmComboClimb } from "./veteran";
 
 // Beat bonuses on top of the per-hit combo increment:
 //   Rapid Rhythm — combo hits on two back-to-back beats pays +1 rhythm.

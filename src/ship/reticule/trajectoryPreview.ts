@@ -3,6 +3,7 @@ import { ConeFrame, clipRayToCone, targetIsInsideCone, toroidalDelta } from "./c
 import { RETICULE_DASH_HSL } from "./radarCone";
 import { TUTORIAL_CONTROL_ACTIONS, type TutorialControlsUsed } from "../../game/controlBindings";
 import { bulletCoreRadius } from "../../Bullet";
+import { isVeteranPilot } from "../../game/veteran";
 
 // The painted aim discs, for a STOCK bullet. Deliberately smaller than the shot's
 // true collision reach (bulletCollisionRadius): the outer on-beat ring is 42% of it
@@ -117,14 +118,6 @@ let hoverZoneHintAnchor: { x: number; y: number } | null = null;
 let hoverZoneHintShownAt: number | null = null;
 // beat-time the originating hover ended; null while still active. Drives the fade-out window.
 let hoverZoneHintRetiredAt: number | null = null;
-// veteran flag is stamped persistently by waveDirector once the player reaches 12x rhythm on three streaks;
-// read it inline to avoid pulling the whole waveDirector module (heavy import graph) just for
-// this gate.
-const HOVER_ZONE_HINT_VETERAN_KEY = "pulsar.veteran";
-const playerIsVeteran = (): boolean => {
-  try { return localStorage.getItem(HOVER_ZONE_HINT_VETERAN_KEY) === "1"; }
-  catch { return false; }
-};
 // gate the hint behind the same "all controls used" milestone that retires the controls
 // hint panel — we don't want to stack a second instructional overlay on top of the first.
 // gameUpdate emits "tutorial:controls" every time a key transitions to used.
@@ -161,7 +154,7 @@ export const expireHoverZoneHintIfHoverEnded = (
 // with a long fade-out after retirement. Safe to call when no hint is active.
 export const paintHoverZoneHint = (ctx: CanvasRenderingContext2D, beatTime: number) => {
   if (hoverZoneHintAnchor === null) return;
-  if (playerIsVeteran()) return;
+  if (isVeteranPilot()) return;
   let alpha = 1;
   if (hoverZoneHintShownAt !== null) {
     const sinceShown = Math.max(0, beatTime - hoverZoneHintShownAt);
@@ -666,7 +659,7 @@ const paintApproachCrosshair = (
   // first paint of that hover. Veterans skip the hint pipeline; pre-veterans only see it once
   // they've cleared the controls hint (rotate + thrust + reverse + fire each used at least once)
   // AND reached the FirstWaveHint "Fire (and hit) on the beat" stage so the cues don't stack.
-  if (zoneEnter !== null && !playerIsVeteran() && allCoreControlsUsed && fireAndHitStageReached && hoverZoneHintZoneEnter === null) {
+  if (zoneEnter !== null && !isVeteranPilot() && allCoreControlsUsed && fireAndHitStageReached && hoverZoneHintZoneEnter === null) {
     hoverZoneHintZoneEnter = zoneEnter;
     hoverZoneHintAnchor = { x: px + outer + HOVER_ZONE_HINT_OFFSET_X, y: py };
     hoverZoneHintShownAt = beatTime;

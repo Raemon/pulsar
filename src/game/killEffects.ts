@@ -30,7 +30,8 @@ import {
   emitWraithDeath,
 } from "./particleBursts";
 import { snapshotAsteroidKill, snapshotAlienKill, snapshotCometKill } from "./killSnapshot";
-import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet, noteRhythmComboClimb } from "./waveDirector";
+import { alignBassBeat, alignSplitChildToRhythm, newBeatClaimSet } from "./waveDirector";
+import { noteRhythmComboClimb } from "./veteran";
 import { BASS_KIND_SOUND } from "./bassClock";
 import { maybeSpawnSkipPortal } from "./waveSkip";
 import { swallowIntoWarp, swallowOpenFrom, warpBite } from "./warpCannon";

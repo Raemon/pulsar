@@ -2323,6 +2323,27 @@ li.lb-self .lb-name-link:hover {
 
 .settings-field input:focus { border-color: rgba(106, 215, 255, 0.6); }
 
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6ad7ff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #6ad7ff;
+  cursor: pointer;
+}
+
 .settings-done {
   align-self: center;
   margin-top: 8px;
