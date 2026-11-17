@@ -2575,7 +2575,7 @@ li.lb-self .lb-name-link:hover {
   opacity: 0;
   pointer-events: none;
   z-index: 50;
-  transition: opacity 0.9s ease-out, transform 0.25s ease-out;
+  transition: opacity 0.9s ease-out;
 }
 
 #wave-announce > span {
@@ -2592,7 +2592,7 @@ li.lb-self .lb-name-link:hover {
   position: absolute;
   top: 100%;
   left: 50%;
-  margin-top: 18px;
+  margin-top: 10px;
   transform: translateX(-50%) scaleX(0.82);
   transform-origin: center;
   font-size: clamp(13px, 1.45vw, 22px);
