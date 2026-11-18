@@ -38,6 +38,8 @@ export type Popup = {
   // two-line warning whose lines fade on separate timers (see staggerLine1Alpha) —
   //   the popup's own alpha follows whichever line is brighter.
   staggered?: boolean;
+  // age at which a staggered warning's line 2 starts fading in (default STAGGER_LINE2_START).
+  staggerLine2Start?: number;
 };
 
 // Two-line warnings show the headline first, then the correction: line 1 holds,
@@ -48,12 +50,13 @@ const STAGGER_LINE2_DELAY = 1;
 const STAGGER_LINE2_START = STAGGER_LINE1_HOLD + STAGGER_LINE2_DELAY;
 const STAGGER_LINE2_FADE_IN = 0.5;
 const STAGGER_LINE2_FADE_OUT = 8;
-export const STAGGERED_WARNING_LIFE = STAGGER_LINE2_START + STAGGER_LINE2_FADE_IN + STAGGER_LINE2_FADE_OUT;
+const staggeredWarningLife = (line2Start: number): number => line2Start + STAGGER_LINE2_FADE_IN + STAGGER_LINE2_FADE_OUT;
+export const STAGGERED_WARNING_LIFE = staggeredWarningLife(STAGGER_LINE2_START);
 const staggerAge = (p: Popup): number => p.maxLife - p.life;
 const staggerLine1Alpha = (age: number): number =>
   age < STAGGER_LINE1_HOLD ? 1 : Math.max(0, 1 - (age - STAGGER_LINE1_HOLD) / STAGGER_LINE1_FADE);
-const staggerLine2Alpha = (age: number): number => {
-  const since = age - STAGGER_LINE2_START;
+const staggerLine2Alpha = (age: number, line2Start = STAGGER_LINE2_START): number => {
+  const since = age - line2Start;
   if (since < 0) return 0;
   if (since < STAGGER_LINE2_FADE_IN) return since / STAGGER_LINE2_FADE_IN;
   return Math.max(0, 1 - (since - STAGGER_LINE2_FADE_IN) / STAGGER_LINE2_FADE_OUT);
@@ -67,21 +70,22 @@ const drawStaggerLine = (ctx: CanvasRenderingContext2D, line: StaggerLine, alpha
   ctx.fillText(line.text, 0, line.y);
 };
 // shared shape for the two-line warnings — callers supply only motion and the two lines.
-type StaggerMotion = Omit<Popup, "life" | "maxLife" | "text" | "font" | "fill" | "shadowColor" | "holdUntil" | "fadeGain" | "staggered" | "draw">;
-const popupStaggeredWarning = (motion: StaggerMotion, line1: StaggerLine, line2: StaggerLine): Popup => ({
+type StaggerMotion = Omit<Popup, "life" | "maxLife" | "text" | "font" | "fill" | "shadowColor" | "holdUntil" | "fadeGain" | "staggered" | "staggerLine2Start" | "draw">;
+const popupStaggeredWarning = (motion: StaggerMotion, line1: StaggerLine, line2: StaggerLine, line2Start = STAGGER_LINE2_START): Popup => ({
   ...motion,
-  life: STAGGERED_WARNING_LIFE,
-  maxLife: STAGGERED_WARNING_LIFE,
+  life: staggeredWarningLife(line2Start),
+  maxLife: staggeredWarningLife(line2Start),
   text: line1.text,
   font: line1.font,
   fill: line1.fill,
   shadowColor: line1.shadow,
   holdUntil: 0, fadeGain: 1,
   staggered: true,
+  staggerLine2Start: line2Start,
   draw: (ctx, p) => {
     const age = staggerAge(p);
     drawStaggerLine(ctx, line1, staggerLine1Alpha(age));
-    drawStaggerLine(ctx, line2, staggerLine2Alpha(age));
+    drawStaggerLine(ctx, line2, staggerLine2Alpha(age, line2Start));
   },
 });
 
@@ -320,7 +324,8 @@ export const popupStreakBonus = (pos: Vec, points: number): Popup => ({
 //   Distinct hues so a glance tells you which: crimson = mistimed *press* (the
 //   action you most control), amber = off-beat *hit* (a softer near-miss). Amber
 //   stays clear of the saturated gold combo halo so a loss never looks like a
-//   reward.
+//   reward. The correction leads and RHYTHM LOST follows, on half the usual stagger wait.
+const COMBO_LOST_LINE2_START = STAGGER_LINE2_START / 2;
 export const popupComboLost = (pos: Vec, reason: "fire" | "hit", timing?: "early" | "late"): Popup => {
   const labelFont = "500 22px 'Space Grotesk', system-ui, sans-serif";
   // off-beat *hits* also name which side of the beat missed — with travel time between
@@ -339,7 +344,7 @@ export const popupComboLost = (pos: Vec, reason: "fire" | "hit", timing?: "early
   ] : [];
   const subtitle = reason === "hit" && timing
     ? hitTimingVariants[Math.floor(Math.random() * hitTimingVariants.length)]
-    : `(${base})`;
+    : base;
   const titleFill = reason === "fire" ? "#ff6a6a" : "#ffae4d";
   const titleShadow = reason === "fire" ? "rgba(255, 90, 90, 0.85)" : "rgba(255, 150, 50, 0.85)";
   const subFill = reason === "fire" ? "#ffb3b3" : "#ffd9a8";
@@ -350,8 +355,9 @@ export const popupComboLost = (pos: Vec, reason: "fire" | "hit", timing?: "early
     decayX: 0.94, decayY: 0.94,
     popPeak: 0.4, popDuration: 0.15,
     halfH: 28,
-  }, { text: "RHYTHM LOST", font: labelFont, fill: titleFill, shadow: titleShadow, y: -14 },
-  { text: subtitle, font: labelFont, fill: subFill, shadow: subShadow, y: 17 });
+  }, { text: subtitle, font: labelFont, fill: subFill, shadow: subShadow, y: -14 },
+  { text: "RHYTHM LOST", font: labelFont, fill: titleFill, shadow: titleShadow, y: 17 },
+  COMBO_LOST_LINE2_START);
 };
 
 // The once-a-run targeting lesson (see game/aimHint.ts): shown instead of the usual
@@ -564,7 +570,7 @@ export const updatePopups = (popups: Popup[], dt: number, w: number, h: number):
 const popupAlpha = (p: Popup, t: number): number => {
   if (p.staggered) {
     const age = staggerAge(p);
-    return Math.max(staggerLine1Alpha(age), staggerLine2Alpha(age));
+    return Math.max(staggerLine1Alpha(age), staggerLine2Alpha(age, p.staggerLine2Start));
   }
   if (p.holdUntil > 0) return t < p.holdUntil ? t / p.holdUntil : 1;
   return Math.min(1, t * p.fadeGain);

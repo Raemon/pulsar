@@ -121,13 +121,6 @@ export const applyHitToCombo = (game: Game, isOnBeatHit: boolean, hitPos: Vec, b
     if (game.beatCombo > game.maxComboThisWave) game.maxComboThisWave = game.beatCombo;
     noteRhythmComboClimb(game, game.beatCombo - 1);
     trackRhythmComboHit(game, hitPos, beatsAway);
-    // Dismiss the post-rhythm-loss "fire and hit on the beat" hint as soon as
-    // the player lands one — reaching here means an on-beat fire was followed
-    // by an on-beat hit. The component no-ops if it's not currently visible.
-    // Also cancel a hint still deferred behind the controls pane: the player
-    //   already demonstrated the skill, so the lesson is moot.
-    game.rhythmLossHintPending = false;
-    window.dispatchEvent(new CustomEvent("rhythm-loss-hint:dismiss"));
     // grid just halved (quarters→eighths) at the 32x sparkle threshold; resync the evaluator
     // so the freshly-uncovered odd eighths don't all close in a burst on the next frame.
     if (crossedSparkleThreshold) rebaseBeatEval(game);

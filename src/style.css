@@ -2968,17 +2968,6 @@ li.lb-self .lb-name-link:hover {
 /* once the whole row dims, the row-level fade carries it — don't compound. */
 .tch-ctrl.used .key.used { opacity: 1; }
 
-/* first-loss recovery hint: reuses .first-wave-hint typography (font, color,
-   accent, scale) and just overrides the position to sit at bottom-middle. */
-.rhythm-loss-hint {
-  top: auto;
-  bottom: 200px;
-}
-
-.rhythm-loss-hint .first-wave-hint__line {
-  font-size: clamp(13px, 1.5vw, 28px);
-}
-
 /* Dev log: one top-left element that morphs between three states — a
    collapsed button, a slightly-expanded teaser of the newest entry for
    returning players, and the full panel. The width/max-height transition

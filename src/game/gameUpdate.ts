@@ -683,16 +683,11 @@ const tickControlsGate = (game: Game) => {
   }
 };
 
-// Fades the normal-mode start-of-run controls hint and releases whatever was
-//   waiting behind it: the deferred first-combo-loss hint fires here.
+// Fades the normal-mode start-of-run controls hint.
 const dismissControlsHint = (game: Game) => {
   if (!game.controlsHintActive) return;
   game.controlsHintActive = false;
   window.dispatchEvent(new CustomEvent("controls-hint:dismiss"));
-  if (game.rhythmLossHintPending) {
-    game.rhythmLossHintPending = false;
-    window.dispatchEvent(new CustomEvent("rhythm-loss-hint:show"));
-  }
 };
 
 // ease bgBeat from practice level to wave level across calibration→play
