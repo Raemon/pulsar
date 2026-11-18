@@ -34,6 +34,8 @@ const showUnlockToast = (label: string) => {
   el.classList.remove("show");
   void el.offsetWidth;
   el.classList.add("show");
+  // The title sits on the control row, so that row yields the slot.
+  window.dispatchEvent(new CustomEvent("controls-hint:dismiss"));
   window.setTimeout(() => { el?.classList.remove("show"); }, 5000);
 };
 

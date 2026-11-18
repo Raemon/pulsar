@@ -2,7 +2,7 @@ import type { Game } from "../Game";
 import type { Asteroid } from "../Asteroid";
 import { Vec, toroidalDelta } from "../vec";
 import type { AimHintRender } from "../ship/reticule/trajectoryPreview";
-import { COMBO_LOST_POPUP_LIFE, AIM_HINT_LIFE_MUL, popupAimHint } from "./popups";
+import { STAGGERED_WARNING_LIFE, popupAimHint } from "./popups";
 
 // A player who presses in time but keeps connecting off-beat has the rhythm and is
 // missing the *lead*: they're shooting at the rock instead of at the reticule that
@@ -14,7 +14,8 @@ import { COMBO_LOST_POPUP_LIFE, AIM_HINT_LIFE_MUL, popupAimHint } from "./popups
 // streak of 2+ proves they can already do it, so that lands the lesson sooner.
 const MISSES_BEFORE_HINT = 5;
 const RHYTHM_FOR_EARLY_HINT = 2;
-export const AIM_HINT_DURATION = COMBO_LOST_POPUP_LIFE * AIM_HINT_LIFE_MUL;
+// the pulse rings run as long as the popup's text does.
+export const AIM_HINT_DURATION = STAGGERED_WARNING_LIFE;
 // how stale a target's radar track may be and still count as "on screen right now".
 const RADAR_CONTACT_FRESH_SEC = 0.25;
 
@@ -72,7 +73,8 @@ const startAimHint = (game: Game, target: Asteroid) => {
 
 // Called for every hit that was fired inside the beat window but landed outside it.
 //   Sets aimHintSuppressLossPopup when it takes over, so the combo-loss path skips the
-//   text this replaces. The flag is cleared by the caller before each judgement.
+//   text this replaces (and a glance tip on the same hit waits for the next glance).
+//   The flag is cleared by the caller before each judgement.
 export const registerFiredOnBeatMiss = (game: Game, hitPos: Vec) => {
   if (game.aimHintShown) return;
   game.firedOnBeatMissCount += 1;
