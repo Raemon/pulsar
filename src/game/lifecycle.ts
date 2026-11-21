@@ -143,6 +143,7 @@ const stopAllPersistentAudio = (game: Game) => {
   // like a drone — explicitly stop it on every state exit so it can't bleed
   // into a cutscene / title / game-over.
   game.sound.stopHaloFullMusic();
+  game.sound.stopWarpCharge();
   game.comets = [];
 };
 
@@ -640,6 +641,7 @@ const enterPause = (game: Game) => {
   game.sound.stopThrust();
   game.sound.stopReverseThrust();
   game.sound.stopSideThrust();
+  game.sound.stopWarpCharge();
   game.sound.fadeForPause(0, 0.35);
   game.overlayTitleEl.textContent = "Paused";
   game.overlayStartEl.textContent = "Resume";
