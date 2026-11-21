@@ -3,7 +3,7 @@ import type { Sound } from "../../Sound";
 import { Vec, add, mul, TAU } from "../../vec";
 import { computeConeFrame } from "./coneGeometry";
 import { paintConeBackground, paintRangeArcs } from "./radarCone";
-import { paintTrajectoryPreviews, ReticuleTarget, TrajectoryTrackMap, AimHintRender, computeBeatPulseBoost, expireHoverZoneHintIfHoverEnded, paintHoverZoneHint, nearestFirstBeatDot, wrapReticuleVec } from "./trajectoryPreview";
+import { paintTrajectoryPreviews, ReticuleTarget, TrajectoryTrackMap, AimHintRender, computeBeatPulseBoost, computeBeatStrike, beatStrikeAt, whitenHsl, expireHoverZoneHintIfHoverEnded, paintHoverZoneHint, nearestFirstBeatDot, wrapReticuleVec } from "./trajectoryPreview";
 import {
   reticuleOverlapsAnyTarget,
   paintAimDiscs,
@@ -61,6 +61,7 @@ const ARROW_FADE_SEC = 0.18;
 const HOVER_PULSE_SPAN = 34;
 const HOVER_PULSE_LINE_WIDTH = 2;
 const HOVER_PULSE_PEAK_ALPHA = 0.8;
+const HOVER_PULSE_STRIKE_EXTRA_WIDTH = 1.2;
 // Tier-6 climax (the final tier): the hold pulse stops being "the same ring, wider/whiter" and
 // becomes a distinct radiant event — a thick incandescent leading ring trailed by a soft halo,
 // plus a slow on-the-downbeat bloom so reaching the top reads as "fully arrived / radiant".
@@ -482,19 +483,19 @@ const paintSoundwaves = (
     const t = ageBeats / HOVER_WAVE_LIFETIME_BEATS;
     // higher tiers push the soundwaves out wider so the escalation reads at a glance.
     const r = HOVER_WAVE_START_R + (HOVER_WAVE_END_R - HOVER_WAVE_START_R) * t * widthMult;
-    // fade-in over the first ~10% so a newly-emitted wave doesn't pop in too hard, then
-    // fade out the rest of its life. Quadratic falloff feels like a soundwave dissipating.
-    const fadeIn = Math.min(1, t / 0.1);
+    // a fresh wave leaves as a white flash on its beat, then fades over the rest of its life.
+    // Quadratic falloff feels like a soundwave dissipating.
+    const strike = beatStrikeAt(ageSec);
     const fadeOut = Math.pow(1 - t, 1.8);
-    const envelope = fadeIn * fadeOut;
     // the first wave fired after lock is brighter so lock acquisition still reads as a
     // distinct beat. After one full emit period every wave settles to the steady look.
     const beatsBetweenWaveAndLock = beatsSinceLock - ageBeats;
     const isLockWave = beatsBetweenWaveAndLock >= 0 && beatsBetweenWaveAndLock < HOVER_WAVE_PERIOD_BEATS;
     const peakAlpha = isLockWave ? HOVER_LOCK_WAVE_PEAK_ALPHA : HOVER_WAVE_PEAK_ALPHA;
     const lineWidth = isLockWave ? HOVER_LOCK_WAVE_LINE_WIDTH : HOVER_WAVE_LINE_WIDTH;
-    ctx.lineWidth = lineWidth;
-    ctx.strokeStyle = `hsla(${tierHsl}, ${peakAlpha * envelope * fadeOutAlpha})`;
+    const restAlpha = peakAlpha * fadeOut;
+    ctx.lineWidth = lineWidth + HOVER_PULSE_STRIKE_EXTRA_WIDTH * strike;
+    ctx.strokeStyle = `hsla(${whitenHsl(tierHsl, strike)}, ${(restAlpha + (1 - restAlpha) * strike) * fadeOutAlpha})`;
     ctx.beginPath();
     ctx.arc(center.x, center.y, r, 0, TAU);
     ctx.stroke();
@@ -569,9 +570,9 @@ const paintFinalHoverPulse = (
   // downbeat bloom: cosine swell peaking on the beat (1.0) and easing to a floor between beats,
   // so the radiance pulses with the song instead of sitting at a constant brightness.
   const bloom = cosineEnvelope(beatTime, beatGrid, 0.78, 1.0);
-  const fadeIn = Math.min(1, phase / 0.12);
+  const strike = beatStrikeAt(phase * beatGrid);
   const fadeOut = (1 - phase) * (1 - phase);
-  const env = fadeIn * fadeOut * fade01 * bloom;
+  const env = (fadeOut + (1 - fadeOut) * strike) * fade01 * bloom;
   const leadR = startR + (endR - startR) * phase;
   ctx.setLineDash([]);
   // 1) trailing halo — sits behind the leading edge, wide and soft, biggest contributor to the glow.
@@ -581,9 +582,9 @@ const paintFinalHoverPulse = (
   ctx.beginPath();
   ctx.arc(center.x, center.y, haloR, 0, TAU);
   ctx.stroke();
-  // 2) incandescent leading ring — the main bright body of the pulse.
-  ctx.strokeStyle = `hsla(${HOVER_PULSE_FINAL_HSL}, ${HOVER_PULSE_FINAL_PEAK_ALPHA * env})`;
-  ctx.lineWidth = HOVER_PULSE_FINAL_LINE_WIDTH * (0.9 + 0.25 * bloom);
+  // 2) incandescent leading ring — the main bright body of the pulse, white-hot at launch.
+  ctx.strokeStyle = `hsla(${whitenHsl(HOVER_PULSE_FINAL_HSL, strike)}, ${HOVER_PULSE_FINAL_PEAK_ALPHA * env})`;
+  ctx.lineWidth = HOVER_PULSE_FINAL_LINE_WIDTH * (0.9 + 0.25 * bloom) + HOVER_PULSE_STRIKE_EXTRA_WIDTH * strike;
   ctx.beginPath();
   ctx.arc(center.x, center.y, leadR, 0, TAU);
   ctx.stroke();
@@ -612,17 +613,18 @@ const paintHoverPulse = (
   // white until the hold arms a drift shot (tier 0), then the tier hue tints the pulse gold →
   // cyan → magenta as the player holds deeper — so the pulse only reads warm once a drift shot
   // would actually trigger, matching the dot-ring arcs and soundwaves.
-  const hsl = tier > 0 ? driftTierPulseHsl(tier) : HOVER_DOT_HSL_UNARMED;
+  const strike = beatStrikeAt(phase * beatGrid);
+  const hsl = whitenHsl(tier > 0 ? driftTierPulseHsl(tier) : HOVER_DOT_HSL_UNARMED, strike);
   const widthMult = tier > 0 ? driftTierWidthMult(tier) : 1;
   const startR = HOVER_PULSE_START_R;
   const endR = startR + (HOVER_PULSE_END_R - startR) * widthMult;
   const r = startR + (endR - startR) * phase;
-  // ease in over the first sliver so a freshly-launched ring doesn't pop, then fade as it expands.
-  const fadeIn = Math.min(1, phase / 0.12);
+  // launches as a white flash on the beat, settles to its tier colour, then fades as it expands.
   const fadeOut = (1 - phase) * (1 - phase);
-  const alpha = HOVER_PULSE_PEAK_ALPHA * fadeIn * fadeOut * fade01;
+  const restAlpha = HOVER_PULSE_PEAK_ALPHA * fadeOut;
+  const alpha = (restAlpha + (1 - restAlpha) * strike) * fade01;
   ctx.strokeStyle = `hsla(${hsl}, ${alpha})`;
-  ctx.lineWidth = HOVER_PULSE_LINE_WIDTH;
+  ctx.lineWidth = HOVER_PULSE_LINE_WIDTH + HOVER_PULSE_STRIKE_EXTRA_WIDTH * strike;
   ctx.setLineDash([]);
   ctx.beginPath();
   ctx.arc(center.x, center.y, r, 0, TAU);
@@ -693,6 +695,7 @@ export const renderShipReticules = (
   const hitboxPulse = cosineEnvelope(beatTime, RETICULE_HITBOX_PULSE_PERIOD_SEC, RETICULE_HITBOX_PULSE_MIN, RETICULE_HITBOX_PULSE_MAX);
   const radarPulse = cosineEnvelope(beatTime, RETICULE_RADAR_PULSE_PERIOD_SEC, RETICULE_RADAR_PULSE_MIN, RETICULE_RADAR_PULSE_MAX);
   const beatPulseBoost = computeBeatPulseBoost(beatTime, beatGrid);
+  const beatStrike = computeBeatStrike(beatTime, beatGrid);
   // A live mine dims the sight too: the next press detonates it, not a throw.
   const nextPressWontShoot = ship.fireCooldown > 0 || ship.bombInPlay || magazineBlocksFire(ship);
   const cooldownDim = nextPressWontShoot ? RETICULE_COOLDOWN_DIM : 1;
@@ -722,7 +725,7 @@ export const renderShipReticules = (
       ? true
       : reticuleOverlapsAnyTarget(pos, targets, w, h);
     const slot = slotByPosIndex[i];
-    paintAimDiscs(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha, overlaps, onFirstBeatDot, tutorialHighlight, slot);
+    paintAimDiscs(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha, overlaps, onFirstBeatDot, tutorialHighlight, slot, beatStrike * cooldownDim);
     if (ship.bombActive && !ship.bombInPlay && slot === 1) paintBombBlastPreview(ctx, wrapReticuleVec(pos, w, h), baseHitAlpha);
   }
   // each slot's ring uses the softer proximity halo (>0 anywhere in the dot glow ramp) so the

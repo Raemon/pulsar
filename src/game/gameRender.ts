@@ -1,7 +1,7 @@
 import type { Game } from "../Game";
 import type { Vec } from "../vec";
 import { BEAT_GRID } from "./rhythmConstants";
-import { currentBeatPulse, currentBeatFlash } from "./rhythmGate";
+import { currentBeatPulse, currentBeatFlash, currentSecondsIntoBeat } from "./rhythmGate";
 import { renderTrails } from "./trailsRender";
 import { renderPopups } from "./popups";
 import { renderBassLightnings } from "./bassLightning";
@@ -356,7 +356,7 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
     ctx.fill();
     ctx.restore();
   }
-  game.ship.render(ctx, game.time, currentBeatPulse(game), cropPortal, game.w, game.h);
+  game.ship.render(ctx, game.time, currentBeatPulse(game), cropPortal, game.w, game.h, currentSecondsIntoBeat(game));
   if (!warping) {
     renderLaserReticule(ctx, game, game.beatTime);
     renderLaserEmitter(ctx, game, game.beatTime);

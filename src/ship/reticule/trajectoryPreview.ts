@@ -248,6 +248,25 @@ export const computeBeatPulseBoost = (beatTime: number, beatGrid: number): numbe
   return 1 + (RETICULE_BEAT_PULSE_PEAK - 1) * decay;
 };
 
+// the beat's crisp start: snaps to 1 the instant the beat lands and falls away within a few
+// frames, so the sight flashes white and then settles back into the slower decay above.
+const RETICULE_BEAT_STRIKE_SEC = 0.09;
+export const beatStrikeAt = (secondsSinceBeat: number): number => {
+  if (secondsSinceBeat < 0 || secondsSinceBeat >= RETICULE_BEAT_STRIKE_SEC) return 0;
+  const k = 1 - secondsSinceBeat / RETICULE_BEAT_STRIKE_SEC;
+  return k * k;
+};
+export const computeBeatStrike = (beatTime: number, beatGrid: number): number => {
+  if (beatGrid <= 0) return 0;
+  return beatStrikeAt(((beatTime % beatGrid) + beatGrid) % beatGrid);
+};
+// drains an "H, S%, L%" colour toward pure white by `t` without walking the hue.
+export const whitenHsl = (hsl: string, t: number): string => {
+  if (t <= 0) return hsl;
+  const [h, sat, l] = hsl.split(",").map((part) => parseFloat(part));
+  return `${h}, ${sat * (1 - t)}%, ${l + (100 - l) * t}%`;
+};
+
 // when a target first enters the cone, briefly boost alpha so the appearance reads as a flash.
 const TRAJECTORY_ENTRY_FLASH_DURATION_SEC = 0.35;
 const TRAJECTORY_ENTRY_FLASH_PEAK_BOOST = 2.5;

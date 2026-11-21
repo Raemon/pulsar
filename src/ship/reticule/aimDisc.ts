@@ -1,5 +1,5 @@
 import { Vec, TAU } from "../../vec";
-import { BULLET_SIGHT_RADIUS_ON_BEAT, BULLET_SIGHT_RADIUS_OFF_BEAT, ReticuleTarget, slotCrosshairLengthTrajectory } from "./trajectoryPreview";
+import { BULLET_SIGHT_RADIUS_ON_BEAT, BULLET_SIGHT_RADIUS_OFF_BEAT, ReticuleTarget, slotCrosshairLengthTrajectory, whitenHsl } from "./trajectoryPreview";
 import { toroidalDelta } from "./coneGeometry";
 
 // matches the ship trajectory chevron hue so the reticule reads as "yours"
@@ -17,6 +17,11 @@ const RETICULE_TICK_BONUS = 1;
 const RETICULE_CROSSHAIR_DASH: [number, number] = [2, 2];
 // brightness boost when the disc covers a target tells the player "this shot will land".
 const RETICULE_OVERLAP_BRIGHTNESS = 3;
+
+// on the beat strike the dashes thicken and a solid ring closes the gaps, so the sight
+// flashes as one white circle before settling back to its dashed resting look.
+const RETICULE_STRIKE_EXTRA_WIDTH = 0.9;
+const RETICULE_STRIKE_RING_ALPHA = 0.6;
 
 // tutorial highlight ("Use your targeting tools to aim.") — repaints the dashed ring
 // in white with a steady yellow shadow-blur halo so the player's eye is pulled to it.
@@ -39,28 +44,39 @@ export const reticuleOverlapsAnyTarget = (
 // two concentric dashed circles — inner is off-beat hit radius, outer is on-beat (larger).
 // Bright only when a first-beat dot sits under the reticule (or tutorial highlight); otherwise
 // at the baseAlpha set by the caller, so the bright state means "this shot lands on the next
-// beat" unambiguously. The per-beat pulse already lives in `baseAlpha` via the caller.
+// beat" unambiguously. The per-beat pulse already lives in `baseAlpha` via the caller;
+// `strike01` is the beat's white flash on top of it (computeBeatStrike).
 export const paintAimDiscs = (
   ctx: CanvasRenderingContext2D, reticulePos: Vec, baseAlpha: number,
   overlapsTarget: boolean, onFirstBeatDot: boolean,
   tutorialHighlight: boolean = false,
   slot: number = 1,
+  strike01: number = 0,
 ) => {
   // slot ≤ 0 (e.g. prong fans the shot off-axis) falls back to the default 1-beat tick length.
   const tickLength = (slot >= 1 ? slotCrosshairLengthTrajectory(slot) : slotCrosshairLengthTrajectory(1)) + RETICULE_TICK_BONUS;
   const locked = onFirstBeatDot || tutorialHighlight;
   const overlapBoost = overlapsTarget || locked ? RETICULE_OVERLAP_BRIGHTNESS : 1;
-  const hitAlpha = Math.min(1, baseAlpha * overlapBoost);
+  const restAlpha = Math.min(1, baseAlpha * overlapBoost);
+  const hitAlpha = restAlpha + (1 - restAlpha) * strike01;
   ctx.globalAlpha = 1;
   const prevShadowColor = ctx.shadowColor;
   if (tutorialHighlight) {
     ctx.shadowColor = `hsla(${TUTORIAL_HIGHLIGHT_GLOW_HSL}, ${TUTORIAL_HIGHLIGHT_GLOW_ALPHA})`;
   }
-  const dashHsl = tutorialHighlight ? TUTORIAL_HIGHLIGHT_HSL : RETICULE_DASH_HSL;
-  ctx.strokeStyle = `hsla(${dashHsl}, ${tutorialHighlight ? Math.max(hitAlpha, 0.85) : hitAlpha})`;
-  ctx.lineWidth = 1;
-  ctx.setLineDash(RETICULE_LINE_DASH);
+  const dashHsl = tutorialHighlight ? TUTORIAL_HIGHLIGHT_HSL : whitenHsl(RETICULE_DASH_HSL, strike01);
   const isSecondary = slot >= 2;
+  if (strike01 > 0 && !isSecondary) {
+    ctx.strokeStyle = `hsla(0, 0%, 100%, ${RETICULE_STRIKE_RING_ALPHA * strike01})`;
+    ctx.lineWidth = 1 + RETICULE_STRIKE_EXTRA_WIDTH * strike01;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(reticulePos.x, reticulePos.y, BULLET_SIGHT_RADIUS_ON_BEAT, 0, TAU);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = `hsla(${dashHsl}, ${tutorialHighlight ? Math.max(hitAlpha, 0.85) : hitAlpha})`;
+  ctx.lineWidth = 1 + RETICULE_STRIKE_EXTRA_WIDTH * strike01;
+  ctx.setLineDash(RETICULE_LINE_DASH);
   // secondary reticules (farshot / high-rhythm 2nd & 3rd) are just the crosshair
   // ticks — no circles — so only the primary reads as the full targeting disc.
   if (!isSecondary) {
