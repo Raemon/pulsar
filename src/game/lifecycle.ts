@@ -1,7 +1,8 @@
 import type { Game } from "../Game";
+import { resetCamScroll } from "./camScroll";
 import { resetAimHint } from "./aimHint";
 import { Ship } from "../Ship";
-import { spawnAsteroidAtEdge, BASS_KINDS } from "../Asteroid";
+import { spawnAsteroidAtEdge } from "../Asteroid";
 import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
 import { syncHud, syncComboHud, syncPowerupHud } from "./hud";
@@ -22,7 +23,7 @@ import { hideGameOverIntro, showGameOverIntro } from "./gameOverIntro";
 import { hasCalibrated, CALIBRATION_BEAT_INTENSITY, loadBeatOffset } from "./beatCalibration";
 import { pickIntroHints } from "./introHints";
 import { isNewDaySession, markSessionStart } from "./sessionTracker";
-import { rng, seedRng } from "./rng";
+import { seedRng } from "./rng";
 import { ReplayRecorder } from "./replayRecorder";
 import { ReplayPlayer } from "./replayPlayer";
 import { decodeReplay } from "./replayFormat";
@@ -105,16 +106,6 @@ export const emitTutorialControls = (used: TutorialControlsUsed) => {
   window.dispatchEvent(new CustomEvent("tutorial:controls", { detail: { ...used } }));
 };
 
-// Fisher-Yates over Array.sort — sort's randomness is biased and varies across engines.
-const shuffled = <T,>(arr: ReadonlyArray<T>): T[] => {
-  const out = arr.slice();
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-};
-
 // title screen needs visible motion; decorative rocks don't carry HP or split logic.
 const spawnTitleDecorativeAsteroids = (game: Game) => {
   const decorativeAsteroidIndices = [0, 1, 2, 3, 4];
@@ -134,6 +125,7 @@ const stopAllPersistentAudio = (game: Game) => {
   // like a drone — explicitly stop it on every state exit so it can't bleed
   // into a cutscene / title / game-over.
   game.sound.stopHaloFullMusic();
+  game.sound.stopWarpCharge();
   game.comets = [];
 };
 
@@ -290,7 +282,6 @@ export const startCalibrationIntro = (game: Game) => {
   game.waveTransitioning = false;
   resetRunTimers(game);
   resetRunCollections(game);
-  game.bassOrder = shuffled(BASS_KINDS);
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 1e9; // untouchable through the warm-up
@@ -444,11 +435,11 @@ export const startGame = (game: Game, overrides?: {
   for (const variation of HALO_MUSIC_POOL) {
     game.sound.preloadHaloMusic(variation);
   }
-  // Seed the PRNG before anything random fires (bassOrder shuffle, wave events,
-  //   asteroid hues). Re-arming the lazy hue cursor lets the first nextWaveHue
+  // Seed the PRNG before anything random fires (wave events, asteroid
+  //   hues). Re-arming the lazy hue cursor lets the first nextWaveHue
   //   call after this draw from the seeded RNG, not whichever cursor a previous
   //   run left behind. Replay overrides supply the recorded seed up front so the
-  //   downstream shuffle + wave spawn draw the same numbers the recording saw.
+  //   downstream wave spawn draws the same numbers the recording saw.
   game.runSeed = overrides
     ? overrides.seed
     : (crypto.getRandomValues(new Uint32Array(1))[0]) >>> 0;
@@ -496,7 +487,6 @@ export const startGame = (game: Game, overrides?: {
   game.waveTransitioning = false;
   resetRunTimers(game);
   resetRunCollections(game);
-  game.bassOrder = shuffled(BASS_KINDS);
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 2.0;
@@ -524,6 +514,7 @@ export const startGame = (game: Game, overrides?: {
 
 // run-scoped state only; spawnWave handles per-wave timers separately.
 const resetRunTimers = (game: Game) => {
+  resetCamScroll(game);
   game.beatTime = 0;
   game.lastBeatResnapAt = game.beatTime;
   game.beatPhaseCorrection = 0;
@@ -626,6 +617,7 @@ const enterPause = (game: Game) => {
   game.sound.stopThrust();
   game.sound.stopReverseThrust();
   game.sound.stopSideThrust();
+  game.sound.stopWarpCharge();
   game.sound.fadeForPause(0, 0.35);
   game.overlayTitleEl.textContent = "Paused";
   game.overlayStartEl.textContent = "Resume";

@@ -48,10 +48,9 @@ export const actOfWave = (wave: number): number => {
 
 // How far through its own act a (possibly fractional) wave level sits, 0 at
 // the act's first wave and 1 on its boss wave. The sky reads this to swell each
-// boss body on its own act's clock, and to walk the Sepulchre's satellites out
-// of the background and into the field around the player, so it takes the
-// smoothed wave level rather than the integer wave — things have to glide
-// across a wave boundary, not jump.
+// boss body on its own act's clock, and to resolve the Sepulchre's ring of
+// moons, so it takes the smoothed wave level rather than the integer wave —
+// things have to glide across a wave boundary, not jump.
 export const actProgress = (act: number, waveLevel: number): number => {
   const index = BOSS_ENCOUNTERS.findIndex((b) => b.act === act);
   const firstWave = index === 0 ? 1 : BOSS_ENCOUNTERS[index - 1].wave + 1;

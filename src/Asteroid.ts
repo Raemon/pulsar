@@ -1327,6 +1327,9 @@ export class Asteroid {
   // foreshadow animation and is invulnerable. "live" is the normal damageable
   // engagement. Only meaningful when isBossFamily().
   bossPhase: "dormant" | "live" = "live";
+  // Fraction of full radius the dormant body is drawn at when it spawns; it
+  // swells from here to full size over the reveal.
+  dormantStartFrac = 0.42;
   // Seconds elapsed since spawn while dormant; drives the swell + the rotate
   // -around reveal of the architecture. Reaches revealDuration → phase
   // transitions to "live" and the eye opens.
@@ -7068,7 +7071,7 @@ export class Asteroid {
   renderBossDormant(ctx: CanvasRenderingContext2D, t: number) {
     const baseHue = this.hue;
     const phase = this.bossDormantPhase();
-    const r = this.radius * (0.42 + 0.58 * phase.swellT);
+    const r = this.radius * (this.dormantStartFrac + (1 - this.dormantStartFrac) * phase.swellT);
 
     ctx.save();
     // Shudder: as the planetoid wakes it trembles in place, harder the closer
@@ -8779,7 +8782,7 @@ export class Asteroid {
   renderSepulchreDormant(ctx: CanvasRenderingContext2D, t: number) {
     const H = this.hue;
     const phase = this.bossDormantPhase();
-    const r = this.radius * (0.42 + 0.58 * phase.swellT);
+    const r = this.radius * (this.dormantStartFrac + (1 - this.dormantStartFrac) * phase.swellT);
 
     ctx.save();
     let shakeX = 0, shakeY = 0;
@@ -9171,13 +9174,15 @@ export const shipTouchingTorusThread = (
 };
 
 // Drop the boss directly at the screen position the looming planetoid was
-// occupying, with a slow drift toward the screen centre. We don't aim at
+// occupying, at the radius it was drawn (`startRadius`), with a slow drift
+// toward the screen centre. We don't aim at
 // the ship — the boss is a planetoid, not a hunter — and we pick a gentle
 // speed so the player has time to react to the new threat.
 export const spawnBossAt = (
   pos: Vec,
   w: number,
   h: number,
+  startRadius?: number,
 ): Asteroid => {
   const cx = w / 2;
   const cy = h / 2;
@@ -9186,7 +9191,9 @@ export const spawnBossAt = (
   const norm = Math.max(1, Math.hypot(dx, dy));
   const speed = 5;
   const vel = v((dx / norm) * speed, (dy / norm) * speed);
-  return new Asteroid({ x: pos.x, y: pos.y }, vel, "large", undefined, "boss");
+  const boss = new Asteroid({ x: pos.x, y: pos.y }, vel, "large", undefined, "boss");
+  if (startRadius !== undefined) boss.dormantStartFrac = Math.max(0.1, Math.min(1, startRadius / boss.radius));
+  return boss;
 };
 
 // min sin of angle between trajectory and the spawn edge. sin(30°) = 0.5 — at

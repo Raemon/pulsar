@@ -1,5 +1,5 @@
 import { Ship } from "./Ship";
-import { Asteroid, AsteroidKind } from "./Asteroid";
+import { Asteroid } from "./Asteroid";
 import { Bullet } from "./Bullet";
 import { ParticleSystem } from "./Particle";
 import { Shard } from "./Shard";
@@ -22,7 +22,7 @@ import { FIRST_BONUS_LIFE_SCORE } from "./game/bonusLife";
 import type { BassLightning } from "./game/bassLightning";
 import type { DriftBurst } from "./game/driftBurst";
 import type { Wormhole } from "./game/wormhole";
-import type { Swallow, WarpedBody } from "./game/warpCannon";
+import type { Swallow, WarpedOut } from "./game/warpCannon";
 import type { WarpIn } from "./game/warpReturn";
 import type { InkPatch } from "./game/inkCloud";
 import type { SkipPortal, WaveSkipState } from "./game/waveSkip";
@@ -104,9 +104,9 @@ export class Game implements HudElements {
   // Bodies a Warp Cannon shot swallowed, falling through the portal it tore
   //   open (also in the list above) — cosmetic; see game/warpCannon.ts.
   swallows: Swallow[] = [];
-  // Bodies swallowed this wave, held for their return as the next one spawns,
-  //   and returns in flight — see game/warpReturn.ts.
-  warpedOut: WarpedBody[] = [];
+  // Bodies swallowed, each held until the wave it's due back on spawns, and
+  //   returns in flight — see game/warpReturn.ts.
+  warpedOut: WarpedOut[] = [];
   warpIns: WarpIn[] = [];
   // Wave-skip portals torn open by player-killed aliens: each record pairs a
   //   wormhole visual (shared with the list above) with its rolled skip depth.
@@ -347,8 +347,6 @@ export class Game implements HudElements {
   //   "drift away from the player" spawn that only the first level uses.
   hasSpawnedFirstLevel = false;
   slowMoTimer = 0;
-  // per-game randomised bass-kind intro order so the wave-2/3 picks vary between runs.
-  bassOrder: AsteroidKind[] = [];
   // one unified list replaces four parallel `xSpawnAt` fields used to schedule mid-wave events.
   waveEvents: WaveEventSchedule = newWaveEventSchedule();
 

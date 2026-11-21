@@ -367,6 +367,13 @@ const boostSeparation = (c: Asteroid, parentVel: Vec, k: number) => {
   }
 };
 
+// An on-beat kill's taiko gets a layer in the timbre of the weapon that made it.
+const playWeaponBeatLayer = (game: Game, b: Bullet, pos: Vec) => {
+  if (b.warp) game.sound.play("warpBoomBeat", b.warpVoiceKey, pos);
+  else if (b.bomb || b.bombBlastStrike) game.sound.play("bombBoomBeat", 1, pos);
+  else if (b.instantHit) game.sound.play("laserBoomBeat", 1, pos);
+};
+
 // bassEcho → asteroidHit order matches the original handleCollisions bullet branch.
 export const onAsteroidKilledByBullet = (
   game: Game,
@@ -390,6 +397,7 @@ export const onAsteroidKilledByBullet = (
   const isCrystalShatter = sound === "crystalShatterLarge" || sound === "crystalShatterSmall";
   const pitch = isCrystalShatter && isOnBeatHit ? 0 : 1;
   game.sound.play(sound, pitch, a.pos);
+  if (useTaiko) playWeaponBeatLayer(game, b, a.pos);
   // Layer the meaty armored-impact on a large shot's killing blow too, so the
   // hit that cleaves the boss lands as heavily as the chips along the way.
   playBossImpactIfLarge(game, a, b);

@@ -13,7 +13,7 @@ import { HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATIONS } from "./g
 import { SOUND_LOAD_SCHEDULE, STREAK_SHIMMER_POOL_SIZE, FIRST_DOT_HUM_POOL_SIZE } from "./game/soundSchedule";
 import type { CaptureAudioContext } from "./game/audioCapture";
 import { BEAT_GRID } from "./game/rhythmConstants";
-import { WARP_VOICE_KEYS, WARP_CHORD_TONES } from "./game/warpCharge";
+import { WARP_VOICE_KEYS, WARP_CHORD_TONES, WARP_MAX_CHARGE, warpTierSpanBeats } from "./game/warpCharge";
 
 type ToneModule = typeof import("tone");
 let toneModulePromise: Promise<ToneModule> | null = null;
@@ -311,6 +311,11 @@ export type SoundName =
   // Weapon impacts. warpSwallow is keyed by the swallowed body's size tier
   // (0..2), bombBounce by the bounce's impact tier (0..2).
   | "warpSwallow"
+  // Layered over the taiko on an on-beat kill, in each weapon's own timbre.
+  // warpBoomBeat is keyed like the shot's voices (warpVoiceKey).
+  | "warpBoomBeat"
+  | "laserBoomBeat"
+  | "bombBoomBeat"
   | "bombBlast"
   | "bombBlastBeat"
   | "bombBounce"
@@ -432,7 +437,9 @@ type PercEnvelope = {
 // A bake key that indexes `count` variants, from play()'s pitchRatio.
 const keyIndex = (pitchRatio: number, count: number): number => Math.max(0, Math.min(count - 1, Math.round(pitchRatio)));
 
-type OneShotVoice = "fireBomb" | "fireBombBeat" | "fireWarp" | "fireWarpBeat" | "warpSwallow" | "bombBlast" | "bombBlastBeat" | "bombBounce";
+type OneShotVoice =
+  | "fireBomb" | "fireBombBeat" | "fireWarp" | "fireWarpBeat" | "warpSwallow" | "bombBlast" | "bombBlastBeat" | "bombBounce"
+  | "warpBoomBeat" | "laserBoomBeat" | "bombBoomBeat";
 
 // The playFire pluck's tuning: sine body, octave partial, bandpassed noise tick.
 // `instant` drops the attack ramps so the onset lands exactly on the keypress.
@@ -504,6 +511,18 @@ export class Sound {
     sources: AudioBufferSourceNode[];
     tierGains: GainNode[];
     mainGain: GainNode;
+  } | null = null;
+  // The Warp Cannon's held-charge chord (startWarpCharge), synthesised live.
+  warpChargeNode: {
+    tier: number;
+    bus: GainNode;
+    tone: BiquadFilterNode;
+    voices: OscillatorNode[];
+    sub: OscillatorNode;
+    subGain: GainNode;
+    shimmer: OscillatorNode;
+    shimmerGain: GainNode;
+    oscs: OscillatorNode[];
   } | null = null;
   // Side engines (Z/X) — third engine voice; pitch sits between forward thrust
   // and retro so the player hears it as a distinct vector.
@@ -1468,6 +1487,11 @@ export class Sound {
     fireWarpBeat: 2.0,
     // a full-charge swallow rings out by 0.8s, then its eighth-note echo rings down
     warpSwallow: 2.2,
+    // the shimmer rings into the eighth-note echo
+    warpBoomBeat: 1.8,
+    laserBoomBeat: 1.0,
+    // the bronze ring and its dotted-eighth echo
+    bombBoomBeat: 2.6,
     // rumble out to 2.25s plus the 1.3s room, and the drum's echo ringing down
     bombBlast: 4.0,
     bombBlastBeat: 4.0,
@@ -1699,6 +1723,9 @@ export class Sound {
       case "driftShotHit": return (c, d, t) => this.buildDriftShotHitGraph(c, d, t, key);
       case "laserCharge": return (c, d, t) => this.buildLaserChargeGraph(c, d, t, key);
       case "warpSwallow": return (c, d, t) => this.buildWarpSwallowGraph(c, d, t, key);
+      case "warpBoomBeat": return (c, d, t) => this.buildWarpBoomBeatGraph(c, d, t, key);
+      case "laserBoomBeat": return (c, d, t) => this.buildLaserBoomBeatGraph(c, d, t);
+      case "bombBoomBeat": return (c, d, t) => this.buildBombBoomBeatGraph(c, d, t);
       case "bombBounce": return (c, d, t) => this.buildBombBounceGraph(c, d, t, key);
       // Only the full-length note is baked (durationScale 1); the key is the
       // fundamental in Hz.
@@ -2428,6 +2455,7 @@ export class Sound {
     this.setEnabled(false);
     this.stopHaloFullMusic();
     this.stopLaserCharge();
+    this.stopWarpCharge();
     this.abandonReleasingVoices();
     // Burst starts are clock readings; the next context's clock starts over.
     this.bakedBursts.clear();
@@ -6403,7 +6431,10 @@ export class Sound {
       case "fireBombBeat": this.playOneShot(name, 1); break;
       case "fireWarp":
       case "fireWarpBeat":
-      case "warpSwallow": this.playOneShot(name, keyIndex(pitchRatio, WARP_VOICE_KEYS)); break;
+      case "warpSwallow":
+      case "warpBoomBeat": this.playOneShot(name, keyIndex(pitchRatio, WARP_VOICE_KEYS)); break;
+      case "laserBoomBeat":
+      case "bombBoomBeat": this.playOneShot(name, 1); break;
       case "bombBounce": this.playOneShot(name, keyIndex(pitchRatio, 3)); break;
       case "bombBlast":
       case "bombBlastBeat": this.playOneShot(name, 1); break;
@@ -7357,6 +7388,174 @@ export class Sound {
     this.warpBloom(ctx, bent, t, hz, { fromHz: hz * (4 / 3), len, peak: 0.12 });
     this.percTone(ctx, bus, t, { hz: hz / 2, peak: 0.18, attack: 0.003, decay: len * 0.6 });
     this.percNoise(ctx, bus, t, { filter: "lowpass", hz: 600, endHz: 150, peak: 0.18, attack: 0.001, decay: 0.05 });
+  }
+
+  // ── On-beat kill layers: each weapon's colour over the taiko ──────────────
+
+  // Warp Cannon: the taiko's skin struck again an octave under the shot's own
+  // note and falling a fourth, as the swallow does, with the shot's chord tone
+  // and its fifth shimmering through the bending flanger into the eighth-note
+  // echo. A hollow, glassy knock instead of a wooden one.
+  private buildWarpBoomBeatGraph(ctx: BaseAudioContext, dest: AudioNode, t: number, key: number) {
+    const { hz, tier } = Sound.warpNote(key);
+    const len = 0.55 + 0.1 * tier;
+    const bus = ctx.createGain();
+    bus.gain.value = 0.75;
+    bus.connect(dest);
+    this.percTone(ctx, bus, t, { hz: hz / 2, endHz: hz * (3 / 8), glide: 0.12, peak: 0.32, attack: 0.002, decay: len * 0.7 });
+    const bent = this.spaceBendingFlanger(ctx, bus, this.warpEcho(ctx, bus), t, len);
+    for (const [ratio, peak] of [[2, 0.05], [3, 0.03]] as const) {
+      for (const cents of [-9, 9]) {
+        const osc = this.percTone(ctx, bent, t, { type: "triangle", hz: hz * ratio, peak, attack: 0.006, decay: len });
+        osc.detune.value = cents;
+      }
+    }
+    this.percNoise(ctx, bus, t, { filter: "bandpass", hz: 1800, endHz: 500, q: 2, peak: 0.07, attack: 0.002, decay: 0.09 });
+  }
+
+  // Laser: a bright arc-strike — a resonant sweep snapping down onto C over a
+  // high G and E ping, the laser charge's own C-major triad, all over in a
+  // fraction of a beat so it sharpens the taiko's attack rather than its tail.
+  private buildLaserBoomBeatGraph(ctx: BaseAudioContext, dest: AudioNode, t: number) {
+    const bus = ctx.createGain();
+    bus.gain.value = 0.7;
+    bus.connect(dest);
+    const arc = ctx.createBiquadFilter();
+    arc.type = "bandpass";
+    arc.Q.value = 6;
+    arc.frequency.setValueAtTime(4200, t);
+    arc.frequency.exponentialRampToValueAtTime(700, t + 0.16);
+    arc.connect(bus);
+    this.percTone(ctx, arc, t, { type: "sawtooth", hz: 1046.5, endHz: 523.25, glide: 0.06, peak: 0.16, attack: 0.001, decay: 0.2 });
+    this.percTone(ctx, bus, t, { hz: 783.99, peak: 0.05, attack: 0.002, decay: 0.35 });
+    this.percTone(ctx, bus, t, { hz: 1318.5, peak: 0.03, attack: 0.002, decay: 0.22 });
+    this.percNoise(ctx, bus, t, { filter: "highpass", hz: 3500, q: 0.7, peak: 0.08, attack: 0.001, decay: 0.05 });
+  }
+
+  // Bomb: the bomb drum's bronze struck lightly on C3, the note its blast
+  // resolves to, ringing into its dotted-eighth echo — a gong shimmer over
+  // the taiko, so each kill in a blast rings in key with it.
+  private buildBombBoomBeatGraph(ctx: BaseAudioContext, dest: AudioNode, t: number) {
+    const bus = ctx.createGain();
+    bus.gain.value = 0.7;
+    bus.connect(dest);
+    bus.connect(this.bombEcho(ctx, dest, 0.3));
+    this.bombDrum(ctx, bus, t, { hz: 130.81, peak: 0.22, len: 0.9, strike: 0.7 });
+  }
+
+  // ── Warp Cannon held charge ─────────────────────────────────────────────
+  // While the trigger is held, the chord the shot will land in: the tier's
+  // three chord tones (the same rungs warpNote picks the release from), so
+  // whichever tone the release plays it lands inside a chord already sounding.
+  // Each tier-up voice-leads every tone down a rung, so the pad sinks an
+  // inversion as the pellet grows, a sub fills in under it, and an
+  // eighth-note shimmer an octave over the top quickens. Across each tier's span
+  // the lowpass eases open toward the next tier, so the build leans into its tier-up.
+  // Synthesised live: it's a handful of oscillators and must follow the hold.
+  private static warpChord(tier: number): number[] {
+    const lowest = Sound.WARP_LOWEST[Math.max(0, Math.min(Sound.WARP_LOWEST.length - 1, tier))];
+    return [0, 1, 2].map((i) => Sound.WARP_LADDER[lowest + i]);
+  }
+
+  startWarpCharge(tier: number) {
+    if (!this.enabled || this.warpChargeNode) return;
+    this.ensureContext();
+    if (!this.ctx || !this.master) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const bus = ctx.createGain();
+    bus.gain.setValueAtTime(0.0001, t);
+    bus.gain.exponentialRampToValueAtTime(0.38, t + 0.12);
+    bus.connect(this.master);
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.Q.value = 2;
+    tone.connect(bus);
+    const oscs: OscillatorNode[] = [];
+    const voices: OscillatorNode[] = [];
+    for (const hz of Sound.warpChord(tier)) {
+      for (const cents of [-8, 8]) {
+        const osc = ctx.createOscillator();
+        osc.type = "triangle";
+        osc.frequency.value = hz;
+        osc.detune.value = cents;
+        const g = ctx.createGain();
+        g.gain.value = 0.05;
+        osc.connect(g);
+        g.connect(tone);
+        voices.push(osc);
+        oscs.push(osc);
+      }
+    }
+    const sub = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subGain.gain.value = 0.0001;
+    sub.connect(subGain);
+    subGain.connect(bus);
+    oscs.push(sub);
+    const shimmer = ctx.createOscillator();
+    const shimmerGain = ctx.createGain();
+    shimmerGain.gain.value = 0;
+    const trem = ctx.createOscillator();
+    trem.frequency.value = 2 / BEAT_GRID;
+    const tremDepth = ctx.createGain();
+    tremDepth.gain.value = 0.5;
+    trem.connect(tremDepth);
+    const shimmerAmp = ctx.createGain();
+    shimmerAmp.gain.value = 0.5;
+    tremDepth.connect(shimmerAmp.gain);
+    shimmer.connect(shimmerAmp);
+    shimmerAmp.connect(shimmerGain);
+    shimmerGain.connect(bus);
+    oscs.push(shimmer, trem);
+    for (const o of oscs) o.start(t);
+    this.warpChargeNode = { tier: -1, bus, tone, voices, sub, subGain, shimmer, shimmerGain, oscs };
+    this.setWarpChargeTier(tier);
+  }
+
+  setWarpChargeTier(tier: number) {
+    const node = this.warpChargeNode;
+    if (!this.ctx || !node || node.tier === tier) return;
+    const first = node.tier < 0;
+    node.tier = tier;
+    const t = this.ctx.currentTime;
+    const glide = first ? 0 : 0.07;
+    const chord = Sound.warpChord(tier);
+    node.voices.forEach((osc, i) => {
+      osc.frequency.cancelScheduledValues(t);
+      osc.frequency.setValueAtTime(osc.frequency.value, t);
+      osc.frequency.exponentialRampToValueAtTime(chord[Math.floor(i / 2)], t + glide + 0.001);
+    });
+    const ramp = (param: AudioParam, to: number, sec: number) => {
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(Math.max(0.0001, param.value), t);
+      param.exponentialRampToValueAtTime(Math.max(0.0001, to), t + sec);
+    };
+    node.sub.frequency.setValueAtTime(chord[0] / 2, t);
+    ramp(node.subGain.gain, 0.022 * tier, 0.3);
+    node.shimmer.frequency.setValueAtTime(chord[2] * 2, t);
+    ramp(node.shimmerGain.gain, 0.005 + 0.005 * tier, 0.3);
+    // The filter lifts a little on the tier-up, then settles and climbs back
+    // toward the next tier's brightness across the tier's span.
+    const open = 700 + 300 * tier;
+    const tf = node.tone.frequency;
+    tf.cancelScheduledValues(t);
+    tf.setValueAtTime(first ? open * 0.6 : open * 1.4, t);
+    tf.exponentialRampToValueAtTime(open * 0.85, t + 0.2);
+    if (tier < WARP_MAX_CHARGE) tf.exponentialRampToValueAtTime(open * 1.3, t + warpTierSpanBeats(tier) * BEAT_GRID);
+    if (!first) this.warpBloom(this.ctx, node.bus, t, chord[2] * 2, { fromHz: chord[2] * 1.5, len: 0.3, peak: 0.025 });
+  }
+
+  // Safe to call repeatedly and when never started.
+  stopWarpCharge() {
+    const node = this.warpChargeNode;
+    if (!this.ctx || !node) return;
+    const t = this.ctx.currentTime;
+    node.bus.gain.cancelScheduledValues(t);
+    node.bus.gain.setValueAtTime(Math.max(0.0001, node.bus.gain.value), t);
+    node.bus.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    for (const o of node.oscs) o.stop(t + 0.1);
+    this.warpChargeNode = null;
   }
 
   // A lowpassed feedback delay. Returns its send.
