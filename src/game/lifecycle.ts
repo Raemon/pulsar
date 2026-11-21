@@ -1,4 +1,5 @@
 import type { Game } from "../Game";
+import { resetCamScroll } from "./camScroll";
 import { resetAimHint } from "./aimHint";
 import { Ship } from "../Ship";
 import { spawnAsteroidAtEdge, BASS_KINDS } from "../Asteroid";
@@ -142,6 +143,7 @@ const stopAllPersistentAudio = (game: Game) => {
   // like a drone — explicitly stop it on every state exit so it can't bleed
   // into a cutscene / title / game-over.
   game.sound.stopHaloFullMusic();
+  game.sound.stopWarpCharge();
   game.comets = [];
 };
 
@@ -535,6 +537,7 @@ export const startGame = (game: Game, overrides?: {
 
 // run-scoped state only; spawnWave handles per-wave timers separately.
 const resetRunTimers = (game: Game) => {
+  resetCamScroll(game);
   game.beatTime = 0;
   game.lastBeatResnapAt = game.beatTime;
   game.beatPhaseCorrection = 0;
@@ -638,6 +641,7 @@ const enterPause = (game: Game) => {
   game.sound.stopThrust();
   game.sound.stopReverseThrust();
   game.sound.stopSideThrust();
+  game.sound.stopWarpCharge();
   game.sound.fadeForPause(0, 0.35);
   game.overlayTitleEl.textContent = "Paused";
   game.overlayStartEl.textContent = "Resume";

@@ -5,6 +5,7 @@ import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
 import { AsteroidKind, AsteroidSize, spawnBossAt, BASS_KINDS } from "../Asteroid";
 import { spawnSepulchreEncounter } from "./sepulchre";
+import { bossBodyInWorld } from "./camScroll";
 import { AlienSize } from "../Alien";
 import { PowerupKind, POWERUP_KINDS, spawnCanister } from "../Canister";
 import { syncHud, syncPowerupHud } from "./hud";
@@ -149,9 +150,9 @@ const ELEMENTS: BetaElement[] = [
     label: "Boss",
     group: "Enemy",
     apply: (g) => {
-      const pos = g.pulsar.bossBodyPos(1);
+      const { pos, size } = bossBodyInWorld(g, 1);
       g.pulsar.setBossPlanetState("active", 1);
-      g.asteroids.push(spawnBossAt(pos, g.w, g.h));
+      g.asteroids.push(spawnBossAt(pos, g.w, g.h, size));
     },
   },
   {
@@ -159,7 +160,7 @@ const ELEMENTS: BetaElement[] = [
     label: "Sepulchre",
     group: "Enemy",
     apply: (g) => {
-      const pos = g.pulsar.bossBodyPos(2);
+      const { pos } = bossBodyInWorld(g, 2);
       g.pulsar.setBossPlanetState("active", 2);
       const encounter = spawnSepulchreEncounter(g, pos);
       // The panel exists to put a combination on the field now; a minute of

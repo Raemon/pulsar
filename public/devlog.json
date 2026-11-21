@@ -1,5 +1,49 @@
 [
   {
+    "id": "2026-11-21-2c412f9",
+    "date": "2026-11-21",
+    "title": "Boss rises from its planet, Bomb and Warp polish",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "Bomb and Warp Cannon each fire from a single round of their own, shown as one blip in the hull: the bomb's comes back a beat after the mine is gone, the warp's a beat per charge tier.",
+          "Charging the Warp Cannon plays a chord pad that steps down with each tier, with a bigger charge effect, orbit rings, a next-tier arc and a shock on each tier-up.",
+          "On-beat kills layer a weapon-specific sound over the taiko for Warp, Laser and Bomb, and on-beat warp swallows now get the taiko too.",
+          "New intro hints: \"Line up your reticule with the target\" and \"Match velocity for a Drift Shot\"."
+        ]
+      },
+      {
+        "heading": "Fixed",
+        "items": [
+          "On level 10 the red planet now becomes the boss right where it hangs in the sky, at the same size, and swells from there instead of the boss appearing somewhere else."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "The tomb's moons now stay ringed around it through Act II, instead of drifting across the play field as large faint orbs.",
+          "Bomb blast radius is 1.3x larger.",
+          "Warp pellets are sized to the rock their tier swallows whole, and swallowed bodies return tier+1 waves later.",
+          "The hull and reticule dim while your next shot can't fire yet.",
+          "\"Not enough damage\" and shielded-hit popups are staggered so they read clearly, and the rhythm-loss hint is gone.",
+          "Wave titles fade in place instead of sliding, intro hints fade out with the black, and the warm-up wave is titled just \"Wave\"."
+        ]
+      }
+    ],
+    "commits": [
+      "2c412f9",
+      "39a8527",
+      "cc2f7d1",
+      "6e71e63",
+      "cfc2982",
+      "eb7d2d1",
+      "b0c1c2d",
+      "a7c2b16",
+      "656bd3a"
+    ]
+  },
+  {
     "id": "2026-11-17-befa9a1",
     "date": "2026-11-17",
     "title": "Beat cube glass effect and Show Tutorial setting",
