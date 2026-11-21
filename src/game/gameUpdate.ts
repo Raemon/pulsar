@@ -1,4 +1,5 @@
 import type { Game } from "../Game";
+import { updateCamScroll } from "./camScroll";
 import type { ReplayPlayer } from "./replayPlayer";
 import { getRngSeed } from "./rng";
 import { dist, nearestImageOf } from "../vec";
@@ -37,11 +38,12 @@ import {
   handleFuelOrbPickups,
   expireGem,
 } from "./collisions";
-import { requestStart, showTitle, togglePause, respawn, setFirstWaveHintStage, setFirstWaveHintSubVisible, emitFirstWaveHintProgress, emitFirstWaveHintRhythmProgress, emitTutorialHoverProgress, emitTutorialControls, emitGameState, finalizeRecorder, restartReplayWorld } from "./lifecycle";
+import { requestStart, showTitle, togglePause, respawn, setFirstWaveHintStage, setFirstWaveHintSubVisible, emitFirstWaveHintProgress, emitFirstWaveHintRhythmProgress, emitTutorialHoverProgress, emitTutorialControls, emitGameState, finalizeRecorder, restartReplayWorld, teardownReplay } from "./lifecycle";
 import { syncHud, syncPowerupHud, syncComboHud, syncFuelHud } from "./hud";
 import { renderKilledRow, stopParade } from "./killedParade";
 import { recordHighlightFrame } from "./highlightTimeline";
 import { tryStartHighlightClip, tickHighlightGameOverInput, beginHighlightLoop, tickHighlightLoop } from "./highlightReplay";
+import { tickTitleReel } from "./titleReel";
 import { snapshotShipKill } from "./killSnapshot";
 import { updatePopups, popupDriftBonus, popupDriftCombo } from "./popups";
 import { updateAimHint } from "./aimHint";
@@ -50,7 +52,7 @@ import { updateDriftBursts } from "./driftBurst";
 import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
 import { updateWormholes, spawnWormhole, type Dive, type Wormhole } from "./wormhole";
-import { updateSwallows } from "./warpCannon";
+import { updateSwallows, tickWarpChargeSound } from "./warpCannon";
 import { warpVoiceKey, warpReleaseWasTap } from "./warpCharge";
 import { updateWarpIns, releaseWarpedBodies } from "./warpReturn";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
@@ -111,6 +113,7 @@ const advanceFrame = (game: Game, dt: number) => {
   // title/gameover/paused freeze beatTime; playing+dying defer pulsar to after tickBassBeats.
   if (game.state !== "playing" && game.state !== "dying" && game.state !== "replaying") game.pulsar.update(dt, game.perceivedBeatTime, BEAT_GRID);
   routeStateUpdate(game, dt);
+  updateCamScroll(game);
   if (game.shake > 0) game.shake = Math.max(0, game.shake - dt * 3);
   game.input.endFrame();
 };
@@ -142,6 +145,10 @@ export const __stepReplayFrameForTest = (game: Game): boolean => stepReplayFrame
 //   wall-clock terms so 1x matches the original run regardless of the viewer's
 //   refresh rate.
 const runReplay = (game: Game, liveDt: number) => {
+  // The title screen's highlight reel also drives the sim from a recording, but
+  //   it owns its own pacing (blackout, catch-up seek, cut at the chain's end)
+  //   and keeps the title's keys alive — see game/titleReel.ts.
+  if (game.titleReel) { tickTitleReel(game, liveDt); return; }
   const clip = game.highlightClip;
   // Highlight clip: the game-over UI (Enter to continue / Escape to skip) is
   //   serviced here from the live keyboard, since updateGameOver doesn't run in
@@ -159,28 +166,40 @@ const runReplay = (game: Game, liveDt: number) => {
     emitReplayProgress(game);
     return;
   }
-  // Pace playback by wall-clock time: each render tick buys replaySpeed × liveDt
-  //   seconds of replay budget, and we spend it consuming recorded frames at their
-  //   own recorded dt. So 1x reproduces the original run's real-time pacing exactly
-  //   (independent of the viewer's refresh rate), and 0.5/2/4 are exact multiples.
-  //   replayStepAccumulator holds the leftover budget (seconds) between ticks.
+  const outcome = spendReplayBudget(game, liveDt, clip ? clip.end : null);
+  if (outcome === "limit" || (outcome === "ended" && clip)) { beginHighlightLoop(game); return; }
+  if (outcome === "ended") { finishReplay(game); return; }
+  emitReplayProgress(game);
+};
+
+// Spend one render tick's wall-clock budget on recorded frames. Each tick buys
+//   replaySpeed x liveDt seconds of replay time, spent consuming frames at their
+//   own recorded dt — so 1x reproduces the original run's pacing exactly
+//   (independent of the viewer's refresh rate) and 0.5/2/4 are exact multiples.
+//   replayStepAccumulator carries the leftover budget (seconds) between ticks.
+//   `limitFrame` stops playback early (a clip's end); null runs to the end of
+//   the recording. Shared by scrubber playback, the game-over highlight clip and
+//   the title reel so all three pace identically.
+export type ReplayBudgetOutcome = "running" | "ended" | "limit";
+
+export const spendReplayBudget = (
+  game: Game,
+  liveDt: number,
+  limitFrame: number | null,
+): ReplayBudgetOutcome => {
+  const player = game.replayPlayer;
+  if (!player) return "ended";
   game.replayStepAccumulator += game.replaySpeed * liveDt;
   // Guard against a huge catch-up burst after a stall/background tab.
   game.replayStepAccumulator = Math.min(game.replayStepAccumulator, 0.25);
   while (game.replayStepAccumulator > 0) {
-    const nextDt = game.replayPlayer!.peekFrameDt();
-    if (nextDt === null) {
-      if (clip) { beginHighlightLoop(game); return; }
-      finishReplay(game);
-      return;
-    }
-    // Highlight clip: at the clip's end frame, begin the fade-masked loop back to
-    //   its start instead of running to the end of the recording.
-    if (clip && game.replayPlayer!.position() >= clip.end) { beginHighlightLoop(game); return; }
+    if (limitFrame !== null && player.position() >= limitFrame) return "limit";
+    const nextDt = player.peekFrameDt();
+    if (nextDt === null) return "ended";
     game.replayStepAccumulator -= nextDt;
     stepReplayFrame(game);
   }
-  emitReplayProgress(game);
+  return "running";
 };
 
 // Jump the sim to game.replaySeekTarget. Backward seeks rebuild the world at
@@ -342,8 +361,12 @@ const pressedStart = (game: Game): boolean =>
   game.input.pressed("enter") || game.input.pressed("return") || game.input.pressed(" ") || game.input.pressed("spacebar");
 
 // title needs cosmetic motion + enter-to-start; nothing else fires here.
+//   The reel tick runs while the plain title world is up (waiting on the next
+//   clip); once a clip is playing the sim is in "replaying" and runReplay drives
+//   it instead.
 const updateTitle = (game: Game, dt: number) => {
   if (pressedStart(game)) requestStart(game);
+  tickTitleReel(game, dt);
   tickLeaderboardKeyRepeat(game, dt);
   for (const a of game.asteroids) a.update(dt, game.w, game.h);
   game.particles.update(dt);
@@ -415,10 +438,11 @@ const transitionToGameOver = (game: Game) => {
     game.highlightClip = null;
     game.highlightLoop = null;
     document.getElementById("highlight-fade")?.classList.remove("fading");
-    game.replayPlayer = null;
-    game.replayLockedDims = null;
-    game.input = game.localInput;
-    game.resize();
+    // teardownReplay clears runSummary, and the snapshot below must keep
+    //   whatever the real run left there — see the ??= a few lines down.
+    const summary = game.runSummary;
+    teardownReplay(game);
+    game.runSummary = summary;
   }
   game.state = "gameover";
   // Snapshot the run summary BEFORE finalizeRecorder/highlight clip touch the
@@ -438,7 +462,6 @@ const transitionToGameOver = (game: Game) => {
   game.sound.stopAllCometShimmers();
   game.sound.stopHaloAmbient();
   game.comets = [];
-  game.lastRunScore = game.runSummary.score;
   game.lastRunScoreId = null;
   // Capture the death snapshot from the LIVE ship now, before the highlight clip
   //   can rebuild the world. Needed for the parade fallback.
@@ -874,6 +897,7 @@ const updatePlaying = (game: Game, dt: number) => {
   game.recorder?.captureShip(game.ship, game.input);
   game.replayPlayer?.checkShipAgainstRecording(game.ship);
   tickLaserShot(game, dt);
+  tickWarpChargeSound(game);
   tickSuperLaserFire(game);
   const rawMusicDt = tickSlowMoTimer(game, dt);
   // Resnap perturbs beatTime away from a pure dt-sum, two ways: a hard-snap jumps
@@ -1502,7 +1526,8 @@ export const showWaveAnnounce = (game: Game, wave = game.wave) => {
     document.body.appendChild(el);
   }
   const inner = el.firstElementChild as HTMLSpanElement;
-  inner.textContent = `Wave ${displayWave(wave)}`;
+  const shownWave = displayWave(wave);
+  inner.textContent = shownWave === 0 ? "Wave" : `Wave ${shownWave}`;
   // Skip-cascade titles pass an explicit wave the player never flies; only the
   //   wave actually entered (wave === game.wave) carries the teaching line.
   const hintText = wave === game.wave && !isVeteranPilot() ? waveIntroHint() : null;
@@ -1603,7 +1628,7 @@ export const advanceWave = (game: Game, targetWave?: number, extraSpawnDelaySec 
     spawnWave(game);
     // Whatever the Warp Cannon swallowed last wave climbs back out now.
     releaseWarpedBodies(game);
-    // Rock→crystal stays on internal wave 1, so this banner reads "Wave 0".
+    // Rock→crystal stays on internal wave 1, so this banner reads just "Wave".
     //   Later spawns announce the density wave they enter.
     showWaveAnnounce(game);
     syncHud(game);

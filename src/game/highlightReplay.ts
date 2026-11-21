@@ -1,11 +1,10 @@
 import type { Game } from "../Game";
-import type { ReplayPayload } from "./replayFormat";
+import { frameSecondsBefore, type ReplayPayload } from "./replayFormat";
 import type { ReplayRecorder } from "./replayRecorder";
 import { ReplayPlayer } from "./replayPlayer";
 import { pickHighlightChain } from "./highlightTimeline";
-import { startHighlightReplay, showTitle } from "./lifecycle";
+import { startHighlightReplay, showTitle, teardownReplay } from "./lifecycle";
 import { hideScoreEntry, isScoreEntryBlockingEnter } from "./scoreEntry";
-import { loadBeatOffset } from "./beatCalibration";
 
 // Master switch for the game-over highlight clip. The replay re-sim isn't yet
 //   reliable enough to ship, so game-over falls back to the trophy parade. Flip
@@ -19,19 +18,6 @@ const PRE_ROLL_SECONDS = 4;
 //   (instant prime-then-lose), the 4s pre-roll still gives it body, but guard
 //   against a zero-length range from bad data.
 const MIN_CLIP_FRAMES = 2;
-
-// Walk frames backward from `fromFrame`, summing recorded dt, until we've covered
-//   `seconds`. dt is variable (vsync / audio clock), so a fixed frame count would
-//   drift; this keeps the pre-roll a true wall-clock 4s regardless of frame rate.
-const frameSecondsBack = (payload: ReplayPayload, fromFrame: number, seconds: number): number => {
-  let acc = 0;
-  let i = Math.min(fromFrame, payload.frames.length);
-  while (i > 0 && acc < seconds) {
-    i -= 1;
-    acc += payload.frames[i][0];
-  }
-  return i;
-};
 
 // Attempt to start the game-over highlight clip: the highest-rhythm chain of the
 //   just-finished run, from 4s before its priming fire to the frame rhythm was
@@ -64,7 +50,7 @@ export const tryStartHighlightClip = (game: Game, recorder: ReplayRecorder | nul
   const totalFrames = payload.frames.length;
   if (totalFrames === 0) return false;
 
-  const start = frameSecondsBack(payload, chain.startFrame, PRE_ROLL_SECONDS);
+  const start = frameSecondsBefore(payload, chain.startFrame, PRE_ROLL_SECONDS);
   // Chain never broke (held rhythm until death) → run the clip to the last
   //   recorded frame. Clamp the end inside the recording either way.
   const rawEnd = chain.lostFrame ?? totalFrames;
@@ -126,17 +112,10 @@ export const tickHighlightLoop = (game: Game, seekToTarget: (game: Game) => void
 //   to the recording's dims; undo both before showTitle so the title screen runs
 //   live again. Mirrors finishReplay's cleanup (which the looping clip never hits).
 const exitHighlightToTitle = (game: Game) => {
-  game.replayPlayer = null;
   game.highlightClip = null;
   game.highlightLoop = null;
   fadeEl()?.classList.remove("fading");
-  game.replayLockedDims = null;
-  game.input = game.localInput;
-  game.runSummary = null;
-  // Clip re-sim ran on the recording's beatOffset; restore the viewer's own so
-  //   the title screen + their next run judge on their latency, not the dead run's.
-  game.beatOffset = loadBeatOffset() ?? 0;
-  game.resize();
+  teardownReplay(game);
   game.killedSnapshots = [];
   showTitle(game);
 };

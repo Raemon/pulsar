@@ -9,7 +9,7 @@ import { BEAT_GRID } from "./game/rhythmConstants";
 import { haloVertices, haloReach, hitDistanceToward, SHIP_BODY_RADIUS, SHIP_HALO_OFFSET } from "./ship/shipHitbox";
 import { tickShip } from "./ship/shipPhysics";
 import { applyPowerup } from "./ship/shipWeapons";
-import { newPylons } from "./ship/shipMagazine";
+import { newPylons, newSpecialPylon } from "./ship/shipMagazine";
 import { setComboFromValue } from "./ship/shipComboHalo";
 import { renderShipBody } from "./ship/shipRender";
 import { renderShipReticules, tickHoverLockState, ReticuleHoverProbe } from "./ship/reticule/reticuleRender";
@@ -115,6 +115,8 @@ export class Ship {
   fireRate = BEAT_GRID;
   // Two-shot magazine, drawn as a loaded round on each pylon. See ship/shipMagazine.ts.
   pylons = newPylons();
+  // The bomb's and the Warp Cannon's single round, drawn as one blip of its own.
+  specialPylon = newSpecialPylon();
   // Fire held on an empty magazine must be released before it fires again.
   triggerHeldDry = false;
 
@@ -155,7 +157,6 @@ export class Ship {
   //   See game/laserShot.ts for the charge/release logic.
   laserChargeActive = false;
   laserChargeStartBeatTime = 0;
-  laserLastDotIndexFired = -1;
   // Set when an off-beat fire press is rejected so the fail sound only plays
   //   once per hold — cleared when the player releases and re-presses.
   laserChargeFailedThisHold = false;
@@ -172,6 +173,11 @@ export class Ship {
   //   drains to grey the moment a shot spends the charge and eases back to its
   //   cyan once the laser is ready again. Cosmetic only. See tickLaserShot.
   laserCooldownDim = 0;
+  // 0..1, eased over FIRE_BLOCKED_FADE_SEC: the hull while the magazine (or the
+  //   bomb's / Warp Cannon's round) is spent, and the sight while the next press
+  //   won't shoot. Render-only. See shipPhysics.easeFireBlockedFades.
+  hullFireBlockedFade = 0;
+  sightFireBlockedFade = 0;
 
   // Super-laser charge — gained by flying the ship through the flickering energy
   //   thread strung between a broken torus ring's orbiting fragments. While

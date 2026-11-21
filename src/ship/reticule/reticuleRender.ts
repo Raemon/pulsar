@@ -9,7 +9,6 @@ import {
   paintAimDiscs,
 } from "./aimDisc";
 import { prongOffsets, shotLife, shotTravel, shotVelInherit, shotPositionAt, BOMB_SIGHT_SLOTS } from "../shipWeapons";
-import { magazineBlocksFire } from "../shipMagazine";
 import { BULLET_SIGHT_RADIUS_ON_BEAT } from "./trajectoryPreview";
 import { bulletCollisionRadius, BOMB_BLAST_RADIUS } from "../../Bullet";
 import { toroidalDelta } from "./coneGeometry";
@@ -31,7 +30,7 @@ const RETICULE_HITBOX_PULSE_MAX = 0.32;
 const RETICULE_HITBOX_PULSE_MIN = 0.20;
 const RETICULE_HITBOX_PULSE_PERIOD_SEC = 2.0;
 // dim during fire cooldown so the player feels the rhythm window even with nothing in sight.
-const RETICULE_COOLDOWN_DIM = 0.3;
+const RETICULE_COOLDOWN_DIM = 0.25;
 const RETICULE_RADAR_PULSE_MAX = 1;
 const RETICULE_RADAR_PULSE_MIN = 0.7;
 const RETICULE_RADAR_PULSE_PERIOD_SEC = 3.0;
@@ -696,9 +695,9 @@ export const renderShipReticules = (
   const radarPulse = cosineEnvelope(beatTime, RETICULE_RADAR_PULSE_PERIOD_SEC, RETICULE_RADAR_PULSE_MIN, RETICULE_RADAR_PULSE_MAX);
   const beatPulseBoost = computeBeatPulseBoost(beatTime, beatGrid);
   const beatStrike = computeBeatStrike(beatTime, beatGrid);
-  // A live mine dims the sight too: the next press detonates it, not a throw.
-  const nextPressWontShoot = ship.fireCooldown > 0 || ship.bombInPlay || magazineBlocksFire(ship);
-  const cooldownDim = nextPressWontShoot ? RETICULE_COOLDOWN_DIM : 1;
+  // Fades down while the next press won't shoot — a spent magazine, the
+  //   autofire cooldown, or a live mine (that press detonates, not throws).
+  const cooldownDim = 1 - (1 - RETICULE_COOLDOWN_DIM) * ship.sightFireBlockedFade;
   const baseHitAlpha = hitboxPulse * cooldownDim * beatPulseBoost;
   paintConeBackground(ctx, ship, apex, beatTime, beatGrid);
   paintRangeArcs(ctx, ship, apex, beatTime, radarPulse);

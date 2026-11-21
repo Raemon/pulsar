@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 60;
+export const REPLAY_FORMAT_VERSION = 63;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -69,6 +69,16 @@ export const REPLAY_FORMAT_VERSION = 60;
 // v60 makes the Warp Cannon hold-to-charge (pellet size by beats held, small
 //   pellets bite big rocks) and returns swallowed bodies next wave, so a v59
 //   Warp Cannon run re-sims differently.
+// v61 gives the bomb and the Warp Cannon one round each instead of the two-shot
+//   magazine (the bomb's back a beat after the mine is gone, the Warp Cannon's
+//   a beat per charge tier), sizes a Warp Cannon pellet to half the rock its tier
+//   swallows, sends what it swallows a wave on per tier, and widens the bomb
+//   blast 1.3x, so a v60 bomb or Warp Cannon run re-sims differently.
+// v62 spaces the Warp Cannon's charge tiers at 2, 4 and 8 beats held (was one per
+//   beat) and shrinks its pellets, so a v61 Warp Cannon run re-sims differently.
+// v63 drops the per-run bassOrder shuffle, whose result nothing read. The shuffle
+//   drew from the gameplay rng, so every draw after it in a v62 recording — spawn
+//   positions, kind rolls, wave events — now lands on a different value.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.
@@ -319,6 +329,43 @@ export type ReplayPayload = {
   //   against them to detect a desync at the frame + field it first appears.
   checkpoints?: ReplayCheckpoint[];
   debugFrames?: ReplayDebugFrame[];
+};
+
+// ---------- frame <-> wall-clock helpers ----------
+
+// Frame dt is variable (vsync / audio clock), so a fixed frame count would
+//   drift against real seconds. These walk the recorded dt sums instead, so a
+//   "4 seconds back" is a true 4 seconds whatever rate the run was captured at.
+//   Both clamp inside the recording.
+export const frameSecondsBefore = (payload: ReplayPayload, fromFrame: number, seconds: number): number => {
+  let acc = 0;
+  let i = Math.min(fromFrame, payload.frames.length);
+  while (i > 0 && acc < seconds) {
+    i -= 1;
+    acc += payload.frames[i][0];
+  }
+  return i;
+};
+
+export const frameSecondsAfter = (payload: ReplayPayload, fromFrame: number, seconds: number): number => {
+  let acc = 0;
+  let i = Math.max(0, fromFrame);
+  while (i < payload.frames.length && acc < seconds) {
+    acc += payload.frames[i][0];
+    i += 1;
+  }
+  return i;
+};
+
+// Recorded wall-clock seconds between two frame indices. Both ends are clamped
+//   inside the recording, so a range that runs off the end measures what is
+//   actually there rather than what was asked for.
+export const secondsBetweenFrames = (payload: ReplayPayload, from: number, to: number): number => {
+  const start = Math.max(0, Math.min(from, payload.frames.length));
+  const end = Math.max(start, Math.min(to, payload.frames.length));
+  let acc = 0;
+  for (let i = start; i < end; i++) acc += payload.frames[i][0];
+  return acc;
 };
 
 // ---------- (de)serialisation ----------

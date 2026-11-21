@@ -113,7 +113,9 @@ const detonate = (game: Game, b: Bullet, onBeat: boolean) => {
     const reach = Math.max(0, len - target.radius);
     const impact = { x: b.pos.x + (dx / len) * reach, y: b.pos.y + (dy / len) * reach };
     const push = { x: (dx / len) * BLAST_PUSH_SPEED, y: (dy / len) * BLAST_PUSH_SPEED };
-    return { damage, onBeat, shot: strikeShot(impact, push, b), bossImpact: false };
+    const shot = strikeShot(impact, push, b);
+    shot.bombBlastStrike = true;
+    return { damage, onBeat, shot, bossImpact: false };
   });
   game.sound.play(onBeat ? "bombBlastBeat" : "bombBlast", 1, b.pos);
   game.shake = Math.min(game.shake + 0.3, 1.2);

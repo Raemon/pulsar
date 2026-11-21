@@ -1,7 +1,8 @@
 import type { Game } from "../Game";
+import { resetCamScroll } from "./camScroll";
 import { resetAimHint } from "./aimHint";
 import { Ship } from "../Ship";
-import { spawnAsteroidAtEdge, BASS_KINDS } from "../Asteroid";
+import { spawnAsteroidAtEdge } from "../Asteroid";
 import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
 import { syncHud, syncComboHud, syncPowerupHud } from "./hud";
@@ -22,11 +23,12 @@ import { hideGameOverIntro, showGameOverIntro } from "./gameOverIntro";
 import { hasCalibrated, CALIBRATION_BEAT_INTENSITY, loadBeatOffset } from "./beatCalibration";
 import { pickIntroHints } from "./introHints";
 import { isNewDaySession, markSessionStart } from "./sessionTracker";
-import { rng, seedRng } from "./rng";
+import { seedRng } from "./rng";
 import { ReplayRecorder } from "./replayRecorder";
 import { ReplayPlayer } from "./replayPlayer";
 import { decodeReplay } from "./replayFormat";
 import { HighlightTimeline } from "./highlightTimeline";
+import { isTitleScreen, startTitleReel, stopTitleReel } from "./titleReel";
 import { resetHuePaletteCursor } from "../Asteroid";
 import { getBindings, normalizeBindings, setReplayBindings, emptyTutorialControlsUsed, type TutorialControlsUsed } from "./controlBindings";
 import { precomputeRhythmHistogram } from "./gameUpdate";
@@ -92,9 +94,8 @@ export const emitFirstWaveHintRhythmProgress = (count: number) => {
   window.dispatchEvent(new CustomEvent("first-wave-hint:rhythmProgress", { detail: { count } }));
 };
 
-// Guided-tutorial signals (consumed by the tutorial UI). hoverProgress drives the
-//   "hold your reticule" circle (0→1 over one second); the two *Done events mark
-//   the milestones that gate the spawn machine — see gameUpdate.tickTutorialSpawn.
+// Guided-tutorial signal (consumed by the tutorial UI): hoverProgress drives the
+//   "hold your reticule" circle (0→1 over one second).
 export const emitTutorialHoverProgress = (value: number) => {
   window.dispatchEvent(new CustomEvent("tutorial:hoverProgress", { detail: { value } }));
 };
@@ -104,23 +105,6 @@ export const emitTutorialControls = (used: TutorialControlsUsed) => {
   // copy: `used` is the live, mutated game object — React's setUsed would bail on an
   //   unchanged reference, so each emit must carry a fresh object.
   window.dispatchEvent(new CustomEvent("tutorial:controls", { detail: { ...used } }));
-};
-export const emitTutorialHoverDone = () => {
-  window.dispatchEvent(new CustomEvent("tutorial:hoverDone"));
-};
-export const emitTutorialFireHitDone = () => {
-  window.dispatchEvent(new CustomEvent("tutorial:fireHitDone"));
-};
-
-
-// Fisher-Yates over Array.sort — sort's randomness is biased and varies across engines.
-const shuffled = <T,>(arr: ReadonlyArray<T>): T[] => {
-  const out = arr.slice();
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
 };
 
 // title screen needs visible motion; decorative rocks don't carry HP or split logic.
@@ -142,6 +126,7 @@ const stopAllPersistentAudio = (game: Game) => {
   // like a drone — explicitly stop it on every state exit so it can't bleed
   // into a cutscene / title / game-over.
   game.sound.stopHaloFullMusic();
+  game.sound.stopWarpCharge();
   game.comets = [];
 };
 
@@ -153,22 +138,13 @@ const clearComboSilently = (game: Game) => {
   if (game.firstWaveHintStage === 5) emitFirstWaveHintRhythmProgress(0);
 };
 
-// carries the prior run's trophy lineup so a returning player still sees what they took down.
-export const showTitle = (game: Game) => {
-  // drop any active replay-binding override (lingers when a replay ran to end-of-stream
-  //   and the player exits to title; otherwise the next live run sees the watched
-  //   pilot's bindings instead of their own).
-  setReplayBindings(null);
+// The title screen's *world*: the decorative drift behind the overlay, with
+//   every leftover of a run (or of a reel clip's re-sim) cleared out. Split from
+//   showTitle so the title reel can put this back between clips without
+//   re-running the overlay/leaderboard chrome underneath itself.
+export const resetTitleWorld = (game: Game) => {
   game.betaMode = false;
   game.state = "title";
-  game.overlayTitleEl.textContent = "Pulsar";
-  game.overlayStartEl.textContent = "Start";
-  game.overlayStartEl.classList.remove("hidden");
-  game.overlayEl.classList.remove("hidden");
-  game.overlayEl.classList.remove("gameover-layout");
-  game.overlayEl.classList.remove("highlight-clip");
-  hideGameOverIntro();
-  renderKilledRow(game);
   clearComboSilently(game);
   game.asteroids = [];
   game.canisters = [];
@@ -194,13 +170,38 @@ export const showTitle = (game: Game) => {
   game.ship.warpCannonActive = false;
   game.ship.warpChargeActive = false;
   syncPowerupHud(game);
-  hideScoreEntry(game);
-  showLeaderboard(game);
-  hideWaveSummary(game);
-  setFirstWaveHintStage(game, 0);
   game.waveTransitioning = false;
   game.waveTransition = null;
+  // A wave summary or announcement scheduled by the run — or by a reel clip's
+  //   catch-up — is keyed to a wall clock that no longer means anything here;
+  //   left alone it pops onto the title screen seconds later.
+  hideWaveSummary(game);
+  hideWaveAnnounce();
+};
+
+// carries the prior run's trophy lineup so a returning player still sees what they took down.
+export const showTitle = (game: Game) => {
+  // drop any active replay-binding override (lingers when a replay ran to end-of-stream
+  //   and the player exits to title; otherwise the next live run sees the watched
+  //   pilot's bindings instead of their own).
+  setReplayBindings(null);
+  game.overlayTitleEl.textContent = "Pulsar";
+  game.overlayStartEl.textContent = "Start";
+  game.overlayStartEl.classList.remove("hidden");
+  game.overlayEl.classList.remove("hidden");
+  game.overlayEl.classList.remove("gameover-layout");
+  game.overlayEl.classList.remove("highlight-clip");
+  hideGameOverIntro();
+  renderKilledRow(game);
+  resetTitleWorld(game);
+  hideScoreEntry(game);
+  showLeaderboard(game);
+  setFirstWaveHintStage(game, 0);
   emitGameState(game);
+  // Behind the overlay, the home screen plays other pilots' best rhythm chains.
+  //   A reel already running owns the world (it calls showTitle itself between
+  //   clips), so don't restart it from under itself.
+  if (game.titleReel === null) startTitleReel(game);
 };
 
 // First run gates on the latency calibrator: rhythm scoring is meaningless if the
@@ -220,6 +221,11 @@ export const requestStart = (game: Game) => {
   //   sounds into a still-suspended context — the cause of silent-until-reload.
   void Promise.all([game.sound.resume(), game.sound.bakedCacheReady()]).then(() => {
     game.startPending = false;
+    // The home screen's reel is holding the world (and the input swap) — hand
+    //   both back before the run spins up. Done here rather than before the
+    //   await so a resume that never settles leaves the backdrop running
+    //   instead of a dead title screen.
+    stopTitleReel(game);
     if (!hasCalibrated()) {
       startCalibrationIntro(game);
       return;
@@ -260,6 +266,9 @@ const startGameWithIntro = (game: Game, kind: "fullHints" | "shortHint") => {
 //   schedules its own beat, used when there's no run to fold the pulse into.
 export const openBeatCalibrator = (game: Game) => {
   if (game.calibrating || game.calibrationIntro) return;
+  // The calibrator is the one thing on the title screen that has to be heard,
+  //   and the reel plays muted — stop it rather than tap along to silence.
+  stopTitleReel(game);
   game.calibrating = true;
   game.sound.resume();
   window.dispatchEvent(new CustomEvent("beat-calibrator:open", { detail: { sound: game.sound, intro: false } }));
@@ -298,7 +307,6 @@ export const startCalibrationIntro = (game: Game) => {
   game.waveTransitioning = false;
   resetRunTimers(game);
   resetRunCollections(game);
-  game.bassOrder = shuffled(BASS_KINDS);
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 1e9; // untouchable through the warm-up
@@ -309,7 +317,6 @@ export const startCalibrationIntro = (game: Game) => {
   game.overlayEl.classList.add("hidden");
   hideScoreEntry(game);
   game.leaderboardEl.classList.add("hidden");
-  game.lastRunScore = null;
   game.lastRunScoreId = null;
   game.showNeighborhoodOnce = false;
   game.neighborhoodFetch = null;
@@ -382,7 +389,6 @@ export const unfreezeIntroWorld = (game: Game) => {
     game.firstWaveOnBeatFireCount = 0;
     game.firstWaveOnBeatHitCount = 0;
     game.tutorialActive = false;
-    game.tutorialHoverDone = false;
     game.tutorialFireHitDone = false;
     emitFirstWaveHintProgress(0);
     emitFirstWaveHintHitProgress(0);
@@ -443,22 +449,27 @@ export const startGame = (game: Game, overrides?: {
   //   use the recorder's offset, not the viewer's persisted one.
   beatOffset: number;
 }) => {
-  game.sound.resume();
-  game.sound.preloadPilotLog(6);
-  game.sound.preloadPilotLog(12);
-  // Warm every halo music stem in the pool so whichever variation gets
-  // randomly picked at the first 4x doesn't pay fetch+decode latency.
-  // Haunting pool + boss variation are deferred until the intro fades out
-  // (see preloadDeferredMusic in unfreezeIntroWorld) — back-to-back decodes
-  // during the intro starve the audio scheduler and skip beats.
-  for (const variation of HALO_MUSIC_POOL) {
-    game.sound.preloadHaloMusic(variation);
+  // A title-reel clip plays silent behind the home screen, and rebuilds the
+  //   world every clip — warming the audio for it would pull the whole music
+  //   pool over the wire for a backdrop nobody can hear.
+  if (game.titleReel === null) {
+    game.sound.resume();
+    game.sound.preloadPilotLog(6);
+    game.sound.preloadPilotLog(12);
+    // Warm every halo music stem in the pool so whichever variation gets
+    // randomly picked at the first 4x doesn't pay fetch+decode latency.
+    // Haunting pool + boss variation are deferred until the intro fades out
+    // (see preloadDeferredMusic in unfreezeIntroWorld) — back-to-back decodes
+    // during the intro starve the audio scheduler and skip beats.
+    for (const variation of HALO_MUSIC_POOL) {
+      game.sound.preloadHaloMusic(variation);
+    }
   }
-  // Seed the PRNG before anything random fires (bassOrder shuffle, wave events,
-  //   asteroid hues). Re-arming the lazy hue cursor lets the first nextWaveHue
+  // Seed the PRNG before anything random fires (wave events, asteroid
+  //   hues). Re-arming the lazy hue cursor lets the first nextWaveHue
   //   call after this draw from the seeded RNG, not whichever cursor a previous
   //   run left behind. Replay overrides supply the recorded seed up front so the
-  //   downstream shuffle + wave spawn draw the same numbers the recording saw.
+  //   downstream wave spawn draws the same numbers the recording saw.
   game.runSeed = overrides
     ? overrides.seed
     : (crypto.getRandomValues(new Uint32Array(1))[0]) >>> 0;
@@ -506,7 +517,6 @@ export const startGame = (game: Game, overrides?: {
   game.waveTransitioning = false;
   resetRunTimers(game);
   resetRunCollections(game);
-  game.bassOrder = shuffled(BASS_KINDS);
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 2.0;
@@ -519,22 +529,31 @@ export const startGame = (game: Game, overrides?: {
   emitFirstWaveHintHitProgress(0);
   emitFirstWaveHintRhythmProgress(0);
   beginFirstWaveByTutorialFlag(game, tutorial, veteran);
-  game.overlayEl.classList.add("hidden");
-  hideScoreEntry(game);
-  game.leaderboardEl.classList.add("hidden");
-  game.lastRunScore = null;
-  game.lastRunScoreId = null;
-  game.showNeighborhoodOnce = false;
-  game.neighborhoodFetch = null;
-  game.leaderboardNeighborhood = false;
-  game.leaderboardRankBase = 0;
-  clearPlayerFilter(game);
+  // A title-reel clip rebuilds the world *behind* the home screen, so the title
+  //   chrome below isn't being replaced by a run — it's what the viewer is
+  //   looking at. Leave it (and the post-run leaderboard view it may be showing)
+  //   exactly as it is; re-running showLeaderboard per clip would also re-fetch
+  //   the board every few seconds. The hints beginFirstWaveByTutorialFlag just
+  //   armed are sim state the re-sim needs, so they stay armed and are hidden in
+  //   CSS instead (body.reel-active).
+  if (game.titleReel === null) {
+    game.overlayEl.classList.add("hidden");
+    hideScoreEntry(game);
+    game.leaderboardEl.classList.add("hidden");
+    game.lastRunScoreId = null;
+    game.showNeighborhoodOnce = false;
+    game.neighborhoodFetch = null;
+    game.leaderboardNeighborhood = false;
+    game.leaderboardRankBase = 0;
+    clearPlayerFilter(game);
+  }
   syncHud(game);
   emitGameState(game);
 };
 
 // run-scoped state only; spawnWave handles per-wave timers separately.
 const resetRunTimers = (game: Game) => {
+  resetCamScroll(game);
   game.beatTime = 0;
   game.lastBeatResnapAt = game.beatTime;
   game.beatPhaseCorrection = 0;
@@ -568,7 +587,6 @@ const resetRunTimers = (game: Game) => {
   game.pilotLog1Unlocked = false;
   game.pilotLog3Unlocked = false;
   game.tutorialActive = false;
-  game.tutorialHoverDone = false;
   game.tutorialFireHitDone = false;
   game.controlsHintActive = false;
   game.beatIntensityRamp = null;
@@ -618,7 +636,7 @@ export const togglePause = (game: Game) => {
 
 // Click-equivalent of pressing Enter on whichever overlay is showing.
 export const triggerOverlayStart = (game: Game) => {
-  if (game.state === "title") requestStart(game);
+  if (isTitleScreen(game)) requestStart(game);
   else if (game.state === "paused") leavePause(game);
   else if (game.state === "gameover") {
     if (isScoreEntryBlockingEnter(game)) return;
@@ -638,6 +656,7 @@ const enterPause = (game: Game) => {
   game.sound.stopThrust();
   game.sound.stopReverseThrust();
   game.sound.stopSideThrust();
+  game.sound.stopWarpCharge();
   game.sound.fadeForPause(0, 0.35);
   game.overlayTitleEl.textContent = "Paused";
   game.overlayStartEl.textContent = "Resume";
@@ -664,7 +683,12 @@ const leavePause = (game: Game) => {
 export const emitGameState = (game: Game) => {
   // `highlight` lets the ReplayScrubber stay hidden during a game-over highlight
   //   clip — it's a passive backdrop, not a scrubbable leaderboard replay.
-  window.dispatchEvent(new CustomEvent("game:state", { detail: { state: game.state, highlight: game.highlightClip !== null } }));
+  //   The title reel runs in "replaying" too, but the player is looking at the
+  //   home screen: report the state they can see, so the chrome that belongs to
+  //   the title (dev log) stays and the chrome that belongs to a replay
+  //   (scrubber) stays away.
+  const state = game.titleReel !== null ? "title" : game.state;
+  window.dispatchEvent(new CustomEvent("game:state", { detail: { state, highlight: game.highlightClip !== null } }));
 };
 
 // Finalise the in-flight replay recorder (live runs only — replay-driven runs
@@ -703,7 +727,6 @@ export const abortMission = (game: Game) => {
   game.sound.stopSideThrust();
   stopAllPersistentAudio(game);
   game.sound.fadeForPause(1, 0.1);
-  game.lastRunScore = game.score;
   game.lastRunScoreId = null;
   game.abortEl.classList.add("hidden");
   game.overlayTitleEl.textContent = "";
@@ -814,12 +837,17 @@ export const startReplay = async (game: Game, bytes: Uint8Array): Promise<void> 
   emitGameState(game);
 };
 
-// Leave a full replay (scrubber playback) and return to title. Undoes the
-//   replay's input swap + locked canvas dims the same way the highlight clip's
-//   exitHighlightToTitle does. Bound to Escape while a scrubber replay runs.
-export const exitReplay = (game: Game): void => {
+// Undo everything seedReplayWorld installed: the player, the input swap, the
+//   canvas locked to the recording's dims, and the recording's beat calibration.
+//   Shared by every exit from a replay-driven world — the scrubber replay, the
+//   game-over highlight clip and the title reel — so none of them can forget a
+//   piece and leave the next live run running on a dead pilot's settings.
+export const teardownReplay = (game: Game): void => {
+  setReplayBindings(null);
   game.replayPlayer = null;
   game.replaySeekTarget = null;
+  game.replaySpeed = 1;
+  game.replayStepAccumulator = 0;
   game.replayLockedDims = null;
   game.input = game.localInput;
   game.runSummary = null;
@@ -827,7 +855,29 @@ export const exitReplay = (game: Game): void => {
   //   viewer's own calibration so their next live run judges on their latency.
   game.beatOffset = loadBeatOffset() ?? 0;
   game.resize();
+};
+
+// Leave a full replay (scrubber playback) and return to title. Bound to Escape
+//   while a scrubber replay runs.
+export const exitReplay = (game: Game): void => {
+  teardownReplay(game);
   showTitle(game);
+};
+
+// Start one title-reel clip: the same world seeding the scrubber and the
+//   game-over clip use, with playback left at 1x for titleReel.ts to pace. The
+//   reel owns the clip window (seek + cut) itself, so nothing is set here beyond
+//   putting the recording's world on screen.
+export const startTitleReelClip = (game: Game, player: ReplayPlayer): void => {
+  // The sim is locked to the recording's w/h (ship position and edge-wrap
+  //   depend on them), but its dpr is a property of the pilot's screen, not of
+  //   the run: it only sizes the canvas backing store. Render the backdrop at
+  //   the viewer's own instead — a dpr-2 recording on a dpr-1 display would
+  //   otherwise push four times the pixels for a title-screen decoration.
+  seedReplayWorld(game, player, window.devicePixelRatio || 1);
+  game.replaySpeed = 1;
+  game.replayStepAccumulator = 0;
+  emitGameState(game);
 };
 
 // Start a looping highlight clip from an in-memory payload (the just-finished
@@ -913,7 +963,7 @@ const restoreGameOverChrome = (game: Game, c: GameOverChrome): void => {
 // Shared world setup for a replay player at frame 0. startGame resets
 //   game.replayPlayer to null and re-points game.input at the live keyboard,
 //   so we re-install both afterwards.
-const seedReplayWorld = (game: Game, player: ReplayPlayer): void => {
+const seedReplayWorld = (game: Game, player: ReplayPlayer, dprOverride?: number): void => {
   const payload = player.payload;
   // install the recording-time bindings *before* startGame, since startGame's
   //   recorder construction reads getBindings() (skipped on the replay path) and
@@ -924,7 +974,11 @@ const seedReplayWorld = (game: Game, player: ReplayPlayer): void => {
   //   ship — ship.pos and edge-wrap depend on game.w/h, and any mismatch
   //   diverges motion from frame 0. resize() reads replayLockedDims to switch
   //   into the locked-canvas + CSS-letterbox rendering mode.
-  game.replayLockedDims = { w: payload.header.w, h: payload.header.h, dpr: payload.header.dpr };
+  game.replayLockedDims = {
+    w: payload.header.w,
+    h: payload.header.h,
+    dpr: dprOverride ?? payload.header.dpr,
+  };
   game.resize();
   startGame(game, {
     seed: payload.header.seed,

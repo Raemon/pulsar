@@ -1,35 +1,7 @@
 import type { Game } from "../Game";
-import type { KillBucket } from "./killBuckets";
 import { displayWave } from "./waveDirector";
 import { getIdToken, type PublicUser } from "./auth";
 import { REPLAY_FORMAT_VERSION } from "./replayFormat";
-
-// bucket names are emitted by killEffects.ts; this label map keeps the
-// leaderboard summary readable instead of leaking internal asteroid kinds.
-const BUCKET_LABELS: Record<KillBucket, string> = {
-  asteroid_huge: "2xL",
-  asteroid_large: "lg",
-  asteroid_medium: "md",
-  asteroid_small: "sm",
-  bassteroid: "bass",
-  chime: "chime",
-  bell: "bell",
-  warble: "warble",
-  citadel: "citadel",
-  asteroidWithGem: "gem",
-  burstGem: "gold gem",
-  solidCrystal: "crystal",
-  beatShieldCrystal: "beat crystal",
-  metalChunk: "metal",
-  alien_big: "alien-L",
-  alien_medium: "alien-M",
-  alien_small: "alien-S",
-  comet: "comet",
-  boss: "boss",
-  sepulchre: "sepulchre",
-  glassPrison: "prison",
-  wraith: "wraith",
-};
 
 export type HighscoreRow = {
   id: number;
@@ -169,6 +141,21 @@ export const fetchRecentScores = async (): Promise<HighscoreRow[]> => {
   return applyKnownReplays(body.scores);
 };
 
+// Highlight-reel pool for the title screen: the runs worth showing behind it.
+//   The request carries no parameters — the window is the server's to bound and
+//   cache, and anything build-specific is filtered here.
+export const fetchReelCandidates = async (minCombo: number): Promise<HighscoreRow[]> => {
+  const res = await fetch("/api/highscores?mode=reel", { method: "GET", cache: "no-store" });
+  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+  const body = (await res.json()) as { scores: HighscoreRow[] };
+  // The server bounds the window (runs with a replay, best rhythm first); the
+  //   two filters that depend on *this build* are applied here: a replay this
+  //   build can't re-sim is unusable, and the rhythm floor is the reel's own.
+  return body.scores.filter(
+    (row) => row.replay_version === REPLAY_FORMAT_VERSION && row.max_combo >= minCombo,
+  );
+};
+
 // Player-profile view: every run by one pilot, server-gathered as the top-50 in
 //   each category (score, rhythm, wave, most-recent) and unioned. The view
 //   renders these unfiltered (no per-pilot dedupe) so the player sees their
@@ -214,20 +201,6 @@ export const fetchNeighborhood = async (
   if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
   const body = (await res.json()) as { scores: HighscoreRow[]; selfRank: number };
   return { scores: applyKnownReplays(body.scores), selfRank: body.selfRank };
-};
-
-// the leaderboard row shows a compressed kill breakdown; pick the top few
-// buckets so the row stays scannable instead of dumping every category.
-export const formatKillSummary = (summary: Record<string, number>): string => {
-  const entries = Object.entries(summary ?? {});
-  if (entries.length === 0) return "";
-  entries.sort((a, b) => b[1] - a[1]);
-  const parts: string[] = [];
-  for (const [bucket, count] of entries.slice(0, 4)) {
-    const label = BUCKET_LABELS[bucket as KillBucket] ?? bucket;
-    parts.push(`${count}${label}`);
-  }
-  return parts.join(" · ");
 };
 
 const RECENT_NAME_KEY = "pulsar.recentName";

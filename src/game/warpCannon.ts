@@ -5,9 +5,12 @@ import type { Asteroid, AsteroidKind, AsteroidSize } from "../Asteroid";
 import type { Alien } from "../Alien";
 import { COMET_HALO_REACH, type Comet } from "../Comet";
 import { TAU, fromAngle } from "../vec";
+import { drawGlow } from "../glow";
 import { ENTITY_CONFIG } from "./entityConfig";
 import { muzzleOf } from "../ship/shipWeapons";
-import { warpChargeAt, warpChargeToNext, warpPelletScale, warpVoiceKey } from "./warpCharge";
+import {
+  WARP_MAX_CHARGE, WARP_SIZE_LADDER, warpChargeAt, warpChargeToNext, warpPelletRadius, warpSecondsSinceTierUp, warpVoiceKey, warpWavesAway,
+} from "./warpCharge";
 import { BEAT_GRID } from "./rhythmConstants";
 import { enqueueBeatCue } from "./beatCues";
 import type { Pos } from "../Sound";
@@ -38,8 +41,8 @@ import {
 //
 // The swallowed body leaves play the frame it's struck. Its fall is ticked in
 // the sim (so it's deterministic and replays); the body itself is held in
-// game.warpedOut and climbs back out at the start of the next wave
-// (warpReturn.ts). The shot's wobble and ripples are render-only.
+// game.warpedOut and climbs back out as a later wave starts — one wave on per
+// tier the shot was charged to (warpWavesAway, warpReturn.ts). The shot's wobble and ripples are render-only.
 
 // ── The bite ──────────────────────────────────────────────────────────────────
 // A pellet swallows a rock whole only up to its tier's size: tier 0 takes a
@@ -47,7 +50,6 @@ import {
 // pellet's size and leaves ONE smaller rock behind — tier+1 steps down the
 // ladder. Only kinds that break down the plain size ladder (Asteroid's
 // splitRegular) can be bitten; every other swallowable body goes whole.
-const SIZE_LADDER: ReadonlyArray<AsteroidSize> = ["small", "medium", "large", "huge"];
 const BITEABLE_KINDS: ReadonlySet<AsteroidKind> = new Set<AsteroidKind>(["normal", "asteroidWithGem", "chime", "warble"]);
 
 // `biteKind` is what falls in; the leftover keeps the rock's own kind, so a
@@ -57,11 +59,11 @@ export type WarpBite = { bite: AsteroidSize; biteKind: AsteroidKind; leftover: A
 // null = the shot swallows `a` whole.
 export const warpBite = (a: Asteroid, shot: Bullet): WarpBite | null => {
   if (!BITEABLE_KINDS.has(a.kind)) return null;
-  const size = SIZE_LADDER.indexOf(a.size);
+  const size = WARP_SIZE_LADDER.indexOf(a.size);
   const cap = shot.warpCharge;
   if (size <= cap) return null;
   const biteKind = a.kind === "asteroidWithGem" ? "normal" : a.kind;
-  return { bite: SIZE_LADDER[cap], biteKind, leftover: SIZE_LADDER[size - cap - 1] };
+  return { bite: WARP_SIZE_LADDER[cap], biteKind, leftover: WARP_SIZE_LADDER[size - cap - 1] };
 };
 
 // ── The shot ──────────────────────────────────────────────────────────────────
@@ -212,35 +214,152 @@ export const renderWarpShots = (ctx: CanvasRenderingContext2D, bullets: Readonly
   }
 };
 
+// ── The charge ────────────────────────────────────────────────────────────────
 // The pellet forming on the nose while the trigger is held: the mouth it will
-// fire at the tier charged so far (against `shotRadius`, a stock shot's hit
-// radius), swelling a little toward the next tier across each beat, with one
-// faint ring per tier banked around it. Reads the sim's perceived beat clock,
-// the same one the release is judged on.
-export const renderWarpCharge = (
-  ctx: CanvasRenderingContext2D, ship: Ship, shotRadius: number, beatTime: number, timeMs: number,
+// fire at the tier charged so far, swelling toward the next across each beat
+// and kicking out to its new size as a tier ticks in. Around it: starlight
+// spiralling into it (faster and denser each tier), one tilted orbit ring per
+// tier banked, an arc that fills toward the next tier's size, and a shockwave
+// off every tier-up. A full charge goes white-hot and throbs on the beat.
+// Reads the sim's perceived beat clock, the same one the release is judged on.
+const CHARGE_POP_SEC = 0.22;
+const CHARGE_MOTES = 10;
+const CHARGE_PULL_SEC = 0.55;
+
+const mouthPop = (since: number): number => {
+  if (since >= CHARGE_POP_SEC) return 0;
+  const k = since / CHARGE_POP_SEC;
+  return Math.sin(k * Math.PI) * (1 - k);
+};
+
+// Motes falling into the mouth along a tightening spiral. A mote's fall runs
+// k 0→1 from `reach` down to the lip, winding in faster as it nears.
+const paintInfall = (
+  ctx: CanvasRenderingContext2D, x: number, y: number, mouth: number, charge: number, tSec: number, hue: number,
 ): void => {
+  const reach = mouth * 2.6 + 34;
+  const count = CHARGE_MOTES + charge * 3;
+  const pull = CHARGE_PULL_SEC / (1 + 0.2 * charge);
+  const wind = 2.2 + 0.25 * charge;
+  ctx.strokeStyle = `hsl(${hue}, 90%, 80%)`;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < count; i++) {
+    const seed = i * 2.399;
+    const at = (k: number) => {
+      const fall = k * k;
+      const r = mouth + (reach - mouth) * (1 - fall);
+      const a = seed + fall * wind + tSec * 0.7;
+      return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, fall };
+    };
+    const k = (tSec / pull + i / count) % 1;
+    const head = at(k);
+    const tail = at(Math.max(0, k - 0.12));
+    const alpha = Math.sin(k * Math.PI) * (0.26 + 0.06 * charge);
+    drawGlow(ctx, head.x, head.y, 3 + 2.5 * head.fall, hue, alpha);
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(tail.x, tail.y);
+    ctx.lineTo(head.x, head.y);
+    ctx.stroke();
+  }
+};
+
+// One tilted ring per tier banked, each turning at its own rate, so the stack
+// reads like a gyroscope spinning up.
+const paintOrbits = (
+  ctx: CanvasRenderingContext2D, x: number, y: number, mouth: number, charge: number, tSec: number, tint: string,
+): void => {
+  for (let i = 1; i <= charge; i++) {
+    const spin = tSec * (1.1 + 0.5 * i) * (i % 2 ? 1 : -1) + i * 1.1;
+    const r = mouth * (1.35 + 0.28 * i);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(spin);
+    ctx.scale(1, 0.42 + 0.12 * i);
+    ctx.lineWidth = 1.4;
+    strokeRing(ctx, 0, 0, r, `hsla(${tint}, 82%, ${(0.36 - 0.06 * i).toFixed(3)})`);
+    ctx.restore();
+  }
+};
+
+// The next tier's size as a faint ring, with an arc filling round it across the beat.
+const paintNextTierArc = (
+  ctx: CanvasRenderingContext2D, x: number, y: number, nextMouth: number, toNext: number, tint: string,
+): void => {
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 5]);
+  strokeRing(ctx, x, y, nextMouth, `hsla(${tint}, 80%, 0.14)`);
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = `hsla(${tint}, 92%, ${(0.25 + 0.3 * toNext).toFixed(3)})`;
+  ctx.beginPath();
+  ctx.arc(x, y, nextMouth, -Math.PI / 2, -Math.PI / 2 + TAU * toNext);
+  ctx.stroke();
+};
+
+const paintTierUpShock = (
+  ctx: CanvasRenderingContext2D, x: number, y: number, mouth: number, since: number, tint: string,
+): void => {
+  const life = 0.3;
+  if (since >= life) return;
+  const k = since / life;
+  ctx.lineWidth = 2 * (1 - k) + 0.5;
+  strokeRing(ctx, x, y, mouth * (1 + 1.5 * Math.sqrt(k)), `hsla(${tint}, 90%, ${(0.45 * (1 - k) ** 2).toFixed(3)})`);
+  drawGlow(ctx, x, y, mouth * 1.8, 190, 0.25 * (1 - k) ** 2, true);
+};
+
+export const renderWarpCharge = (ctx: CanvasRenderingContext2D, ship: Ship, beatTime: number, timeMs: number): void => {
   if (!ship.alive || !ship.warpCannonActive || !ship.warpChargeActive) return;
   const charge = warpChargeAt(ship, beatTime);
+  const full = charge >= WARP_MAX_CHARGE;
   const toNext = warpChargeToNext(ship, beatTime);
-  const scale = warpPelletScale(charge);
-  const mouth = shotRadius * (scale + (warpPelletScale(charge + 1) - scale) * 0.3 * toNext * toNext);
+  const since = warpSecondsSinceTierUp(ship, beatTime);
+  const base = warpPelletRadius(charge);
+  const next = warpPelletRadius(charge + 1);
+  const tSec = timeMs * 0.001;
+  // Full charge throbs on the beat; otherwise it swells toward the next tier.
+  const beatPhase = ((beatTime / BEAT_GRID) % 1 + 1) % 1;
+  const throb = full ? 0.04 * (1 - beatPhase) ** 3 : 0;
+  const mouth = (base + (next - base) * 0.2 * toNext * toNext) * (1 + 0.14 * mouthPop(since) + throb) * mouthBreath(tSec);
   const muzzle = muzzleOf(ship);
-  const ahead = fromAngle(ship.heading, mouth);
+  const ahead = fromAngle(ship.heading, mouth * 1.15 + 8);
   const x = muzzle.x + ahead.x;
   const y = muzzle.y + ahead.y;
-  const tSec = timeMs * 0.001;
-  const breathe = mouthBreath(tSec);
-  renderBakedMouth(ctx, { x, y, radius: lensScaleForMouth(mouth * breathe), seed: 0, hueShift: 0 }, 1, null, tSec * 1.6);
+  const tint = full ? "0, 0%" : OFF_BEAT_TINT;
+  const hue = full ? 200 : 185;
+
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  ctx.lineWidth = Math.max(0.8, mouth * 0.1);
-  strokeRing(ctx, x, y, mouth * breathe, `hsla(${OFF_BEAT_TINT}, 88%, 0.75)`);
-  ctx.lineWidth = 1;
-  for (let i = 1; i <= charge; i++) {
-    strokeRing(ctx, x, y, mouth * (1 + 0.35 * i), `hsla(${OFF_BEAT_TINT}, 80%, ${(0.4 - 0.08 * i).toFixed(3)})`);
-  }
+  drawGlow(ctx, x, y, mouth * (2.2 + 0.15 * charge), hue, 0.13 + 0.035 * charge);
+  paintInfall(ctx, x, y, mouth, charge, tSec, hue);
   ctx.restore();
+
+  renderBakedMouth(ctx, { x, y, radius: lensScaleForMouth(mouth), seed: 0, hueShift: 0 }, 1, null, tSec * (1.6 + 0.3 * charge));
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineWidth = Math.max(1.5, mouth * 0.3);
+  strokeRing(ctx, x, y, mouth * 1.08, `hsla(${tint}, 65%, ${(0.14 + 0.025 * charge).toFixed(3)})`);
+  ctx.lineWidth = Math.max(1, mouth * 0.09);
+  strokeRing(ctx, x, y, mouth, `hsla(${tint}, 90%, ${(0.75 + 0.1 * mouthPop(since)).toFixed(3)})`);
+  paintOrbits(ctx, x, y, mouth, charge, tSec, tint);
+  if (!full) paintNextTierArc(ctx, x, y, next, toNext, OFF_BEAT_TINT);
+  paintTierUpShock(ctx, x, y, mouth, since, tint);
+  ctx.restore();
+};
+
+// The held charge's chord (Sound.startWarpCharge) follows the trigger: it
+// starts on the press, sinks a rung each tier, and cuts on the release.
+// Audio only, read off the same clock as the render.
+export const tickWarpChargeSound = (game: Game): void => {
+  const { ship } = game;
+  if (game.state !== "playing" || !ship.alive || !ship.warpCannonActive || !ship.warpChargeActive) {
+    game.sound.stopWarpCharge();
+    return;
+  }
+  const tier = warpChargeAt(ship, game.perceivedBeatTime);
+  game.sound.startWarpCharge(tier);
+  game.sound.setWarpChargeTier(tier);
 };
 
 // ── The swallow ───────────────────────────────────────────────────────────────
@@ -249,6 +368,9 @@ export type WarpedBody =
   | { kind: "asteroid"; body: Asteroid }
   | { kind: "alien"; body: Alien }
   | { kind: "comet"; body: Comet };
+
+// A swallowed body and the wave it comes back on.
+export type WarpedOut = { warped: WarpedBody; returnWave: number };
 
 // Furthest a warped body paints from its centre (halo included), for the lens buffer.
 const warpedReach = (w: WarpedBody): number =>
@@ -305,29 +427,35 @@ const swallowSizeTier = (radius: number): number =>
   radius < (ROCK_RADIUS.small + ROCK_RADIUS.medium) / 2 ? 0 : radius < (ROCK_RADIUS.medium + ROCK_RADIUS.large) / 2 ? 1 : 2;
 
 // The swallow sounds the shot's own note back (Sound.buildWarpSwallowGraph).
-// An on-beat hit can connect a little either side of the beat, so its sound
-// is put on the beat it was scored on: held for it if the hit came early,
-// played at once if it's already passed.
-export const playSwallowSound = (game: Game, key: number, pos: Pos, onBeat: boolean): void => {
+// An on-beat swallow also lands the taiko an on-beat kill gets, with the warp
+// layer over it in the shot's chord (Sound.buildWarpBoomBeatGraph). An on-beat
+// hit can connect a little either side of the beat, so its sound is put on the
+// beat it was scored on: held for it if the hit came early, played at once if
+// it's already passed.
+export const playSwallowSound = (game: Game, key: number, pos: Pos, onBeat: boolean, taiko = false): void => {
   if (!onBeat) {
     game.sound.play("warpSwallow", key, pos);
     return;
   }
-  const beat = Math.round(game.perceivedBeatTime / BEAT_GRID) * BEAT_GRID;
-  enqueueBeatCue(game, { at: beat, name: "warpSwallow", pitch: key, pos: { x: pos.x, y: pos.y }, tag: "warpSwallow" });
+  const at = Math.round(game.perceivedBeatTime / BEAT_GRID) * BEAT_GRID;
+  const p = { x: pos.x, y: pos.y };
+  enqueueBeatCue(game, { at, name: "warpSwallow", pitch: key, pos: p, tag: "warpSwallow" });
+  if (!taiko) return;
+  enqueueBeatCue(game, { at, name: "asteroidBoomBeat", pitch: 1, pos: p, tag: "warpSwallow" });
+  enqueueBeatCue(game, { at, name: "warpBoomBeat", pitch: key, pos: p, tag: "warpSwallow" });
 };
 
 // The voice key of a body climbing back out with no shot behind it: its size.
 export const returnVoiceKey = (game: Game, radius: number): number => warpVoiceKey(swallowSizeTier(radius), game.beatTime);
 
 // Drop `warped` into `portal` — or, by default, a fresh one torn open where the
-// shot struck — and hold it for its return next wave. Call before the hit
+// shot struck — and hold it for its return a wave on per tier of the shot. Call before the hit
 // consumes the shot (see swallowOpenFrom).
 export const swallowIntoWarp = (
   game: Game, warped: WarpedBody, shot: Bullet, onBeat: boolean, portal: Wormhole | null = null,
 ): void => {
   const { body } = warped;
-  playSwallowSound(game, shot.warpVoiceKey, shot.pos, onBeat);
+  playSwallowSound(game, shot.warpVoiceKey, shot.pos, onBeat, warped.kind === "asteroid" && warped.body.kind === "normal");
   if (!portal) {
     portal = spawnWormhole(
       game.wormholes, shot.pos, body.radius, Math.atan2(shot.vel.y, shot.vel.x),
@@ -335,7 +463,7 @@ export const swallowIntoWarp = (
     );
   }
   game.swallows.push({ portal, warped, dive: planDiveInto(body.pos, body.vel, portal, game.w, game.h), t: 0 });
-  game.warpedOut.push(warped);
+  game.warpedOut.push({ warped, returnWave: game.wave + warpWavesAway(shot.warpCharge) });
 };
 
 // Seconds until every body still falling into `portal` is through — how long

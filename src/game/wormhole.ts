@@ -1,4 +1,4 @@
-import { toroidalDelta, type Vec } from "../vec";
+import { TAU, toroidalDelta, type Vec } from "../vec";
 import type { Starfield } from "../Starfield";
 // Seeds only — cosmetic stream so the portal's sky offset/flow never perturbs
 // the gameplay RNG draw count and desyncs replays.
@@ -41,14 +41,11 @@ import { cosmeticRng as rng } from "./rng";
 // owns the portal so the two can be sequenced (open → swallow → collapse) and
 // the body always draws in front of the mouth.
 
-const TAU = Math.PI * 2;
-
 // Lifecycle (seconds): the mouth opens, holds while the body is swallowed,
 // then collapses. A dive (planDive) is capped to land mid-hold.
 const OPEN = 0.34;
 const HOLD = 0.42;
 const CLOSE = 0.4;
-export const WORMHOLE_LIFE = OPEN + HOLD + CLOSE;
 
 // Lens scale (px) of a portal torn by a body of this radius — the unit every
 // radius below is measured in. The floor keeps a tiny body from punching an

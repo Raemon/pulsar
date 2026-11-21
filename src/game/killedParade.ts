@@ -84,7 +84,6 @@ const layOutParade = (game: Game) => {
     cursor += rest;
   }
   game.paradeEntries = entries;
-  game.paradeTotalBeats = cursor;
 };
 
 // DPR-aware backing store needed so the parade looks crisp at high-density display ratios.
@@ -147,7 +146,6 @@ export const stopParade = (game: Game) => {
   }
   game.paradeActive = false;
   game.paradeEntries = [];
-  game.paradeTotalBeats = 0;
 };
 
 // per-frame composition splits cleanly into "where are we", "draw", "should we stop?".

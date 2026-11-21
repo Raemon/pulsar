@@ -1,5 +1,5 @@
 import { Ship } from "./Ship";
-import { Asteroid, AsteroidKind } from "./Asteroid";
+import { Asteroid } from "./Asteroid";
 import { Bullet } from "./Bullet";
 import { ParticleSystem } from "./Particle";
 import { Shard } from "./Shard";
@@ -14,7 +14,7 @@ import { Canister } from "./Canister";
 import { Gem } from "./Gem";
 import { FuelOrb } from "./FuelOrb";
 import { Comet } from "./Comet";
-import { Alien, AlienSize } from "./Alien";
+import { Alien } from "./Alien";
 import { AlienBullet } from "./AlienBullet";
 import { v, WORLD_W, WORLD_H } from "./vec";
 import { Popup } from "./game/popups";
@@ -22,10 +22,11 @@ import { FIRST_BONUS_LIFE_SCORE } from "./game/bonusLife";
 import type { BassLightning } from "./game/bassLightning";
 import type { DriftBurst } from "./game/driftBurst";
 import type { Wormhole } from "./game/wormhole";
-import type { Swallow, WarpedBody } from "./game/warpCannon";
+import type { Swallow, WarpedOut } from "./game/warpCannon";
 import type { WarpIn } from "./game/warpReturn";
 import type { InkPatch } from "./game/inkCloud";
 import type { SkipPortal, WaveSkipState } from "./game/waveSkip";
+import { isScrubbableReplay, isTitleScreen, startTitleReel, type TitleReel } from "./game/titleReel";
 import { LaserBeam } from "./game/laserShot";
 import { BossBeam } from "./game/bossBeam";
 import { KilledSnapshot } from "./game/killSnapshot";
@@ -104,9 +105,9 @@ export class Game implements HudElements {
   // Bodies a Warp Cannon shot swallowed, falling through the portal it tore
   //   open (also in the list above) — cosmetic; see game/warpCannon.ts.
   swallows: Swallow[] = [];
-  // Bodies swallowed this wave, held for their return as the next one spawns,
-  //   and returns in flight — see game/warpReturn.ts.
-  warpedOut: WarpedBody[] = [];
+  // Bodies swallowed, each held until the wave it's due back on spawns, and
+  //   returns in flight — see game/warpReturn.ts.
+  warpedOut: WarpedOut[] = [];
   warpIns: WarpIn[] = [];
   // Wave-skip portals torn open by player-killed aliens: each record pairs a
   //   wormhole visual (shared with the list above) with its rolled skip depth.
@@ -163,7 +164,6 @@ export class Game implements HudElements {
   //   the run, on the last life) without leaving "replaying". null = ship alive.
   replayDyingTimer: number | null = null;
   shake = 0;
-  shakeSeed = 0;
   w = 0;
   h = 0;
   dpr = 1;
@@ -241,7 +241,6 @@ export class Game implements HudElements {
   //   field holds one big rock at a time (respawning on clear) until the hint
   //   progression finishes — then tutorialActive clears and waves advance.
   tutorialActive = false;
-  tutorialHoverDone = false;
   tutorialFireHitDone = false;
   // Non-veteran Start-button warm-up runs two single-target waves before the
   //   first real density wave: 1 = single rock (internal wave 1), 2 = single
@@ -343,15 +342,12 @@ export class Game implements HudElements {
   comets: Comet[] = [];
   aliens: Alien[] = [];
   alienBullets: AlienBullet[] = [];
-  alienSpawnSize: AlienSize = "small";
   waveElapsed = 0;
   // false until the run's opening wave spawns; the first spawnWave (or the
   //   tutorial's first practice rock) consumes it. Gates the centre-out
   //   "drift away from the player" spawn that only the first level uses.
   hasSpawnedFirstLevel = false;
   slowMoTimer = 0;
-  // per-game randomised bass-kind intro order so the wave-2/3 picks vary between runs.
-  bassOrder: AsteroidKind[] = [];
   // one unified list replaces four parallel `xSpawnAt` fields used to schedule mid-wave events.
   waveEvents: WaveEventSchedule = newWaveEventSchedule();
 
@@ -394,6 +390,12 @@ export class Game implements HudElements {
   //   fade-out → silent catch-up re-sim → fade-in cycle that masks the
   //   synchronous rewind hitch. startedAt is a performance.now() stamp.
   highlightLoop: { phase: "fadeOut" | "fadeIn"; startedAt: number } | null = null;
+  // Title-screen highlight reel: set while the home screen is playing other
+  //   pilots' rhythm chains behind the overlay. Like the highlight clip it runs
+  //   in the "replaying" state, so it doubles as the flag that says "this replay
+  //   is a backdrop, not something the viewer is watching" — see
+  //   isScrubbableReplay and game/titleReel.ts.
+  titleReel: TitleReel | null = null;
   // localInput is the real keyboard-bound Input; the replay path swaps `input`
   //   to point at the player's ReplayInput while a replay is running, and we
   //   restore localInput when returning to title.
@@ -428,7 +430,6 @@ export class Game implements HudElements {
   scoreSubmitState: "idle" | "submitting" | "submitted" = "idle";
   // lets the title screen after a game-over show a score-neighborhood (±5) around the
   //   player's run instead of the global top 10. Cleared when a new run starts.
-  lastRunScore: number | null = null;
   lastRunScoreId: number | null = null;
   // up/down on the title + gameover leaderboard moves a yellow selector through
   //   the fetched pilot list (cap of 50). The selector slides toward the centre
@@ -489,7 +490,6 @@ export class Game implements HudElements {
   paradeStartBeatTime = 0;
   paradeRafId: number | null = null;
   paradeEntries: ParadeEntry[] = [];
-  paradeTotalBeats = 0;
   paradeCanvasW = 0;
   paradeCanvasH = 0;
   paradeOrientation: "horizontal" | "vertical" = "horizontal";
@@ -563,11 +563,11 @@ export class Game implements HudElements {
     this.overlayStartEl.addEventListener("click", () => {
       // Start button on the title screen launches Wave 1 directly, no tutorial.
       //   In other states (paused/gameover) triggerOverlayStart routes correctly.
-      if (this.state === "title") this.tutorialRequested = false;
+      if (isTitleScreen(this)) this.tutorialRequested = false;
       triggerOverlayStart(this);
     });
     window.addEventListener("tutorial:request", () => {
-      if (this.state !== "title") return;
+      if (!isTitleScreen(this)) return;
       this.tutorialRequested = true;
       triggerOverlayStart(this);
     });
@@ -583,6 +583,9 @@ export class Game implements HudElements {
       if (this.calibrationIntro) finishCalibrationIntro(this);
       this.calibrating = false;
       if (origin === "settings") window.dispatchEvent(new CustomEvent("settings:open-request"));
+      // openBeatCalibrator stopped the reel so the taps could be heard; the
+      //   calibrator is done with the screen now.
+      if (this.state === "title") startTitleReel(this);
     });
     window.addEventListener("beat-calibrator:cancel", (e) => {
       const { origin } = (e as CustomEvent).detail ?? {};
@@ -595,6 +598,9 @@ export class Game implements HudElements {
       }
       this.calibrating = false;
       if (origin === "settings") window.dispatchEvent(new CustomEvent("settings:open-request"));
+      // As in beat-calibrator:done — the reel was stopped so the calibrator
+      //   could be heard, and the title screen is its own again.
+      if (this.state === "title") startTitleReel(this);
     });
     // Settings dialog's manual latency slider — applies live (and persists) so a
     //   nudge takes effect immediately, even mid-run.
@@ -631,28 +637,29 @@ export class Game implements HudElements {
     // Replay scrubber (React <ReplayScrubber>) → game. Speed 0 pauses playback;
     //   seek sets a target frame consumed on the next replay tick.
     window.addEventListener("replay:setSpeed", (e) => {
-      if (!this.replayPlayer || this.replayExporting) return;
+      if (!isScrubbableReplay(this) || this.replayExporting) return;
       this.replaySpeed = (e as CustomEvent).detail.speed as number;
     });
     window.addEventListener("replay:seek", (e) => {
-      if (!this.replayPlayer || this.replayExporting) return;
+      if (!isScrubbableReplay(this) || this.replayExporting) return;
       this.replaySeekTarget = (e as CustomEvent).detail.frame as number;
     });
     window.addEventListener("replay:togglePlay", () => {
-      if (!this.replayPlayer || this.replayExporting) return;
+      const player = this.replayPlayer;
+      if (!player || !isScrubbableReplay(this) || this.replayExporting) return;
       this.replaySpeed = this.replaySpeed > 0 ? 0 : 1;
       window.dispatchEvent(new CustomEvent("replay:progress", {
-        detail: { position: this.replayPlayer.position(), total: this.replayPlayer.total(), speed: this.replaySpeed },
+        detail: { position: player.position(), total: player.total(), speed: this.replaySpeed },
       }));
     });
     window.addEventListener("replay:exit", () => {
       // Mid-export, exit means "abort the export" — the replay stays open.
       if (this.replayExporting) { cancelReplayExport(); return; }
-      if (this.replayPlayer && this.highlightClip === null) exitReplay(this);
+      if (isScrubbableReplay(this)) exitReplay(this);
     });
     // Scrubber download button → offline MP4 export (or cancel if in flight).
     window.addEventListener("replay:download", () => {
-      if (this.replayPlayer && this.highlightClip === null) toggleReplayExport(this);
+      if (isScrubbableReplay(this)) toggleReplayExport(this);
     });
     // <FirstWaveHint> owns its own stage-3 auto-dismiss timer; when it fades
     //   out it asks the game to clear the stage.
@@ -665,12 +672,12 @@ export class Game implements HudElements {
     });
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
-      if (k === "m" && this.state !== "title") toggleMute(this);
+      if (k === "m" && !isTitleScreen(this)) toggleMute(this);
       // Replay scrubbing: arrows jump ~2s, space toggles play. Handled here
       //   (not via game.input) because input is the recorded ReplayInput. Skipped
       //   for the game-over highlight clip — there Space/Enter mean "continue",
       //   handled by tickHighlightGameOverInput, and there's no scrubber.
-      if (this.replayPlayer && this.highlightClip === null) {
+      if (isScrubbableReplay(this)) {
         if (this.replayExporting) {
           // Export in flight: Escape aborts it; everything else is ignored so
           //   a stray seek can't fight the exporter's frame sweep.
@@ -683,7 +690,7 @@ export class Game implements HudElements {
           if (k === "arrowleft" || k === "arrowright") {
             e.preventDefault();
             const dir = k === "arrowright" ? 1 : -1;
-            const from = this.replaySeekTarget ?? this.replayPlayer.position();
+            const from = this.replaySeekTarget ?? this.replayPlayer?.position() ?? 0;
             this.replaySeekTarget = from + dir * SEEK_FRAMES;
           } else if (k === " " || k === "spacebar") {
             e.preventDefault();

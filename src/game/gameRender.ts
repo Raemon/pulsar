@@ -11,8 +11,7 @@ import { primaryReticulePosition } from "../ship/reticule/reticuleRender";
 import { renderWormholes, type LensBackdrop } from "./wormhole";
 import { renderSwallows, renderWarpShots, renderWarpShotLenses, renderWarpCharge } from "./warpCannon";
 import { renderWarpIns } from "./warpReturn";
-import { bulletCollisionRadius } from "../Bullet";
-import { computeConeFrame, toroidalDelta } from "../ship/reticule/coneGeometry";
+import { computeConeFrame } from "../ship/reticule/coneGeometry";
 import { pickCenterMostTargetForFocus, ReticuleTarget, setReticuleWrapAnchor } from "../ship/reticule/trajectoryPreview";
 import { renderShipTrajectoryPreview } from "../ship/shipTrajectoryPreview";
 import { renderLasers, renderLaserEmitter, renderLaserAmbientFlash } from "./laserShot";
@@ -26,6 +25,7 @@ import { cosmeticRng } from "./rng";
 import { traceCitadelHolePath } from "../Asteroid";
 import { paintInkClouds, isPointInAnyInkPatch } from "./inkCloud";
 import { aimHintRender } from "./aimHint";
+import { PULSAR_PARALLAX } from "./camScroll";
 
 // Overdrive ramp above the tier-3 white threshold. The combo halo saturates to
 // white at rhythm 12; this 0→1 factor keeps climbing from there to 24 so the
@@ -42,7 +42,6 @@ const superRhythm = (game: Game): number =>
 //   shifts its draw count and desyncs replays (rngState drifts ~first hit).
 const applyScreenShake = (game: Game): { shakeX: number; shakeY: number } => {
   if (game.shake <= 0) return { shakeX: 0, shakeY: 0 };
-  game.shakeSeed += 1;
   return {
     shakeX: (cosmeticRng() - 0.5) * game.shake * 10,
     shakeY: (cosmeticRng() - 0.5) * game.shake * 10,
@@ -360,8 +359,7 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
   if (!warping) {
     renderLaserReticule(ctx, game, game.beatTime);
     renderLaserEmitter(ctx, game, game.beatTime);
-    // Sized off an off-beat stock shot: the size it'll fly at unless the release lands on the beat.
-    renderWarpCharge(ctx, game.ship, bulletCollisionRadius({ onBeat: false, superBoosted: false }), game.perceivedBeatTime, game.time);
+    renderWarpCharge(ctx, game.ship, game.perceivedBeatTime, game.time);
   }
 };
 
@@ -385,35 +383,7 @@ const paintForeground = (game: Game, targets: ReadonlyArray<ReticuleTarget>) => 
 // ship's depth (but nearer than the twinkling star layers at STARFIELD_PARALLAX).
 // The nearest foreground accents (ecliptic stars) ride the pulsar's own focal
 // transform, orbiting the shared ecliptic alongside the planets.
-const PULSAR_PARALLAX = 0.62;
-
-// Advance the render-only continuous camera (Game.camScroll*). The ship's
-// gameplay position wraps each frame, so we can't difference it directly — we
-// take the step toroidally (a wrap reads as a small move, not a ±w jump) and
-// integrate it. Seeded to the exact `w/2 - ship.pos` on the first frame (and
-// after a resize/teleport, detected by an out-of-torus jump) so the camera is
-// pixel-identical to the old math except that it never snaps.
-const updateCamScroll = (game: Game) => {
-  const { w, h, ship } = game;
-  const seed = () => {
-    game.camScrollX = w / 2 - ship.pos.x;
-    game.camScrollY = h / 2 - ship.pos.y;
-  };
-  if (game.lastShipPosX === null || game.lastShipPosY === null) {
-    seed();
-  } else {
-    const [dx, dy] = toroidalDelta(ship.pos.x - game.lastShipPosX, ship.pos.y - game.lastShipPosY, w, h);
-    // A step larger than a wrapped frame's worth means a respawn/teleport, not
-    // motion — reseed rather than smear a huge slide across the field.
-    if (Math.hypot(dx, dy) > Math.min(w, h) * 0.25) seed();
-    else {
-      game.camScrollX -= dx;
-      game.camScrollY -= dy;
-    }
-  }
-  game.lastShipPosX = ship.pos.x;
-  game.lastShipPosY = ship.pos.y;
-};
+// PULSAR_PARALLAX and the camera scroll it multiplies live in camScroll.ts.
 
 const paintScrollScene = (game: Game, shakeX: number, shakeY: number) => {
   const { ctx, w, h } = game;
@@ -427,7 +397,7 @@ const paintScrollScene = (game: Game, shakeX: number, shakeY: number) => {
   // seam crossing becomes a `parallax·w` jolt that `% w` can't hide. camScroll
   // integrates the ship's toroidal step instead, so it never snaps; it equals
   // camX modulo w, so the layers land in the same place — just without the jump.
-  updateCamScroll(game);
+  // The sim advances it (camScroll.ts) because boss spawns read it too.
   const parallaxX = game.camScrollX;
   const parallaxY = game.camScrollY;
 

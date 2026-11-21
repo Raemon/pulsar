@@ -24,15 +24,19 @@ const shipHullVertices = (ship: Ship): Vec[] => [
 // the outline desaturates up to full white and the fill floods opaque.
 // cooldownDim (0..1) drains the cyan to a dull grey while the laser sits in its
 // refire lockout, so a spent weapon is readable on the hull itself.
+// fireBlocked (0..1) fades saturation and opacity to SPENT_HULL while the
+// magazine is empty, so you can see you can't fire yet.
+const SPENT_HULL = 0.25;
 const paintShipHull = (
   ctx: CanvasRenderingContext2D, verts: Vec[], invuln: number, beatPulse: number, bonusFlash: number,
-  cooldownDim: number,
+  cooldownDim: number, fireBlocked: number,
 ) => {
   const beatBrightness = 0.7 + 0.3 * beatPulse;
+  const spent = 1 - (1 - SPENT_HULL) * fireBlocked;
   // Pull the cyan hue's saturation down toward 0 (white) and force full opacity
   // as the flash rides, so the ship reads as a searing white silhouette.
-  const sat = (100 - bonusFlash * 100) * (1 - 0.9 * cooldownDim);
-  const strokeA = Math.min(1, 0.95 * beatBrightness * invuln + bonusFlash);
+  const sat = (100 - bonusFlash * 100) * (1 - 0.9 * cooldownDim) * spent;
+  const strokeA = Math.min(1, (0.95 * beatBrightness * invuln) * spent + bonusFlash);
   // Grey reads as "spent" only if it also loses some brightness against the
   // charged hull — but stays light enough to keep the silhouette legible.
   ctx.strokeStyle = `hsla(195, ${sat}%, ${75 - cooldownDim * 15 + bonusFlash * 25}%, ${strokeA})`;
@@ -42,7 +46,7 @@ const paintShipHull = (
   for (const vert of verts.slice(1)) ctx.lineTo(vert.x, vert.y);
   ctx.closePath();
   ctx.stroke();
-  const fillA = 0.12 * invuln + bonusFlash * 0.85;
+  const fillA = 0.12 * invuln * spent + bonusFlash * 0.85;
   ctx.fillStyle = `hsla(195, ${sat}%, ${60 - cooldownDim * 12 + bonusFlash * 40}%, ${fillA})`;
   ctx.fill();
 };
@@ -221,7 +225,7 @@ export const renderShipBody = (
   ctx.globalCompositeOperation = "lighter";
   renderComboHalo(ctx, ship, beatPulse);
   paintSuperLaserCharge(ctx, ship, t);
-  paintShipHull(ctx, verts, invuln, beatPulse, bonusFlash, ship.laserCooldownDim);
+  paintShipHull(ctx, verts, invuln, beatPulse, bonusFlash, ship.laserCooldownDim, ship.hullFireBlockedFade);
   const haloOutline = haloVertices(ship).map(([x, y]) => ({ x, y }));
   paintOutlineBeatSweep(ctx, haloOutline, secondsIntoBeat, invuln, comboHaloTint(ship));
   paintMagazine(ctx, ship, invuln);

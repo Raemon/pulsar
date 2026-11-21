@@ -3,13 +3,15 @@ import { resetAimHint } from "./aimHint";
 import { Ship } from "../Ship";
 import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
-import { AsteroidKind, AsteroidSize, spawnBossAt, BASS_KINDS } from "../Asteroid";
+import { AsteroidKind, AsteroidSize, spawnBossAt } from "../Asteroid";
 import { spawnSepulchreEncounter } from "./sepulchre";
+import { bossBodyInWorld } from "./camScroll";
 import { AlienSize } from "../Alien";
 import { PowerupKind, POWERUP_KINDS, spawnCanister } from "../Canister";
 import { syncHud, syncPowerupHud } from "./hud";
 import { stopParade } from "./killedParade";
 import { hideWaveSummary } from "./waveSummary";
+import { stopTitleReel } from "./titleReel";
 import { newWaveEventSchedule } from "./waveEvents";
 import {
   alignBassBeat,
@@ -149,9 +151,9 @@ const ELEMENTS: BetaElement[] = [
     label: "Boss",
     group: "Enemy",
     apply: (g) => {
-      const pos = g.pulsar.bossBodyPos(1);
+      const { pos, size } = bossBodyInWorld(g, 1);
       g.pulsar.setBossPlanetState("active", 1);
-      g.asteroids.push(spawnBossAt(pos, g.w, g.h));
+      g.asteroids.push(spawnBossAt(pos, g.w, g.h, size));
     },
   },
   {
@@ -159,7 +161,7 @@ const ELEMENTS: BetaElement[] = [
     label: "Sepulchre",
     group: "Enemy",
     apply: (g) => {
-      const pos = g.pulsar.bossBodyPos(2);
+      const { pos } = bossBodyInWorld(g, 2);
       g.pulsar.setBossPlanetState("active", 2);
       const encounter = spawnSepulchreEncounter(g, pos);
       // The panel exists to put a combination on the field now; a minute of
@@ -318,6 +320,9 @@ const isOpen = (): boolean => !!panelEl && !panelEl.classList.contains("hidden")
 // Like startGame but skips spawnWave — applies only the selected elements
 // so the run shows exactly what was chosen.
 const startBetaWave = (game: Game) => {
+  // Reachable straight from the title screen, where a reel clip may be holding
+  //   the sim (and the input swap). Hand it back or the beta run never ticks.
+  stopTitleReel(game);
   game.sound.resume();
   // Reset run state
   game.score = 0;
@@ -366,8 +371,6 @@ const startBetaWave = (game: Game) => {
   game.comets = [];
   game.waveEvents = newWaveEventSchedule();
 
-  // Beta spawns explicit kinds, but keep bassOrder valid for any peekers.
-  game.bassOrder = BASS_KINDS.slice();
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 2.0;

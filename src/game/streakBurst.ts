@@ -1,5 +1,5 @@
 import type { Game } from "../Game";
-import type { Vec } from "../vec";
+import { TAU, type Vec } from "../vec";
 import { drawGlow } from "../glow";
 import { BEAT_GRID } from "./rhythmConstants";
 
@@ -22,8 +22,6 @@ import { BEAT_GRID } from "./rhythmConstants";
 // Orbit phase is a pure function of beatTime; the fade + window + birth tween
 // are pure functions of perceivedBeatTime (the clock hits are judged on) — no
 // RNG anywhere here, so replays reproduce it exactly.
-
-const TAU = Math.PI * 2;
 
 // Sparks are the reticule's own cyan (hsl 195); the downbeat flash drifts toward
 //   the brighter Pulsar-logo blue, matching the rest of the sight's beat accents.

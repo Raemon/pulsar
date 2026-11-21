@@ -19,32 +19,6 @@ export const FUEL_RECHARGE_INTERVAL = 1;
 // fraction of FUEL_MAX a single fuel orb restores.
 export const FUEL_ORB_RESTORE = 75;
 
-// Shield (held on the shield key). Raising the shield sips fuel pre-emptively
-// every second it's up, and ramming a rock with it up costs a burst scaled by
-// the impact — bigger, faster rocks take a bigger bite. The hold drain is
-// cheaper than a side engine so keeping a guard up while coasting is viable.
-export const FUEL_SHIELD_HOLD_DRAIN = 6;
-// Impact cost = SHIELD_IMPACT_FACTOR × asteroid-radius × relative-impact-speed,
-// clamped so a glancing tap on a pebble is near-free and a full-speed slam into
-// a planetoid empties a big chunk of the tank rather than the whole thing.
-export const FUEL_SHIELD_IMPACT_FACTOR = 0.00035;
-export const FUEL_SHIELD_IMPACT_MIN = 4;
-export const FUEL_SHIELD_IMPACT_MAX = 55;
-// Flat bite the shield takes to swallow a non-asteroid hit (alien bullet, drifting
-// gem, boss beam) — those have no meaningful "size × speed", so they cost a fixed
-// amount rather than the asteroid impact formula.
-export const FUEL_SHIELD_ABSORB = 12;
-
-// Fuel a shielded ram into asteroid `a` (with the ship moving at shipVel) costs.
-//   radius stands in for size; |shipVel − asteroidVel| is the speed that matters.
-export const shieldImpactFuelCost = (
-  radius: number,
-  relSpeed: number,
-): number => {
-  const raw = FUEL_SHIELD_IMPACT_FACTOR * radius * relSpeed;
-  return Math.min(FUEL_SHIELD_IMPACT_MAX, Math.max(FUEL_SHIELD_IMPACT_MIN, raw));
-};
-
 // Laser (lasershot upgrade) fuel costs. Holding to charge sips fuel slowly —
 // less than a side engine — so defensive charging stays affordable; the charge
 // is rhythm-capped at a few beats so the hold is short anyway. Firing then pays

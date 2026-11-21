@@ -45,8 +45,6 @@ type ActiveExport = { cancelled: boolean };
 
 let activeExport: ActiveExport | null = null;
 
-export const isReplayExporting = (): boolean => activeExport !== null;
-
 export const cancelReplayExport = (): void => {
   if (activeExport) activeExport.cancelled = true;
 };

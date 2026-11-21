@@ -8,10 +8,12 @@ import { SettingsDialog } from "./SettingsDialog";
 import { PauseButton } from "./PauseButton";
 import { TouchControls } from "./TouchControls";
 import { ReplayScrubber } from "./ReplayScrubber";
+import { TitleReel } from "./TitleReel";
 
 export const App = () => (
   <>
     <Hud />
+    <TitleReel />
     <Overlay />
     <ReplayScrubber />
     <FirstWaveHint />
