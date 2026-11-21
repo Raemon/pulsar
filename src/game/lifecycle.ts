@@ -571,7 +571,6 @@ const resetRunTimers = (game: Game) => {
   game.tutorialHoverDone = false;
   game.tutorialFireHitDone = false;
   game.controlsHintActive = false;
-  game.rhythmLossHintPending = false;
   game.beatIntensityRamp = null;
   resetAimHint(game);
   game.hasSpawnedFirstLevel = false;

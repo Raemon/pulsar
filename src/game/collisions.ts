@@ -20,7 +20,7 @@ import { isInBeatWindow, beatOffsetFor, logBeatEvent, spawnBeatDebugPopup } from
 import { SLOW_MO_DURATION } from "./slowMo";
 import { syncHud } from "./hud";
 import { emitShieldPop, emitCanisterPickup, emitCanisterPop, emitGemPickup, emitFuelOrbPickup, emitBounceSparks, emitAlienBulletPop } from "./particleBursts";
-import { popupPickup, popupScore, popupSideEnginesPickup, popupLaserShotPickup, popupInsufficientDamage } from "./popups";
+import { popupPickup, popupScore, popupSideEnginesPickup, popupLaserShotPickup, popupInsufficientDamage, popupShielded } from "./popups";
 import { registerFiredOnBeatMiss } from "./aimHint";
 import { beatsAwayAtHit } from "./rhythmBonus";
 import {
@@ -151,10 +151,13 @@ const deflectBulletOff = (game: Game, b: Bullet, a: Asteroid, blockedDmg: number
   emitBounceSparks(game.particles, b.pos, { x: nx, y: ny }, a.hue, impact);
   // first glance off this rock teaches the player that weak hits bounce; a
   // bounced drift shot earns the "longer" variant once more on top of that.
+  // One hit shows one warning: if the aim hint just took this hit over, the
+  // tip stays unshown and waits for the next glance.
+  if (game.aimHintSuppressLossPopup) return;
   if (wasDriftShot ? !a.driftGlanceTipShown : !a.glanceTipShown) {
     a.glanceTipShown = true;
     if (wasDriftShot) a.driftGlanceTipShown = true;
-    game.popups.push(popupInsufficientDamage(b.pos, shielded ? "SHIELDED — HIT IT ON THE BEAT" : insufficientDamageHint(game, a, wasDriftShot)));
+    game.popups.push(shielded ? popupShielded(b.pos) : popupInsufficientDamage(b.pos, insufficientDamageHint(game, a, wasDriftShot)));
   }
 };
 
@@ -184,16 +187,13 @@ const hitAsteroidWithBullets = (game: Game, a: Asteroid): Asteroid[] | null => {
     const dmg = b.damage() * (driftTier > 0 ? driftTier + 1 : 1);
     // A beat-shield crystal's shield eats any hit that isn't on-beat — checked
     // before the swallow below, so a Warp Cannon shot can't bypass it either.
-    if (a.beatShieldBlocks(onBeat)) {
-      deflectBulletOff(game, b, a, dmg, driftTier > 0, true);
-      return null;
-    }
+    const shielded = a.beatShieldBlocks(onBeat);
     // Peek at the outcome before consuming the bullet: a hit too weak to break
     // the target's armour deflects instead of landing — no damage, no combo,
     // and the shot ricochets off the surface so it can travel on. Armour is
     // resolved at the impact point (the hemisphere's shell-only armour).
-    if (!innerHit && dmg <= a.damageReductionAt(b.pos)) {
-      deflectBulletOff(game, b, a, dmg, driftTier > 0);
+    if (shielded || (!innerHit && dmg <= a.damageReductionAt(b.pos))) {
+      deflectBulletOff(game, b, a, dmg, driftTier > 0, shielded);
       return null;
     }
     logBulletHit(game, "HIT asteroid", b);

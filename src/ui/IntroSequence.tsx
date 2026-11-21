@@ -128,28 +128,31 @@ export const IntroSequence = () => {
       if (beat >= 9) { finish(); return; }
     } else if (detail.kind === "fullHints") {
       // 1 fade-in beat of silence; hints arrive 4 beats apart; closing line 4 beats later;
-      // hold 4 beats, then fade text out over 8 beats. The game starts unfreezing 4 beats
-      // into that text fade-out (2s) and the bg fade-in finishes alongside the text.
+      // hold 4 beats, then fade text out over 4 beats. The bg starts fading (and the game
+      // unfreezes) as the closing line fades in, so the world is revealed under it.
       const op0 = envelope(beat, 1, 2, null, 0);
       const op1 = envelope(beat, 5, 2, null, 0);
       const op2 = envelope(beat, 9, 2, null, 0);
-      const opClose = envelope(beat, 13, 2, null, 0);
-      const holdEnd = 19; // 13 close-start + 2 fade-in + 4 hold
+      const closeStart = 13;
+      const opClose = envelope(beat, closeStart, 2, null, 0);
+      const holdEnd = closeStart + 2 + 4; // close-start + 2 fade-in + 4 hold
       const textFadeOutBeats = 4;
       const outFrac = Math.max(0, Math.min(1, (beat - holdEnd) / textFadeOutBeats));
       const outMul = 1 - smooth(outFrac);
-      setLines([
-        { text: detail.hints?.[0] ?? "", opacity: op0 * outMul },
-        { text: detail.hints?.[1] ?? "", opacity: op1 * outMul },
-        { text: detail.hints?.[2] ?? "", opacity: op2 * outMul },
-        { text: "Become one with the Pulsar", opacity: opClose * outMul },
-      ]);
-      const bgStart = holdEnd + 4; 
-      const bgFade = 4; 
+      const bgStart = closeStart;
+      const bgFade = 4;
       if (beat >= bgStart) fireUnfreeze();
       const bgFrac = Math.max(0, Math.min(1, (beat - bgStart) / bgFade));
+      // The three hints leave with the black; only the closing line lingers.
+      const hintMul = 1 - smooth(bgFrac);
+      setLines([
+        { text: detail.hints?.[0] ?? "", opacity: op0 * hintMul },
+        { text: detail.hints?.[1] ?? "", opacity: op1 * hintMul },
+        { text: detail.hints?.[2] ?? "", opacity: op2 * hintMul },
+        { text: "Become one with the Pulsar", opacity: opClose * outMul },
+      ]);
       setBgOpacity(1 - smooth(bgFrac));
-      if (beat >= bgStart + bgFade + 0.2) { finish(); return; }
+      if (beat >= Math.max(bgStart + bgFade, holdEnd + textFadeOutBeats) + 0.2) { finish(); return; }
     } else {
       // shortHint: 1-beat fade-in, then fade-out begins on the 4th beat and
       //   runs 4 beats. The bg fade-in runs alongside the text fade-out

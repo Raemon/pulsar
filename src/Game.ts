@@ -286,7 +286,7 @@ export class Game implements HudElements {
   // live hint: a pulse blooming around one target's reticule plus the popup beside it.
   aimHint: AimHint | null = null;
   // set for the duration of one hit judgement when the hint takes over, so the combo-loss
-  //   path skips the popup + "fire (and hit) on the beat" banner it replaces.
+  //   path skips the popup it replaces.
   aimHintSuppressLossPopup = false;
   // combo x6 unlocks the first Pilot's Log vocal — fires once per run, gated by this flag.
   pilotLog1Unlocked = false;
@@ -328,9 +328,6 @@ export class Game implements HudElements {
   // True while the normal-mode start-of-run controls hint is visible. Tutorial mode
   //   uses firstWaveHintStage === 1 instead, since the stage already gates that hint.
   controlsHintActive = false;
-  // A first combo loss that landed while the controls pane was still up defers the
-  //   "fire (and hit) on the beat" hint to here; it fires once the pane dismisses.
-  rhythmLossHintPending = false;
   // stage-2 sub-line ("Use your targeting tools to help") is gated on the
   //   player landing three on-beat hits after stage 2 opens. The diamond
   //   row under stage 2's main line fills one pip per hit, and the sub-line

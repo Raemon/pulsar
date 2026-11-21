@@ -51,19 +51,21 @@ const SLOT_3_POOL: readonly string[] = [
 //   clear. The line just shown is skipped so two waves don't repeat it.
 const WAVE_INTRO_HINTS: readonly string[] = [
   "Fire on the beat. Hit on the beat.",
-  "Use your targeting system.",
-  "Drift awhile. Line up the perfect shot.",
-  "Line up the perfect shot.",
-  "Use your side thrusters.",
-  "Fire (and hit) on the beat.",
-  "One shot. One kill.",
-  "Patience. Drift gently.",
-  "Slow down.",
-  "Feel the beat.",
-  "Feel the beat. Fire on the beat. Hit on the beat.",
-  "Slow down and dance with the asteroids.",
-  "Sometimes, the key is to slow down.",
-  "Use retro thrusters to slow down."
+  "Use your targeting system",
+  "Drift awhile. Line up the perfect shot",
+  "Line up the perfect shot",
+  "Use your side thrusters",
+  "Fire (and hit) on the beat",
+  "One shot. One kill",
+  "Patience. Drift gently",
+  "Slow down",
+  "Feel the beat",
+  "Feel the beat. Fire on the beat. Hit on the beat",
+  "Slow down and dance with the asteroids",
+  "Sometimes, the key is to slow down",
+  "Use retro thrusters to slow down",
+  "Line up your reticule with the target",
+  "Match velocity for a Drift Shot",
 ];
 
 let lastWaveIntroHint: string | null = null;

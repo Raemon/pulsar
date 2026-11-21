@@ -343,7 +343,6 @@ const startBetaWave = (game: Game) => {
   game.slowMoTimer = 0;
   game.pulsar.clearSlowMoRipples();
   game.hasLostComboEver = false;
-  game.rhythmLossHintPending = false;
   resetAimHint(game);
 
   game.bullets = [];

@@ -35,7 +35,59 @@ export type Popup = {
   // pass — only set where the font/text derivation is wrong (multi-line draws).
   halfW?: number;
   halfH?: number;
+  // two-line warning whose lines fade on separate timers (see staggerLine1Alpha) —
+  //   the popup's own alpha follows whichever line is brighter.
+  staggered?: boolean;
+  // age at which a staggered warning's line 2 starts fading in (default STAGGER_LINE2_START).
+  staggerLine2Start?: number;
 };
+
+// Two-line warnings show the headline first, then the correction: line 1 holds,
+//   then fades; a second into that fade line 2 fades in quickly and lingers.
+const STAGGER_LINE1_HOLD = 1;
+const STAGGER_LINE1_FADE = 4;
+const STAGGER_LINE2_DELAY = 1;
+const STAGGER_LINE2_START = STAGGER_LINE1_HOLD + STAGGER_LINE2_DELAY;
+const STAGGER_LINE2_FADE_IN = 0.5;
+const STAGGER_LINE2_FADE_OUT = 8;
+const staggeredWarningLife = (line2Start: number): number => line2Start + STAGGER_LINE2_FADE_IN + STAGGER_LINE2_FADE_OUT;
+export const STAGGERED_WARNING_LIFE = staggeredWarningLife(STAGGER_LINE2_START);
+const staggerAge = (p: Popup): number => p.maxLife - p.life;
+const staggerLine1Alpha = (age: number): number =>
+  age < STAGGER_LINE1_HOLD ? 1 : Math.max(0, 1 - (age - STAGGER_LINE1_HOLD) / STAGGER_LINE1_FADE);
+const staggerLine2Alpha = (age: number, line2Start = STAGGER_LINE2_START): number => {
+  const since = age - line2Start;
+  if (since < 0) return 0;
+  if (since < STAGGER_LINE2_FADE_IN) return since / STAGGER_LINE2_FADE_IN;
+  return Math.max(0, 1 - (since - STAGGER_LINE2_FADE_IN) / STAGGER_LINE2_FADE_OUT);
+};
+type StaggerLine = { text: string; font: string; fill: string; shadow: string; y: number };
+const drawStaggerLine = (ctx: CanvasRenderingContext2D, line: StaggerLine, alpha: number) => {
+  ctx.globalAlpha = alpha;
+  ctx.font = line.font;
+  ctx.fillStyle = line.fill;
+  ctx.shadowColor = line.shadow;
+  ctx.fillText(line.text, 0, line.y);
+};
+// shared shape for the two-line warnings — callers supply only motion and the two lines.
+type StaggerMotion = Omit<Popup, "life" | "maxLife" | "text" | "font" | "fill" | "shadowColor" | "holdUntil" | "fadeGain" | "staggered" | "staggerLine2Start" | "draw">;
+const popupStaggeredWarning = (motion: StaggerMotion, line1: StaggerLine, line2: StaggerLine, line2Start = STAGGER_LINE2_START): Popup => ({
+  ...motion,
+  life: staggeredWarningLife(line2Start),
+  maxLife: staggeredWarningLife(line2Start),
+  text: line1.text,
+  font: line1.font,
+  fill: line1.fill,
+  shadowColor: line1.shadow,
+  holdUntil: 0, fadeGain: 1,
+  staggered: true,
+  staggerLine2Start: line2Start,
+  draw: (ctx, p) => {
+    const age = staggerAge(p);
+    drawStaggerLine(ctx, line1, staggerLine1Alpha(age));
+    drawStaggerLine(ctx, line2, staggerLine2Alpha(age, line2Start));
+  },
+});
 
 const COMBO_POPUP_LIFE = 0.9;
 const PICKUP_POPUP_LIFE = 1.6;
@@ -148,37 +200,34 @@ export const popupDriftBonus = (pos: Vec, tier = 1, withSubtitle = false): Popup
 // shown when a shot glances off an armoured crystal — teaches the player that
 //   under-powered hits bounce. Red label over a cyan hint line, mirroring
 //   DRIFT SHOT's two-line shape; the caller picks the hint (see collisions.ts).
-const INSUFFICIENT_DAMAGE_POPUP_LIFE = 4;
-export const popupInsufficientDamage = (pos: Vec, hint: string): Popup => {
-  const labelFont = "700 17px 'Space Grotesk', system-ui, sans-serif";
-  const subFont = "600 13px 'Space Grotesk', system-ui, sans-serif";
-  const fill = "#ff6a6a";
-  const shadow = "rgba(255, 90, 90, 0.85)";
-  return {
-    pos: { x: pos.x, y: pos.y - 18 },
-    vel: { x: rand(-8, 8), y: -55 },
-    life: INSUFFICIENT_DAMAGE_POPUP_LIFE,
-    maxLife: INSUFFICIENT_DAMAGE_POPUP_LIFE,
-    text: "INSUFFICIENT DAMAGE",  
-    font: labelFont,
-    fill,
-    shadowColor: shadow,
-    decayX: 0.94, decayY: 0.94,
-    popPeak: 0.4, popDuration: 0.15,
-    holdUntil: 0.55, fadeGain: 1.4,
-    halfH: 20,
-    draw: (ctx) => {
-      ctx.font = labelFont;
-      ctx.fillStyle = fill;
-      ctx.shadowColor = shadow;
-      ctx.fillText("INSUFFICIENT DAMAGE", 0, -8);
-      ctx.font = subFont;
-      ctx.fillStyle = "#9be8ff";
-      ctx.shadowColor = "rgba(120, 220, 255, 0.85)";
-      ctx.fillText(hint, 0, 12);
-    },
-  };
-};
+const GLANCE_HINT_FONT = "500 18px 'Space Grotesk', system-ui, sans-serif";
+const GLANCE_HINT_FILL = "#9be8ff";
+const GLANCE_HINT_SHADOW = "rgba(120, 220, 255, 0.85)";
+export const popupInsufficientDamage = (pos: Vec, hint: string): Popup => popupStaggeredWarning({
+  pos: { x: pos.x, y: pos.y - 18 },
+  vel: { x: rand(-8, 8), y: -55 },
+  decayX: 0.94, decayY: 0.94,
+  popPeak: 0.4, popDuration: 0.15,
+  halfH: 28,
+}, { text: "INSUFFICIENT DAMAGE", font: "500 24px 'Space Grotesk', system-ui, sans-serif", fill: "#ff6a6a", shadow: "rgba(255, 90, 90, 0.85)", y: -11 },
+{ text: hint, font: GLANCE_HINT_FONT, fill: GLANCE_HINT_FILL, shadow: GLANCE_HINT_SHADOW, y: 17 });
+
+// a beat-shield glance: the shield ate an off-beat hit, so the cyan hint line
+//   alone is the whole warning — no INSUFFICIENT DAMAGE headline.
+const SHIELDED_POPUP_LIFE = 4;
+export const popupShielded = (pos: Vec): Popup => ({
+  pos: { x: pos.x, y: pos.y - 18 },
+  vel: { x: rand(-8, 8), y: -55 },
+  life: SHIELDED_POPUP_LIFE,
+  maxLife: SHIELDED_POPUP_LIFE,
+  text: "SHIELDED — HIT IT ON THE BEAT",
+  font: GLANCE_HINT_FONT,
+  fill: GLANCE_HINT_FILL,
+  shadowColor: GLANCE_HINT_SHADOW,
+  decayX: 0.94, decayY: 0.94,
+  popPeak: 0.4, popDuration: 0.15,
+  holdUntil: 0.55, fadeGain: 1.4,
+});
 
 // shared shape for the streak-bonus labels — sized/animated like DRIFT SHOT
 //   but each gets its own color so the three bonuses read distinctly.
@@ -270,15 +319,15 @@ export const popupStreakBonus = (pos: Vec, points: number): Popup => ({
   holdUntil: 0.4, fadeGain: 1,
 });
 
-export const COMBO_LOST_POPUP_LIFE = 5;
 // surfaces the streak break at the spot that caused it (ship fire / target hit).
 //   reason names which half of the rhythm gate failed so the player can correct it.
 //   Distinct hues so a glance tells you which: crimson = mistimed *press* (the
 //   action you most control), amber = off-beat *hit* (a softer near-miss). Amber
 //   stays clear of the saturated gold combo halo so a loss never looks like a
-//   reward.
+//   reward. The correction leads and RHYTHM LOST follows, on half the usual stagger wait.
+const COMBO_LOST_LINE2_START = STAGGER_LINE2_START / 2;
 export const popupComboLost = (pos: Vec, reason: "fire" | "hit", timing?: "early" | "late"): Popup => {
-  const labelFont = "700 16px 'Space Grotesk', system-ui, sans-serif";
+  const labelFont = "500 22px 'Space Grotesk', system-ui, sans-serif";
   // off-beat *hits* also name which side of the beat missed — with travel time between
   //   press and impact, "early"/"late" is the correction the player can act on. A
   //   mistimed press needs no such hint (the press *is* the moment), and it's dropped
@@ -295,74 +344,45 @@ export const popupComboLost = (pos: Vec, reason: "fire" | "hit", timing?: "early
   ] : [];
   const subtitle = reason === "hit" && timing
     ? hitTimingVariants[Math.floor(Math.random() * hitTimingVariants.length)]
-    : `(${base})`;
+    : base;
   const titleFill = reason === "fire" ? "#ff6a6a" : "#ffae4d";
   const titleShadow = reason === "fire" ? "rgba(255, 90, 90, 0.85)" : "rgba(255, 150, 50, 0.85)";
   const subFill = reason === "fire" ? "#ffb3b3" : "#ffd9a8";
   const subShadow = reason === "fire" ? "rgba(255, 130, 130, 0.85)" : "rgba(255, 185, 110, 0.85)";
-  return {
+  return popupStaggeredWarning({
     pos: { x: pos.x, y: pos.y - 6 },
     vel: { x: rand(-10, 10), y: -55 },
-    life: COMBO_LOST_POPUP_LIFE,
-    maxLife: COMBO_LOST_POPUP_LIFE,
-    text: "RHYTHM LOST",
-    font: labelFont,
-    fill: titleFill,
-    shadowColor: titleShadow,
     decayX: 0.94, decayY: 0.94,
     popPeak: 0.4, popDuration: 0.15,
-    holdUntil: 0.15, fadeGain: 1.4,
-    halfH: 20,
-    draw: (ctx) => {
-      ctx.font = labelFont;
-      ctx.fillStyle = titleFill;
-      ctx.shadowColor = titleShadow;
-      ctx.fillText("RHYTHM LOST", 0, -10);
-      ctx.fillStyle = subFill;
-      ctx.shadowColor = subShadow;
-      ctx.fillText(subtitle, 0, 12);
-    },
-  };
+    halfH: 28,
+  }, { text: subtitle, font: labelFont, fill: subFill, shadow: subShadow, y: -14 },
+  { text: "RHYTHM LOST", font: labelFont, fill: titleFill, shadow: titleShadow, y: 17 },
+  COMBO_LOST_LINE2_START);
 };
 
 // The once-a-run targeting lesson (see game/aimHint.ts): shown instead of the usual
 //   "RHYTHM LOST / Didn't hit on beat" popup when the player is pressing in time but
 //   shooting at the rock rather than at the lead reticule. Pinned to the reticule the
-//   pulse is blooming around, so text and target read as one instruction, and it holds
-//   AIM_HINT_LIFE_MUL longer than the popup it replaces since it asks for two changes.
-export const AIM_HINT_LIFE_MUL = 1.3;
+//   pulse is blooming around, so text and target read as one instruction. Its two
+//   lines stagger like the other two-line warnings.
 const AIM_HINT_FILL = "#ffd9a8";
 const AIM_HINT_SHADOW = "rgba(255, 185, 110, 0.85)";
 export const popupAimHint = (anchor: { pos: Vec }, targetRadius: number): Popup => {
   // same face/size as the off-beat-hit correction line this replaces.
-  const font = "700 16px 'Space Grotesk', system-ui, sans-serif";
-  const life = COMBO_LOST_POPUP_LIFE * AIM_HINT_LIFE_MUL;
-  return {
+  const font = "500 22px 'Space Grotesk', system-ui, sans-serif";
+  return popupStaggeredWarning({
     pos: { x: anchor.pos.x, y: anchor.pos.y },
     vel: { x: 0, y: 0 },
-    life,
-    maxLife: life,
-    text: "Aim for the target.",
-    font,
-    fill: AIM_HINT_FILL,
-    shadowColor: AIM_HINT_SHADOW,
     decayX: 1, decayY: 1,
     popPeak: 0.35, popDuration: 0.15,
-    holdUntil: 0.35, fadeGain: 1,
     follow: anchor,
     // The reticule this pins to sits on the target's player-facing surface, so the body
     //   extends a full diameter past it — anything less than that plus the text's own height
     //   lands the lines on the lit rock.
-    followOffset: { x: 0, y: -(2 * targetRadius + 56) },
-    halfH: 22,
-    draw: (ctx) => {
-      ctx.font = font;
-      ctx.fillStyle = AIM_HINT_FILL;
-      ctx.shadowColor = AIM_HINT_SHADOW;
-      ctx.fillText("Aim for the target.", 0, -10);
-      ctx.fillText("Hit on the beat.", 0, 12);
-    },
-  };
+    followOffset: { x: 0, y: -(2 * targetRadius + 78) },
+    halfH: 31,
+  }, { text: "Aim for the target.", font, fill: AIM_HINT_FILL, shadow: AIM_HINT_SHADOW, y: -14 },
+  { text: "Hit on the beat.", font, fill: AIM_HINT_FILL, shadow: AIM_HINT_SHADOW, y: 17 });
 };
 
 // "+N" readout at the kill site so the player sees exactly what their hit was worth.
@@ -548,6 +568,10 @@ export const updatePopups = (popups: Popup[], dt: number, w: number, h: number):
 
 // pickup holds full alpha then fades; combo/debug fade proportionally — one branch covers both.
 const popupAlpha = (p: Popup, t: number): number => {
+  if (p.staggered) {
+    const age = staggerAge(p);
+    return Math.max(staggerLine1Alpha(age), staggerLine2Alpha(age, p.staggerLine2Start));
+  }
   if (p.holdUntil > 0) return t < p.holdUntil ? t / p.holdUntil : 1;
   return Math.min(1, t * p.fadeGain);
 };

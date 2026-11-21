@@ -2519,12 +2519,14 @@ li.lb-self .lb-name-link:hover {
 }
 
 /* Chapter announcement — fades in mirroring the main menu title's font/size
-   so the unlock reads as a story beat, not a HUD toast. The inner span gets
-   the scaleX squeeze that the menu title uses; the outer element handles
-   centering + fade so the transforms don't fight. */
+   so the unlock reads as a story beat, not a HUD toast. Overlaps the tutorial
+   control row (`.tutorial-controls-hint` is top: 50% + 180px); showUnlockToast
+   fades that row out when the title appears. The inner span gets the scaleX
+   squeeze that the menu title uses; the outer element handles centering + fade
+   so the transforms don't fight. */
 #pilot-log-toast {
   position: fixed;
-  top: 22%;
+  top: calc(50% + 186px);
   left: 50%;
   transform: translateX(-50%);
   font-family: "Space Grotesk", system-ui, sans-serif;
@@ -2965,13 +2967,6 @@ li.lb-self .lb-name-link:hover {
 .tutorial-controls-hint .key.used { opacity: 0; }
 /* once the whole row dims, the row-level fade carries it — don't compound. */
 .tch-ctrl.used .key.used { opacity: 1; }
-
-/* first-loss recovery hint: reuses .first-wave-hint typography (font, color,
-   accent, scale) and just overrides the position to sit at bottom-middle. */
-.rhythm-loss-hint {
-  top: auto;
-  bottom: 200px;
-}
 
 /* Dev log: one top-left element that morphs between three states — a
    collapsed button, a slightly-expanded teaser of the newest entry for
