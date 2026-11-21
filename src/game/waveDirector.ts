@@ -17,7 +17,7 @@ import { citadelCycleLen, citadelFadeLen, superBassInterval } from "./bassClock"
 import { ENTITY_CONFIG as CFG } from "./entityConfig";
 import { BOSS_FORESHADOW_WAVES, BOSS_WAVES, actOfWave, bossEncounterForWave } from "./acts";
 import { spawnSepulchreEncounter } from "./sepulchre";
-import { bossBodyInWorld } from "./gameRender";
+import { bossBodyInWorld } from "./camScroll";
 
 // snap each fresh edge-spawn so its crossing of the player's natural
 // kill range lands on a beat. Boss is exempt — it has its own slow drift.

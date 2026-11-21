@@ -5,7 +5,7 @@ import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
 import { AsteroidKind, AsteroidSize, spawnBossAt, BASS_KINDS } from "../Asteroid";
 import { spawnSepulchreEncounter } from "./sepulchre";
-import { bossBodyInWorld } from "./gameRender";
+import { bossBodyInWorld } from "./camScroll";
 import { AlienSize } from "../Alien";
 import { PowerupKind, POWERUP_KINDS, spawnCanister } from "../Canister";
 import { syncHud, syncPowerupHud } from "./hud";

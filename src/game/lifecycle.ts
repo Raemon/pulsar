@@ -1,4 +1,5 @@
 import type { Game } from "../Game";
+import { resetCamScroll } from "./camScroll";
 import { resetAimHint } from "./aimHint";
 import { Ship } from "../Ship";
 import { spawnAsteroidAtEdge, BASS_KINDS } from "../Asteroid";
@@ -535,6 +536,7 @@ export const startGame = (game: Game, overrides?: {
 
 // run-scoped state only; spawnWave handles per-wave timers separately.
 const resetRunTimers = (game: Game) => {
+  resetCamScroll(game);
   game.beatTime = 0;
   game.lastBeatResnapAt = game.beatTime;
   game.beatPhaseCorrection = 0;

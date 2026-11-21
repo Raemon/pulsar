@@ -547,7 +547,7 @@ export class Pulsar {
     return base * (1 + 0.18 * this.pulse + 0.55 * this.flare);
   }
 
-  private pulsarPos(): { x: number; y: number } {
+  private pulsarPos(jitter = true): { x: number; y: number } {
     const approach = this.approach();
     const cx = this.w / 2;
     const cy = this.h / 2;
@@ -561,7 +561,7 @@ export class Pulsar {
     // into "flashing" the ring is locked to the un-jittered origin captured
     // at the transition (see update), so render-time jitter is gated to the
     // vibrating phase only.
-    if (this.shockPhase === "vibrating") {
+    if (jitter && this.shockPhase === "vibrating") {
       const t = Math.min(1, this.shockTimer / Pulsar.SHOCK_VIBRATE_DURATION);
       // Peaks heavy at the apex so the visual tension matches the audio
       // rising into the bass drop.
@@ -579,8 +579,8 @@ export class Pulsar {
   // position (so close stars fan out radially from it as we approach), roll
   // is a slow continuous camera tilt accumulated over the run, and approach
   // is the same 0..0.78 dolly factor used everywhere else.
-  cameraView(): { focalX: number; focalY: number; roll: number; approach: number } {
-    const { x, y } = this.pulsarPos();
+  cameraView(jitter = true): { focalX: number; focalY: number; roll: number; approach: number } {
+    const { x, y } = this.pulsarPos(jitter);
     const approach = this.approach();
     // ~8° of roll across the entire approach (displayWaveLevel ~1 → ~14).
     // Eased via approach (not displayWaveLevel directly) so the tilt rate
@@ -1403,9 +1403,11 @@ export class Pulsar {
   bossBodyView(act: number): { x: number; y: number; size: number } {
     const planet = this.planets.find((p) => p.bossAct === act) ?? this.planets[0];
     const approach = this.approach();
-    // Same orbitPoint the planet render uses (shared tilted ecliptic + camera roll).
+    // Same orbitPoint the planet render uses (shared tilted ecliptic + camera
+    // roll), minus the cosmetic shock shudder: this feeds a gameplay spawn, and
+    // replays re-sim without the render pass that shudder belongs to.
     const angle = planet.baseAngle + this.driftT * planet.angularSpeed;
-    const { x, y } = this.orbitPoint(angle, planet.baseRadiusFrac, approach, this.cameraView());
+    const { x, y } = this.orbitPoint(angle, planet.baseRadiusFrac, approach, this.cameraView(false));
     return { x, y, size: this.planetSize(planet, approach) };
   }
 

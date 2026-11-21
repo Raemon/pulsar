@@ -1,4 +1,5 @@
 import type { Game } from "../Game";
+import { updateCamScroll } from "./camScroll";
 import type { ReplayPlayer } from "./replayPlayer";
 import { getRngSeed } from "./rng";
 import { dist, nearestImageOf } from "../vec";
@@ -111,6 +112,7 @@ const advanceFrame = (game: Game, dt: number) => {
   // title/gameover/paused freeze beatTime; playing+dying defer pulsar to after tickBassBeats.
   if (game.state !== "playing" && game.state !== "dying" && game.state !== "replaying") game.pulsar.update(dt, game.perceivedBeatTime, BEAT_GRID);
   routeStateUpdate(game, dt);
+  updateCamScroll(game);
   if (game.shake > 0) game.shake = Math.max(0, game.shake - dt * 3);
   game.input.endFrame();
 };
