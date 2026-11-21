@@ -11,6 +11,7 @@ import { PowerupKind, POWERUP_KINDS, spawnCanister } from "../Canister";
 import { syncHud, syncPowerupHud } from "./hud";
 import { stopParade } from "./killedParade";
 import { hideWaveSummary } from "./waveSummary";
+import { stopTitleReel } from "./titleReel";
 import { newWaveEventSchedule } from "./waveEvents";
 import {
   alignBassBeat,
@@ -319,6 +320,9 @@ const isOpen = (): boolean => !!panelEl && !panelEl.classList.contains("hidden")
 // Like startGame but skips spawnWave — applies only the selected elements
 // so the run shows exactly what was chosen.
 const startBetaWave = (game: Game) => {
+  // Reachable straight from the title screen, where a reel clip may be holding
+  //   the sim (and the input swap). Hand it back or the beta run never ticks.
+  stopTitleReel(game);
   game.sound.resume();
   // Reset run state
   game.score = 0;

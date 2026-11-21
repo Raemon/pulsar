@@ -141,6 +141,21 @@ export const fetchRecentScores = async (): Promise<HighscoreRow[]> => {
   return applyKnownReplays(body.scores);
 };
 
+// Highlight-reel pool for the title screen: the runs worth showing behind it.
+//   The request carries no parameters — the window is the server's to bound and
+//   cache, and anything build-specific is filtered here.
+export const fetchReelCandidates = async (minCombo: number): Promise<HighscoreRow[]> => {
+  const res = await fetch("/api/highscores?mode=reel", { method: "GET", cache: "no-store" });
+  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+  const body = (await res.json()) as { scores: HighscoreRow[] };
+  // The server bounds the window (runs with a replay, best rhythm first); the
+  //   two filters that depend on *this build* are applied here: a replay this
+  //   build can't re-sim is unusable, and the rhythm floor is the reel's own.
+  return body.scores.filter(
+    (row) => row.replay_version === REPLAY_FORMAT_VERSION && row.max_combo >= minCombo,
+  );
+};
+
 // Player-profile view: every run by one pilot, server-gathered as the top-50 in
 //   each category (score, rhythm, wave, most-recent) and unioned. The view
 //   renders these unfiltered (no per-pilot dedupe) so the player sees their

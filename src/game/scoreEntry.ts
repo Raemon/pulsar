@@ -19,6 +19,7 @@ import {
   type HighscoreRow,
 } from "./highscores";
 import { uploadReplay, fetchReplay } from "./replayApi";
+import { stopTitleReel } from "./titleReel";
 import { REPLAY_FORMAT_VERSION, UnsupportedReplayVersionError } from "./replayFormat";
 import { startReplay } from "./lifecycle";
 import {
@@ -1139,6 +1140,11 @@ const launchReplay = async (game: Game, scoreId: number) => {
     showLeaderboardNotice(mismatch === "newer" ? NEWER_BUILD_NOTICE : OLDER_BUILD_NOTICE);
     return;
   }
+  // Past the refusals: the home screen's reel is a backdrop holding the same
+  //   replay machinery, so hand it back before taking over with the run the
+  //   viewer actually picked. (Stopping it above would have left the title with
+  //   no backdrop for a click that plays nothing.)
+  stopTitleReel(game);
   try {
     const bytes = await fetchReplay(scoreId);
     await startReplay(game, bytes);
