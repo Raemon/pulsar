@@ -1,5 +1,6 @@
 import type { Ship } from "../Ship";
 import { haloVertices } from "./shipHitbox";
+import type { SweepTint } from "./shipBeatSweep";
 
 // combo tier <2 hides halo entirely; 2–3 cyan; 4–11 gold; ≥12 white (matches white bullets).
 export const setComboFromValue = (ship: Ship, combo: number) => {
@@ -17,11 +18,28 @@ const paintDullHaloOutline = (ctx: CanvasRenderingContext2D, dullAlpha: number) 
   ctx.stroke();
 };
 
+const haloTiers = (ship: Ship) => {
+  const i = ship.comboHaloIntensity;
+  return {
+    tier1: Math.min(1, i),
+    tier2: Math.max(0, Math.min(1, i - 1)),
+    tier3: Math.max(0, Math.min(1, i - 2)),
+  };
+};
+const haloHue = (tier2: number): number => 195 + (45 - 195) * tier2;
+const haloSat = (tier3: number): number => 100 * (1 - tier3);
+
+// the beat sweep rides the halo, so it takes the halo's live colour (cyan below any combo).
+export const comboHaloTint = (ship: Ship): SweepTint => {
+  const { tier2, tier3 } = haloTiers(ship);
+  return { hue: haloHue(tier2), sat: haloSat(tier3) };
+};
+
 // cyan→gold→white colour shift signals tier crossover; alpha pulses on beat so the rhythm reads at a glance.
 const paintActiveHalo = (ctx: CanvasRenderingContext2D, tier1: number, tier2: number, tier3: number, beatPulse: number) => {
   if (tier1 <= 0.001) return;
-  const hue = 195 + (45 - 195) * tier2;
-  const sat = 100 * (1 - tier3);
+  const hue = haloHue(tier2);
+  const sat = haloSat(tier3);
   const light = 78 + (100 - 78) * tier3;
   const alpha = (0.45 + 0.35 * beatPulse) * tier1;
   ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
@@ -52,10 +70,7 @@ const traceHaloPath = (ctx: CanvasRenderingContext2D, ship: Ship) => {
 
 // single ship-shaped outline that pulses with the beat and shows combo state in one visual.
 export const renderComboHalo = (ctx: CanvasRenderingContext2D, ship: Ship, beatPulse: number) => {
-  const i = ship.comboHaloIntensity;
-  const tier1 = Math.min(1, i);
-  const tier2 = Math.max(0, Math.min(1, i - 1));
-  const tier3 = Math.max(0, Math.min(1, i - 2));
+  const { tier1, tier2, tier3 } = haloTiers(ship);
   traceHaloPath(ctx, ship);
   paintDullHaloOutline(ctx, 0.4 * (1 - tier1));
   paintActiveHalo(ctx, tier1, tier2, tier3, beatPulse);

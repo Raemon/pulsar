@@ -3,10 +3,11 @@ import { Vec, add, fromAngle, TAU } from "../vec";
 // Render-only flame/vent jitter — cosmetic stream so it can't desync replays.
 import { cosmeticRng as rng } from "../game/rng";
 import { POWERUP_HUE } from "../Canister";
-import { renderComboHalo } from "./shipComboHalo";
+import { comboHaloTint, renderComboHalo } from "./shipComboHalo";
 import { paintMagazine } from "./shipMagazineRender";
 import { haloVertices } from "./shipHitbox";
 import { buildJaggedBolt, strokePolyline } from "../game/bassLightning";
+import { paintOutlineBeatSweep } from "./shipBeatSweep";
 
 const invulnFlicker = (ship: Ship, t: number): number =>
   ship.invuln > 0 ? 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 0.025)) : 1;
@@ -209,7 +210,9 @@ const applyBeatScale = (ctx: CanvasRenderingContext2D, beatPulse: number) => {
   ctx.scale(beatScale, beatScale);
 };
 
-export const renderShipBody = (ctx: CanvasRenderingContext2D, ship: Ship, t: number, beatPulse: number) => {
+export const renderShipBody = (
+  ctx: CanvasRenderingContext2D, ship: Ship, t: number, beatPulse: number, secondsIntoBeat: number | null = null,
+) => {
   // A wave-skip dive keeps painting the hull while alive is off — the warp
   // transform in Ship.render shrinks it down the portal throat.
   if (!ship.alive && ship.skipWarpT === null) return;
@@ -223,6 +226,8 @@ export const renderShipBody = (ctx: CanvasRenderingContext2D, ship: Ship, t: num
   renderComboHalo(ctx, ship, beatPulse);
   paintSuperLaserCharge(ctx, ship, t);
   paintShipHull(ctx, verts, invuln, beatPulse, bonusFlash, ship.laserCooldownDim, ship.hullFireBlockedFade);
+  const haloOutline = haloVertices(ship).map(([x, y]) => ({ x, y }));
+  paintOutlineBeatSweep(ctx, haloOutline, secondsIntoBeat, invuln, comboHaloTint(ship));
   paintMagazine(ctx, ship, invuln);
   paintThrustFlame(ctx, ship);
   paintRetroFlares(ctx, ship);

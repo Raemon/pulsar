@@ -42,6 +42,12 @@ export const currentBeatPulse = (game: Game): number => {
   return beatPulseEnvelope(signedBeatsFromNearestBeat / windowFractionOfGrid);
 };
 
+// time since the last beat the player hears, for visuals that count in to the next one.
+export const currentSecondsIntoBeat = (game: Game): number | null => {
+  if (game.state !== "playing" && game.state !== "dying") return null;
+  return ((game.perceivedBeatTime % BEAT_GRID) + BEAT_GRID) % BEAT_GRID;
+};
+
 // every wave body flashes brighter the instant the beat lands, then tapers over ~100ms.
 //   Keyed to perceivedBeatTime so the flash peaks on the beat the player *hears*. Unlike
 //   currentBeatPulse this isn't gated to the judge window — it's pure decoration on each beat,

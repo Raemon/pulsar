@@ -283,17 +283,18 @@ export class Ship {
   render(
     ctx: CanvasRenderingContext2D, t: number, beatPulse: number = 0,
     cropPortal: Wormhole | null = null, screenW = 0, screenH = 0,
+    secondsIntoBeat: number | null = null,
   ) {
     const k = this.skipWarpT;
     if (k === null) {
-      renderShipBody(ctx, this, t, beatPulse);
+      renderShipBody(ctx, this, t, beatPulse, secondsIntoBeat);
       return;
     }
     if (cropPortal) {
       const [dx, dy] = toroidalDelta(cropPortal.x - this.pos.x, cropPortal.y - this.pos.y, screenW, screenH);
       renderThroughPortal(
         ctx, cropPortal, k, { x: this.pos.x, y: this.pos.y, reach: this.radius * 3 }, dx, dy,
-        (g) => renderShipBody(g, this, t, beatPulse),
+        (g) => renderShipBody(g, this, t, beatPulse, secondsIntoBeat),
       );
       return;
     }
@@ -303,7 +304,7 @@ export class Ship {
     ctx.translate(this.pos.x, this.pos.y);
     ctx.scale(scale, scale);
     ctx.translate(-this.pos.x, -this.pos.y);
-    renderShipBody(ctx, this, t, beatPulse);
+    renderShipBody(ctx, this, t, beatPulse, secondsIntoBeat);
     ctx.restore();
   }
 }
