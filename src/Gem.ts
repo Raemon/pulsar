@@ -22,8 +22,6 @@ export const GEM_REVEAL_SCORE = ENTITY_CONFIG.asteroidWithGem.revealScore;
 // parent's velocity so it reads as "ejected from the explosion", then dims and
 // warps out after a long lifetime.
 
-export const GEM_SCORE = ENTITY_CONFIG.asteroidWithGem.pickupScore;
-
 const LIFETIME = ENTITY_CONFIG.asteroidWithGem.lifetime;
 // final fraction of life spent fading + flickering as a warp-out warning.
 const FADE_TAIL = LIFETIME * 0.22;

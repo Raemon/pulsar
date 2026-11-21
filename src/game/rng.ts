@@ -64,9 +64,3 @@ export const audioRng = (): number => {
   audioState = next;
   return value;
 };
-
-export const rngInt = (nExclusive: number): number => Math.floor(rng() * nExclusive);
-
-export const rngRange = (min: number, max: number): number => min + rng() * (max - min);
-
-export const rngPick = <T>(arr: readonly T[]): T => arr[Math.floor(rng() * arr.length)];

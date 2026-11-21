@@ -21,7 +21,6 @@ export type MusicConfig = {
 
 let current: MusicConfig = { _version: 1, variations: {} };
 let loaded = false;
-const listeners = new Set<(c: MusicConfig) => void>();
 
 export async function loadMusicConfig(): Promise<MusicConfig> {
   if (loaded) return current;
@@ -35,7 +34,6 @@ export async function loadMusicConfig(): Promise<MusicConfig> {
     // No config — run on hardcoded defaults baked into Sound.ts.
   }
   loaded = true;
-  for (const l of listeners) l(current);
   return current;
 }
 
@@ -46,12 +44,6 @@ export function getMusicConfig(): MusicConfig {
 export function setMusicConfig(c: MusicConfig) {
   current = c;
   loaded = true;
-  for (const l of listeners) l(current);
-}
-
-export function onMusicConfigChange(fn: (c: MusicConfig) => void) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
 }
 
 // Look up the tuned gain for a (variation, layer), falling back to the

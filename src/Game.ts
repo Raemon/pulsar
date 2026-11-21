@@ -14,7 +14,7 @@ import { Canister } from "./Canister";
 import { Gem } from "./Gem";
 import { FuelOrb } from "./FuelOrb";
 import { Comet } from "./Comet";
-import { Alien, AlienSize } from "./Alien";
+import { Alien } from "./Alien";
 import { AlienBullet } from "./AlienBullet";
 import { v, WORLD_W, WORLD_H } from "./vec";
 import { Popup } from "./game/popups";
@@ -163,7 +163,6 @@ export class Game implements HudElements {
   //   the run, on the last life) without leaving "replaying". null = ship alive.
   replayDyingTimer: number | null = null;
   shake = 0;
-  shakeSeed = 0;
   w = 0;
   h = 0;
   dpr = 1;
@@ -241,7 +240,6 @@ export class Game implements HudElements {
   //   field holds one big rock at a time (respawning on clear) until the hint
   //   progression finishes — then tutorialActive clears and waves advance.
   tutorialActive = false;
-  tutorialHoverDone = false;
   tutorialFireHitDone = false;
   // Non-veteran Start-button warm-up runs two single-target waves before the
   //   first real density wave: 1 = single rock (internal wave 1), 2 = single
@@ -343,7 +341,6 @@ export class Game implements HudElements {
   comets: Comet[] = [];
   aliens: Alien[] = [];
   alienBullets: AlienBullet[] = [];
-  alienSpawnSize: AlienSize = "small";
   waveElapsed = 0;
   // false until the run's opening wave spawns; the first spawnWave (or the
   //   tutorial's first practice rock) consumes it. Gates the centre-out
@@ -428,7 +425,6 @@ export class Game implements HudElements {
   scoreSubmitState: "idle" | "submitting" | "submitted" = "idle";
   // lets the title screen after a game-over show a score-neighborhood (±5) around the
   //   player's run instead of the global top 10. Cleared when a new run starts.
-  lastRunScore: number | null = null;
   lastRunScoreId: number | null = null;
   // up/down on the title + gameover leaderboard moves a yellow selector through
   //   the fetched pilot list (cap of 50). The selector slides toward the centre
@@ -489,7 +485,6 @@ export class Game implements HudElements {
   paradeStartBeatTime = 0;
   paradeRafId: number | null = null;
   paradeEntries: ParadeEntry[] = [];
-  paradeTotalBeats = 0;
   paradeCanvasW = 0;
   paradeCanvasH = 0;
   paradeOrientation: "horizontal" | "vertical" = "horizontal";

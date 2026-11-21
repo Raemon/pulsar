@@ -81,10 +81,3 @@ export const setChannelVolume = (channel: AudioChannel, v: number): void => {
     // no-op in non-DOM contexts.
   }
 };
-
-export const getAllChannelVolumes = (): Record<AudioChannel, number> => ({
-  basePulse: getChannelVolume("basePulse"),
-  sfx:       getChannelVolume("sfx"),
-  music:     getChannelVolume("music"),
-  vocals:    getChannelVolume("vocals"),
-});

@@ -1,6 +1,5 @@
 import type { Game } from "../Game";
-import { TAU, type Vec, fromAngle, toroidalDelta, wrapMut } from "../vec";
-import { rngRange } from "./rng";
+import { TAU, rand, type Vec, fromAngle, toroidalDelta, wrapMut } from "../vec";
 import { alignSplitChildToRhythm, seedAlienFire, seedCometMelody } from "./waveDirector";
 import { startAsteroidDrones } from "./killEffects";
 import { type Wormhole, spawnWormhole, wormholeEnterable } from "./wormhole";
@@ -72,11 +71,11 @@ const closestApproach = (game: Game, p: Vec): number => {
 const placeReturn = (game: Game, wi: WarpIn): void => {
   const { body } = wi.warped;
   const ship = game.ship.pos;
-  const base = rngRange(0, TAU);
+  const base = rand(0, TAU);
   let best = { x: ship.x, y: ship.y, angle: 0, score: -Infinity };
   for (let i = 0; i < CANDIDATES; i++) {
     const angle = base + (i * TAU) / CANDIDATES;
-    const at = fromAngle(angle, Math.min(game.w, game.h) * rngRange(RING_MIN, RING_MAX));
+    const at = fromAngle(angle, Math.min(game.w, game.h) * rand(RING_MIN, RING_MAX));
     const p = { x: ship.x + at.x, y: ship.y + at.y };
     // Keep returns from stacking on one another's portals too.
     let score = closestApproach(game, p);
@@ -91,7 +90,7 @@ const placeReturn = (game: Game, wi: WarpIn): void => {
   body.pos.y = best.y;
   wrapMut(body.pos, game.w, game.h);
   const speed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, Math.hypot(body.vel.x, body.vel.y)));
-  const vel = fromAngle(best.angle + rngRange(-HEADING_SPREAD, HEADING_SPREAD), speed);
+  const vel = fromAngle(best.angle + rand(-HEADING_SPREAD, HEADING_SPREAD), speed);
   body.vel.x = vel.x;
   body.vel.y = vel.y;
 };

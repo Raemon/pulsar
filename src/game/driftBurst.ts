@@ -3,6 +3,7 @@ import type { Game } from "../Game";
 // RNG draw count and desync replays.
 import { cosmeticRng as rng } from "./rng";
 import { driftTierPulseHsl } from "../ship/reticule/reticuleRender";
+import { TAU } from "../vec";
 
 // Drift-shot hit burst: a one-shot "sound visualizer explosion" fired when an
 // on-beat drift shot lands. Borrows the SoundwaveRadiator / spectrum vocabulary
@@ -17,8 +18,6 @@ import { driftTierPulseHsl } from "../ship/reticule/reticuleRender";
 // Each ring expands on an ease-out curve (fast leading edge, trailing into the
 // distance) and fades on a squared falloff so the whole event is a flash, not a
 // sustained ring — matching bassLightning's flash-not-beam envelope.
-
-const TAU = Math.PI * 2;
 
 // Oscilloscope waveform terms — shared dialect with SoundwaveRadiator and
 // bassLightning so the ring squiggles in the same hand.

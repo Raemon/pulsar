@@ -42,7 +42,6 @@ const superRhythm = (game: Game): number =>
 //   shifts its draw count and desyncs replays (rngState drifts ~first hit).
 const applyScreenShake = (game: Game): { shakeX: number; shakeY: number } => {
   if (game.shake <= 0) return { shakeX: 0, shakeY: 0 };
-  game.shakeSeed += 1;
   return {
     shakeX: (cosmeticRng() - 0.5) * game.shake * 10,
     shakeY: (cosmeticRng() - 0.5) * game.shake * 10,
