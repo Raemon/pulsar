@@ -1,5 +1,5 @@
 import { Ship } from "./Ship";
-import { Asteroid, AsteroidKind } from "./Asteroid";
+import { Asteroid } from "./Asteroid";
 import { Bullet } from "./Bullet";
 import { ParticleSystem } from "./Particle";
 import { Shard } from "./Shard";
@@ -350,8 +350,6 @@ export class Game implements HudElements {
   //   "drift away from the player" spawn that only the first level uses.
   hasSpawnedFirstLevel = false;
   slowMoTimer = 0;
-  // per-game randomised bass-kind intro order so the wave-2/3 picks vary between runs.
-  bassOrder: AsteroidKind[] = [];
   // one unified list replaces four parallel `xSpawnAt` fields used to schedule mid-wave events.
   waveEvents: WaveEventSchedule = newWaveEventSchedule();
 

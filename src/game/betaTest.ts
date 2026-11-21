@@ -3,7 +3,7 @@ import { resetAimHint } from "./aimHint";
 import { Ship } from "../Ship";
 import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
-import { AsteroidKind, AsteroidSize, spawnBossAt, BASS_KINDS } from "../Asteroid";
+import { AsteroidKind, AsteroidSize, spawnBossAt } from "../Asteroid";
 import { spawnSepulchreEncounter } from "./sepulchre";
 import { bossBodyInWorld } from "./camScroll";
 import { AlienSize } from "../Alien";
@@ -367,8 +367,6 @@ const startBetaWave = (game: Game) => {
   game.comets = [];
   game.waveEvents = newWaveEventSchedule();
 
-  // Beta spawns explicit kinds, but keep bassOrder valid for any peekers.
-  game.bassOrder = BASS_KINDS.slice();
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 2.0;
