@@ -169,6 +169,17 @@ export const fetchRecentScores = async (): Promise<HighscoreRow[]> => {
   return applyKnownReplays(body.scores);
 };
 
+// Highlight-reel pool for the title screen: runs whose replay was recorded in
+//   the format this build re-sims, that reached `minCombo` rhythm. The server
+//   bounds the window to the best-rhythm runs; the caller samples from it.
+export const fetchReelCandidates = async (minCombo: number): Promise<HighscoreRow[]> => {
+  const url = `/api/highscores?mode=reel&v=${REPLAY_FORMAT_VERSION}&minCombo=${minCombo}`;
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+  const body = (await res.json()) as { scores: HighscoreRow[] };
+  return body.scores;
+};
+
 // Player-profile view: every run by one pilot, server-gathered as the top-50 in
 //   each category (score, rhythm, wave, most-recent) and unioned. The view
 //   renders these unfiltered (no per-pilot dedupe) so the player sees their

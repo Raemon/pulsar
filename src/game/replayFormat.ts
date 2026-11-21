@@ -321,6 +321,32 @@ export type ReplayPayload = {
   debugFrames?: ReplayDebugFrame[];
 };
 
+// ---------- frame <-> wall-clock helpers ----------
+
+// Frame dt is variable (vsync / audio clock), so a fixed frame count would
+//   drift against real seconds. These walk the recorded dt sums instead, so a
+//   "4 seconds back" is a true 4 seconds whatever rate the run was captured at.
+//   Both clamp inside the recording.
+export const frameSecondsBefore = (payload: ReplayPayload, fromFrame: number, seconds: number): number => {
+  let acc = 0;
+  let i = Math.min(fromFrame, payload.frames.length);
+  while (i > 0 && acc < seconds) {
+    i -= 1;
+    acc += payload.frames[i][0];
+  }
+  return i;
+};
+
+export const frameSecondsAfter = (payload: ReplayPayload, fromFrame: number, seconds: number): number => {
+  let acc = 0;
+  let i = Math.max(0, fromFrame);
+  while (i < payload.frames.length && acc < seconds) {
+    acc += payload.frames[i][0];
+    i += 1;
+  }
+  return i;
+};
+
 // ---------- (de)serialisation ----------
 
 export const encodeReplay = async (payload: ReplayPayload): Promise<Uint8Array> => {

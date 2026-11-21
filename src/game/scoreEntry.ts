@@ -19,6 +19,7 @@ import {
   type HighscoreRow,
 } from "./highscores";
 import { uploadReplay, fetchReplay } from "./replayApi";
+import { stopTitleReel } from "./titleReel";
 import { REPLAY_FORMAT_VERSION, UnsupportedReplayVersionError } from "./replayFormat";
 import { startReplay } from "./lifecycle";
 import {
@@ -1134,6 +1135,9 @@ const OLDER_BUILD_NOTICE = "Replay from an older build — can't be played.";
 const NEWER_BUILD_NOTICE = "Replay from a newer build — refresh to watch.";
 
 const launchReplay = async (game: Game, scoreId: number) => {
+  // The home screen's reel is a backdrop holding the same replay machinery —
+  //   hand it back before taking over with the run the viewer actually picked.
+  stopTitleReel(game);
   const row = game.leaderboardRows.find((r) => r.id === scoreId);
   const mismatch = row ? replayBuildMismatch(row) : null;
   if (mismatch) {

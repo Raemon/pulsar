@@ -19,6 +19,11 @@ const TOP_ROWS_CACHE_LIMIT = 100;
 // The title screen also pulls the most-recent rows so a "When" sort can surface
 //   fresh runs that aren't high enough to be in the top-by-score window.
 const RECENT_ROWS_LIMIT = 50;
+// The title screen's highlight reel samples from the runs that have a playable
+//   replay and reached a real rhythm chain. Bounded so the client can weight the
+//   whole pool client-side in one pass; ordered by rhythm so the window holds the
+//   runs worth showing rather than the newest ones.
+const REEL_ROWS_LIMIT = 60;
 
 type KillSummary = Record<string, number>;
 
@@ -161,6 +166,9 @@ const CACHE_TTL_MS = 60_000;
 let topPilotsCache: CacheEntry<RowOut[]> | null = null;
 let topRowsCache: CacheEntry<RowOut[]> | null = null;
 let recentRowsCache: CacheEntry<RowOut[]> | null = null;
+// Keyed by `${version}:${minCombo}` — the client asks for exactly the replay
+//   format it can re-sim, and a build rollover must not be served the old pool.
+const reelRowsCache = new Map<string, CacheEntry<RowOut[]>>();
 
 const readCache = <T>(entry: CacheEntry<T> | null): T | null => {
   if (!entry) return null;
@@ -172,6 +180,7 @@ const invalidateCaches = () => {
   topPilotsCache = null;
   topRowsCache = null;
   recentRowsCache = null;
+  reelRowsCache.clear();
 };
 
 // Leaderboard reads skip the heavy replay_data column and instead return a
@@ -273,6 +282,27 @@ const fetchRecentRows = async (): Promise<RowOut[]> => {
   });
   const mapped = withHasReplay(rows, new Set());
   recentRowsCache = { value: mapped, expires: Date.now() + CACHE_TTL_MS };
+  return mapped;
+};
+
+// Highlight-reel pool: runs that carry a replay this client can actually re-sim
+//   (exact format version) and that reached `minCombo`, best rhythm first. The
+//   replay bytes themselves stay behind /api/replays?id=N — this is just the
+//   menu the title screen samples from.
+const fetchReelRows = async (version: number, minCombo: number): Promise<RowOut[]> => {
+  const key = `${version}:${minCombo}`;
+  const cached = readCache(reelRowsCache.get(key) ?? null);
+  if (cached) return cached;
+  const rows = await prisma.highscore.findMany({
+    where: { replayVersion: version, maxCombo: { gte: minCombo }, NOT: { replayData: null } },
+    orderBy: [{ maxCombo: "desc" }, { score: "desc" }],
+    take: REEL_ROWS_LIMIT,
+    select: LEADERBOARD_COLUMNS,
+  });
+  // Every row in this query already has replay bytes, so the flag is known true
+  //   without the extra lookup withFreshReplayFlags does for the board views.
+  const mapped = withHasReplay(rows, new Set(rows.map((r) => r.id)));
+  reelRowsCache.set(key, { value: mapped, expires: Date.now() + CACHE_TTL_MS });
   return mapped;
 };
 
@@ -422,6 +452,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.status(200).json({ scores: rows });
       } catch (err) {
         console.error("[highscores GET recent] db read failed:", err);
+        res.status(500).json({ error: "DB read failed" });
+      }
+      return;
+    }
+
+    if (mode === "reel") {
+      const vRaw = req.query.v;
+      const minRaw = req.query.minCombo;
+      const version = sanitizeInt(Array.isArray(vRaw) ? vRaw[0] : vRaw, 0, 2_147_483_647);
+      const minCombo = sanitizeInt(Array.isArray(minRaw) ? minRaw[0] : minRaw, 1, 10_000);
+      if (version === null || minCombo === null) {
+        res.status(400).json({ error: "v and minCombo are required" });
+        return;
+      }
+      try {
+        const rows = await fetchReelRows(version, minCombo);
+        setEdgeCache(res);
+        res.status(200).json({ scores: rows });
+      } catch (err) {
+        console.error("[highscores GET reel] db read failed:", err);
         res.status(500).json({ error: "DB read failed" });
       }
       return;

@@ -26,6 +26,7 @@ import type { Swallow, WarpedBody } from "./game/warpCannon";
 import type { WarpIn } from "./game/warpReturn";
 import type { InkPatch } from "./game/inkCloud";
 import type { SkipPortal, WaveSkipState } from "./game/waveSkip";
+import { isScrubbableReplay, isTitleScreen, type TitleReel } from "./game/titleReel";
 import { LaserBeam } from "./game/laserShot";
 import { BossBeam } from "./game/bossBeam";
 import { KilledSnapshot } from "./game/killSnapshot";
@@ -394,6 +395,12 @@ export class Game implements HudElements {
   //   fade-out → silent catch-up re-sim → fade-in cycle that masks the
   //   synchronous rewind hitch. startedAt is a performance.now() stamp.
   highlightLoop: { phase: "fadeOut" | "fadeIn"; startedAt: number } | null = null;
+  // Title-screen highlight reel: set while the home screen is playing other
+  //   pilots' rhythm chains behind the overlay. Like the highlight clip it runs
+  //   in the "replaying" state, so it doubles as the flag that says "this replay
+  //   is a backdrop, not something the viewer is watching" — see
+  //   isScrubbableReplay and game/titleReel.ts.
+  titleReel: TitleReel | null = null;
   // localInput is the real keyboard-bound Input; the replay path swaps `input`
   //   to point at the player's ReplayInput while a replay is running, and we
   //   restore localInput when returning to title.
@@ -563,11 +570,11 @@ export class Game implements HudElements {
     this.overlayStartEl.addEventListener("click", () => {
       // Start button on the title screen launches Wave 1 directly, no tutorial.
       //   In other states (paused/gameover) triggerOverlayStart routes correctly.
-      if (this.state === "title") this.tutorialRequested = false;
+      if (isTitleScreen(this)) this.tutorialRequested = false;
       triggerOverlayStart(this);
     });
     window.addEventListener("tutorial:request", () => {
-      if (this.state !== "title") return;
+      if (!isTitleScreen(this)) return;
       this.tutorialRequested = true;
       triggerOverlayStart(this);
     });
@@ -648,11 +655,11 @@ export class Game implements HudElements {
     window.addEventListener("replay:exit", () => {
       // Mid-export, exit means "abort the export" — the replay stays open.
       if (this.replayExporting) { cancelReplayExport(); return; }
-      if (this.replayPlayer && this.highlightClip === null) exitReplay(this);
+      if (isScrubbableReplay(this)) exitReplay(this);
     });
     // Scrubber download button → offline MP4 export (or cancel if in flight).
     window.addEventListener("replay:download", () => {
-      if (this.replayPlayer && this.highlightClip === null) toggleReplayExport(this);
+      if (isScrubbableReplay(this)) toggleReplayExport(this);
     });
     // <FirstWaveHint> owns its own stage-3 auto-dismiss timer; when it fades
     //   out it asks the game to clear the stage.
@@ -665,12 +672,12 @@ export class Game implements HudElements {
     });
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
-      if (k === "m" && this.state !== "title") toggleMute(this);
+      if (k === "m" && !isTitleScreen(this)) toggleMute(this);
       // Replay scrubbing: arrows jump ~2s, space toggles play. Handled here
       //   (not via game.input) because input is the recorded ReplayInput. Skipped
       //   for the game-over highlight clip — there Space/Enter mean "continue",
       //   handled by tickHighlightGameOverInput, and there's no scrubber.
-      if (this.replayPlayer && this.highlightClip === null) {
+      if (isScrubbableReplay(this)) {
         if (this.replayExporting) {
           // Export in flight: Escape aborts it; everything else is ignored so
           //   a stray seek can't fight the exporter's frame sweep.
@@ -683,7 +690,7 @@ export class Game implements HudElements {
           if (k === "arrowleft" || k === "arrowright") {
             e.preventDefault();
             const dir = k === "arrowright" ? 1 : -1;
-            const from = this.replaySeekTarget ?? this.replayPlayer.position();
+            const from = this.replaySeekTarget ?? this.replayPlayer?.position() ?? 0;
             this.replaySeekTarget = from + dir * SEEK_FRAMES;
           } else if (k === " " || k === "spacebar") {
             e.preventDefault();

@@ -885,6 +885,127 @@ html:has(#sound-root), body:has(> #sound-root) {
 
 #killed-row.hidden { display: none; }
 
+/* ── Title-screen highlight reel ────────────────────────────────────────────
+   The reel plays other pilots' rhythm chains on the gameplay canvas, behind the
+   title. Three layers keep both halves readable: the veil (this file's shutter,
+   also the crossfade between clips), the overlay's own backdrop — pulled back
+   while a clip plays so gameplay isn't crushed to black — and a firmer plate
+   behind the leaderboard rows, which are the one piece of small text sitting
+   over moving asteroids. */
+#reel-veil {
+  position: fixed;
+  inset: 0;
+  background: #02030a;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 0.65s ease;
+}
+
+/* Opaque while the re-sim catches up to the clip's first frame. */
+#reel-veil.opaque { opacity: 1; }
+
+#reel-caption {
+  position: fixed;
+  left: 32px;
+  bottom: 28px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 300;
+}
+
+#reel-caption.visible { opacity: 1; }
+
+.reel-caption-pilot {
+  color: #d8f3ff;
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  text-shadow: 0 0 14px rgba(76, 182, 255, 0.5);
+}
+
+.reel-caption-rhythm {
+  display: flex;
+  gap: 14px;
+  color: #6ad7ff;
+  opacity: 0.8;
+}
+
+.reel-caption-peak { opacity: 0.55; }
+
+/* While a clip plays the backdrop has to do two jobs at once, so it splits in
+   two. The full-screen wash (::before) pulls back to a haze — enough to sit the
+   UI on, nowhere near the near-black it uses over an empty starfield — and a
+   soft vertical band (::after) darkens just the centre column the title, the
+   start button and the board live in. The result: gameplay reads at the edges,
+   text reads in the middle. */
+/* Gameplay is mostly thin glows on near-black; lifting the canvas a little
+   keeps the clip readable through the wash above it, and costs the UI nothing
+   (every bit of chrome is painted above the canvas, not on it). */
+body.reel-active #stage {
+  filter: brightness(1.35) saturate(1.08);
+}
+
+body.reel-active #overlay::before {
+  background: radial-gradient(ellipse at 50% 46%, rgba(0, 6, 18, 0.12) 0%, rgba(0, 2, 10, 0.4) 60%, rgba(0, 0, 5, 0.6) 100%);
+  backdrop-filter: blur(1.5px);
+}
+
+body.reel-active #overlay::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    rgba(1, 3, 10, 0) 0%,
+    rgba(1, 3, 10, 0.42) 26%,
+    rgba(1, 3, 10, 0.58) 50%,
+    rgba(1, 3, 10, 0.42) 74%,
+    rgba(1, 3, 10, 0) 100%
+  );
+  pointer-events: none;
+}
+
+body.reel-active #leaderboard-list li {
+  background: rgba(4, 9, 22, 0.78);
+  border-color: rgba(106, 215, 255, 0.18);
+  backdrop-filter: blur(4px);
+}
+
+body.reel-active #leaderboard-list li.lb-header {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* The live HUD keeps reading the sim, which during a clip is someone else's
+   run — hide it so the home screen never shows a score that isn't anyone's. */
+body.reel-active #hud { opacity: 0; }
+
+/* Same for the coaching UI the re-sim re-arms as it replays the pilot's first
+   wave: the hints belong to whoever is holding the controls, and nobody is.
+   Hidden rather than disarmed — the flags behind them are sim state the
+   re-simulation has to keep. */
+body.reel-active .first-wave-hint,
+body.reel-active .tutorial-controls-hint,
+body.reel-active #wave-announce,
+body.reel-active #wave-summary {
+  display: none;
+}
+
+#overlay::before,
+#hud {
+  transition: opacity 0.6s ease, background 0.6s ease;
+}
+
 /* Highlight-clip loop mask. Transparent by default; .fading drives opacity to 1
    to hide the synchronous re-sim hitch at each loop point. Above the stage canvas
    (the replay backdrop) but below the gameover text + score form (z-index 10). */
