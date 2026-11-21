@@ -6,7 +6,7 @@ import { Bullet } from "../Bullet";
 import { Sound } from "../Sound";
 import { emitThrust, emitReverseThrust, emitSideThrust } from "./shipParticles";
 import { fireBullets, shotTravel, hasLiveBomb } from "./shipWeapons";
-import { tickMagazine, spendShot, magazineBlocksFire } from "./shipMagazine";
+import { tickMagazine, spendShot, magazineBlocksFire, holdSpecialRoundForBomb } from "./shipMagazine";
 import { isDown } from "../game/controlBindings";
 import { FUEL_MODE_ENABLED, FUEL_THRUST_DRAIN, FUEL_SIDE_DRAIN, FUEL_RECHARGE, FUEL_RECHARGE_INTERVAL } from "../game/fuel";
 import { BEAT_GRID } from "../game/rhythmConstants";
@@ -314,6 +314,7 @@ const updateFireTrigger = (ship: Ship, input: IInput, bullets: Bullet[], perceiv
   // one is ever in play. The cooldown keeps a banked super-laser from also
   // firing on that press.
   ship.bombInPlay = hasLiveBomb(bullets);
+  if (ship.bombInPlay) holdSpecialRoundForBomb(ship, perceivedBeatTime);
   // Only the warp branch below may hold a Warp Cannon charge; any other path
   // this tick drops it, so it can't fire on its own later.
   const warpTrigger = ship.warpCannonActive && !ship.bombInPlay && !ship.lasershotActive && !ship.superLaserCharged;
@@ -366,8 +367,24 @@ const updateWarpTrigger = (ship: Ship, down: boolean, pressed: boolean, bullets:
 
 const fireShot = (ship: Ship, bullets: Bullet[], perceivedBeatTime: number, warpCharge = 0) => {
   fireBullets(ship, bullets, warpCharge);
-  spendShot(ship, perceivedBeatTime);
+  spendShot(ship, perceivedBeatTime, warpCharge);
   armFireCooldown(ship);
+};
+
+// Seconds the hull and sight take to dim when fire is spent, and to come back.
+const FIRE_BLOCKED_FADE_SEC = 0.1;
+const easeToward = (v: number, target: number, step: number) =>
+  target > v ? Math.min(target, v + step) : Math.max(target, v - step);
+
+// A live mine isn't "spent" for the hull — the next press still does something
+// (detonates it) — but the sight dims for it, since that press won't throw.
+const nextPressWontShoot = (ship: Ship) => ship.fireCooldown > 0 || ship.bombInPlay || magazineBlocksFire(ship);
+
+const easeFireBlockedFades = (ship: Ship, dt: number) => {
+  const step = dt / FIRE_BLOCKED_FADE_SEC;
+  const hullSpent = magazineBlocksFire(ship) && !ship.bombInPlay && !ship.lasershotActive;
+  ship.hullFireBlockedFade = easeToward(ship.hullFireBlockedFade, hullSpent ? 1 : 0, step);
+  ship.sightFireBlockedFade = easeToward(ship.sightFireBlockedFade, nextPressWontShoot(ship) ? 1 : 0, step);
 };
 
 // easing the halo intensity smooths the visual response — snap up on combo gain, slow fade on loss.
@@ -414,5 +431,6 @@ export const tickShip = (
   // Before the trigger, so a press on the refill beat fires.
   tickMagazine(ship, dt, perceivedBeatTime);
   updateFireTrigger(ship, input, bullets, perceivedBeatTime);
+  easeFireBlockedFades(ship, dt);
   integrateMotion(ship, dt, w, h);
 };
