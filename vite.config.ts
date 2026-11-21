@@ -301,7 +301,6 @@ export default defineConfig({
     react(),
     tailwindcss(),
     cleanUrls(),
-    makeConfigWriter({ name: "sound-config-writer", route: "/__sound-config__", targetPath: "public/sounds/config.json" }),
     makeConfigWriter({ name: "music-config-writer", route: "/__music-config__", targetPath: "public/sounds/music-config.json" }),
     makeConfigWriter({ name: "halo-full-config-writer", route: "/__halo-full-config__", targetPath: "public/sounds/halo-full-config.json" }),
     bakeDumpWriter(),

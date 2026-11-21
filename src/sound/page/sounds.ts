@@ -169,6 +169,10 @@ export const OBJECTS: GameObject[] = [
       // Rendered as a "kill" so the visual matches the audio event.
       { verb: "killed on-beat (taiko boom)", sound: "asteroidBoomBeat", trigger: beat(4) },
       { verb: "warp-swallowed (medium)", sound: "warpSwallow", trigger: beat(4) },
+      // Layered over the taiko by the weapon that made an on-beat kill.
+      { verb: "on-beat warp layer", sound: "warpBoomBeat", trigger: beat(4) },
+      { verb: "on-beat laser layer", sound: "laserBoomBeat", trigger: beat(4) },
+      { verb: "on-beat bomb layer", sound: "bombBoomBeat", trigger: beat(4) },
     ],
   },
 
@@ -403,6 +407,7 @@ const MENTIONED_SOUNDS = [
   "death", "thrust", "reverseThrust", "sideThrust", "shieldPop", "bonusLife",
   // bullets
   "fire", "fireBeat", "fireBomb", "fireBombBeat", "fireWarp", "fireWarpBeat", "bombBounce", "bombBlast", "bombBlastBeat", "warpSwallow", "comboTick",
+  "warpBoomBeat", "laserBoomBeat", "bombBoomBeat",
   // asteroids
   "explosionSmall", "explosionMedium", "explosionLarge", "asteroidBoomBeat",
   "bassKick", "bassPluck", "bassBoom", "bassSnap", "bassHit", "bassEcho",

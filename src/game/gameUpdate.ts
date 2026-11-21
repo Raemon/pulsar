@@ -1,4 +1,5 @@
 import type { Game } from "../Game";
+import { updateCamScroll } from "./camScroll";
 import type { ReplayPlayer } from "./replayPlayer";
 import { getRngSeed } from "./rng";
 import { dist, nearestImageOf } from "../vec";
@@ -51,7 +52,7 @@ import { updateDriftBursts } from "./driftBurst";
 import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
 import { updateWormholes, spawnWormhole, type Dive, type Wormhole } from "./wormhole";
-import { updateSwallows } from "./warpCannon";
+import { updateSwallows, tickWarpChargeSound } from "./warpCannon";
 import { warpVoiceKey, warpReleaseWasTap } from "./warpCharge";
 import { updateWarpIns, releaseWarpedBodies } from "./warpReturn";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
@@ -112,6 +113,7 @@ const advanceFrame = (game: Game, dt: number) => {
   // title/gameover/paused freeze beatTime; playing+dying defer pulsar to after tickBassBeats.
   if (game.state !== "playing" && game.state !== "dying" && game.state !== "replaying") game.pulsar.update(dt, game.perceivedBeatTime, BEAT_GRID);
   routeStateUpdate(game, dt);
+  updateCamScroll(game);
   if (game.shake > 0) game.shake = Math.max(0, game.shake - dt * 3);
   game.input.endFrame();
 };
@@ -460,7 +462,6 @@ const transitionToGameOver = (game: Game) => {
   game.sound.stopAllCometShimmers();
   game.sound.stopHaloAmbient();
   game.comets = [];
-  game.lastRunScore = game.runSummary.score;
   game.lastRunScoreId = null;
   // Capture the death snapshot from the LIVE ship now, before the highlight clip
   //   can rebuild the world. Needed for the parade fallback.
@@ -896,6 +897,7 @@ const updatePlaying = (game: Game, dt: number) => {
   game.recorder?.captureShip(game.ship, game.input);
   game.replayPlayer?.checkShipAgainstRecording(game.ship);
   tickLaserShot(game, dt);
+  tickWarpChargeSound(game);
   tickSuperLaserFire(game);
   const rawMusicDt = tickSlowMoTimer(game, dt);
   // Resnap perturbs beatTime away from a pure dt-sum, two ways: a hard-snap jumps
@@ -1524,7 +1526,8 @@ export const showWaveAnnounce = (game: Game, wave = game.wave) => {
     document.body.appendChild(el);
   }
   const inner = el.firstElementChild as HTMLSpanElement;
-  inner.textContent = `Wave ${displayWave(wave)}`;
+  const shownWave = displayWave(wave);
+  inner.textContent = shownWave === 0 ? "Wave" : `Wave ${shownWave}`;
   // Skip-cascade titles pass an explicit wave the player never flies; only the
   //   wave actually entered (wave === game.wave) carries the teaching line.
   const hintText = wave === game.wave && !isVeteranPilot() ? waveIntroHint() : null;
@@ -1625,7 +1628,7 @@ export const advanceWave = (game: Game, targetWave?: number, extraSpawnDelaySec 
     spawnWave(game);
     // Whatever the Warp Cannon swallowed last wave climbs back out now.
     releaseWarpedBodies(game);
-    // Rock→crystal stays on internal wave 1, so this banner reads "Wave 0".
+    // Rock→crystal stays on internal wave 1, so this banner reads just "Wave".
     //   Later spawns announce the density wave they enter.
     showWaveAnnounce(game);
     syncHud(game);

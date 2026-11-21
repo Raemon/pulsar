@@ -1,6 +1,6 @@
 import type { Game } from "../Game";
 import type { Ship } from "../Ship";
-import { Vec, v, fromAngle, add, mul } from "../vec";
+import { TAU, Vec, v, fromAngle, add, mul } from "../vec";
 import { BEAT_GRID } from "./rhythmConstants";
 import { isDown } from "./controlBindings";
 import { isInBeatWindow } from "./rhythmGate";
@@ -193,7 +193,6 @@ export const laserDotCount = (ship: Ship, beatTime: number, maxDots: number): nu
 export const resetLaserCharge = (ship: Ship) => {
   ship.laserChargeActive = false;
   ship.laserChargeStartBeatTime = 0;
-  ship.laserLastDotIndexFired = -1;
   ship.laserChargeFailedThisHold = false;
   // both hold-ends (release + death) route through here — flush any queued
   //   future accents so a released charge doesn't keep clicking on later beats.
@@ -292,8 +291,7 @@ export const tickLaserShot = (game: Game, dt: number) => {
       }
       ship.laserChargeActive = true;
       ship.laserChargeStartBeatTime = game.beatTime;
-      ship.laserLastDotIndexFired = -1;
-      game.sound.startLaserCharge();
+          game.sound.startLaserCharge();
     }
     if (!ship.laserChargeActive) {
       game.laserChargeGlow = approachGlow(game.laserChargeGlow, 0, dt);
@@ -452,8 +450,6 @@ const closestApproach = (origin: Vec, dir: Vec, length: number, pos: Vec): numbe
   const tRaw = (pos.x - origin.x) * dir.x + (pos.y - origin.y) * dir.y;
   return Math.max(0, Math.min(length, tRaw));
 };
-
-const TAU = Math.PI * 2;
 // The laser's resting cyan, shared with the hull and the reticule's near gate.
 const LASER_HUE = 192;
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));

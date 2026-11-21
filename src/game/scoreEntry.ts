@@ -73,7 +73,6 @@ const handleSubmit = async (game: Game, ev: Event) => {
     const saved = result.score;
     saveRecentName(rawName);
     game.lastRunScoreId = saved.id;
-    game.lastRunScore = saved.score;
     // Signed-in submit came back with refreshed lifetime stats — show them
     //   under the form so the pilot sees their totals tick up.
     if (result.user) renderSubmitStats(result.user);

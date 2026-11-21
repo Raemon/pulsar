@@ -1,6 +1,6 @@
 import type { Game } from "../Game";
 import type { Asteroid } from "../Asteroid";
-import { Vec, toroidalDelta, nearestImageOf } from "../vec";
+import { TAU, Vec, toroidalDelta, nearestImageOf } from "../vec";
 // Bolt jag/seed visuals only — cosmetic stream so it can't desync replays.
 import { cosmeticRng as rng } from "./rng";
 import { BEAT_GRID } from "./rhythmConstants";
@@ -44,8 +44,6 @@ const MIN_SAMPLES = 8;
 const MAX_SAMPLES = 40;
 const JAG_AMPLITUDE = 8;
 const WOBBLE_AMPLITUDE = 4.5;
-
-const TAU = Math.PI * 2;
 
 // matches SoundwaveRadiator's oscilloscope terms so the arc and the puffs
 // squiggle in the same dialect.

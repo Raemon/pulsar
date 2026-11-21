@@ -1,7 +1,7 @@
 // Replay wire format. JSON shape is stable across (v: 2) revisions; bump the
 // version when the binary layout or sim semantics change.
 
-export const REPLAY_FORMAT_VERSION = 60;
+export const REPLAY_FORMAT_VERSION = 63;
 
 // v38 corrects Sepulchre bearer timing and release. v39 shortens the arrival
 //   and preserves combo when the bier breaks. Each changes the encounter's
@@ -69,6 +69,16 @@ export const REPLAY_FORMAT_VERSION = 60;
 // v60 makes the Warp Cannon hold-to-charge (pellet size by beats held, small
 //   pellets bite big rocks) and returns swallowed bodies next wave, so a v59
 //   Warp Cannon run re-sims differently.
+// v61 gives the bomb and the Warp Cannon one round each instead of the two-shot
+//   magazine (the bomb's back a beat after the mine is gone, the Warp Cannon's
+//   a beat per charge tier), sizes a Warp Cannon pellet to half the rock its tier
+//   swallows, sends what it swallows a wave on per tier, and widens the bomb
+//   blast 1.3x, so a v60 bomb or Warp Cannon run re-sims differently.
+// v62 spaces the Warp Cannon's charge tiers at 2, 4 and 8 beats held (was one per
+//   beat) and shrinks its pellets, so a v61 Warp Cannon run re-sims differently.
+// v63 drops the per-run bassOrder shuffle, whose result nothing read. The shuffle
+//   drew from the gameplay rng, so every draw after it in a v62 recording — spawn
+//   positions, kind rolls, wave events — now lands on a different value.
 
 // v2 added tutorial/veteran/bindings so wave-1 spawn (which forks on those
 //   flags) and per-action key mapping reproduce on a different machine.

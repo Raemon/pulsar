@@ -79,4 +79,3 @@ export const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rng() * arr.leng
 //   must not consume gameplay-rng draws (cracks, shape jitter, hues). See rng.ts.
 export const cosmeticRand = (min: number, max: number): number => min + cosmeticRng() * (max - min);
 export const cosmeticRandInt = (min: number, max: number): number => Math.floor(cosmeticRand(min, max + 1));
-export const cosmeticPick = <T>(arr: readonly T[]): T => arr[Math.floor(cosmeticRng() * arr.length)];

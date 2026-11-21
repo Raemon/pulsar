@@ -1,7 +1,8 @@
 import type { Game } from "../Game";
+import { resetCamScroll } from "./camScroll";
 import { resetAimHint } from "./aimHint";
 import { Ship } from "../Ship";
-import { spawnAsteroidAtEdge, BASS_KINDS } from "../Asteroid";
+import { spawnAsteroidAtEdge } from "../Asteroid";
 import { ParticleSystem } from "../Particle";
 import { v } from "../vec";
 import { syncHud, syncComboHud, syncPowerupHud } from "./hud";
@@ -22,7 +23,7 @@ import { hideGameOverIntro, showGameOverIntro } from "./gameOverIntro";
 import { hasCalibrated, CALIBRATION_BEAT_INTENSITY, loadBeatOffset } from "./beatCalibration";
 import { pickIntroHints } from "./introHints";
 import { isNewDaySession, markSessionStart } from "./sessionTracker";
-import { rng, seedRng } from "./rng";
+import { seedRng } from "./rng";
 import { ReplayRecorder } from "./replayRecorder";
 import { ReplayPlayer } from "./replayPlayer";
 import { decodeReplay } from "./replayFormat";
@@ -93,9 +94,8 @@ export const emitFirstWaveHintRhythmProgress = (count: number) => {
   window.dispatchEvent(new CustomEvent("first-wave-hint:rhythmProgress", { detail: { count } }));
 };
 
-// Guided-tutorial signals (consumed by the tutorial UI). hoverProgress drives the
-//   "hold your reticule" circle (0→1 over one second); the two *Done events mark
-//   the milestones that gate the spawn machine — see gameUpdate.tickTutorialSpawn.
+// Guided-tutorial signal (consumed by the tutorial UI): hoverProgress drives the
+//   "hold your reticule" circle (0→1 over one second).
 export const emitTutorialHoverProgress = (value: number) => {
   window.dispatchEvent(new CustomEvent("tutorial:hoverProgress", { detail: { value } }));
 };
@@ -105,23 +105,6 @@ export const emitTutorialControls = (used: TutorialControlsUsed) => {
   // copy: `used` is the live, mutated game object — React's setUsed would bail on an
   //   unchanged reference, so each emit must carry a fresh object.
   window.dispatchEvent(new CustomEvent("tutorial:controls", { detail: { ...used } }));
-};
-export const emitTutorialHoverDone = () => {
-  window.dispatchEvent(new CustomEvent("tutorial:hoverDone"));
-};
-export const emitTutorialFireHitDone = () => {
-  window.dispatchEvent(new CustomEvent("tutorial:fireHitDone"));
-};
-
-
-// Fisher-Yates over Array.sort — sort's randomness is biased and varies across engines.
-const shuffled = <T,>(arr: ReadonlyArray<T>): T[] => {
-  const out = arr.slice();
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
 };
 
 // title screen needs visible motion; decorative rocks don't carry HP or split logic.
@@ -143,6 +126,7 @@ const stopAllPersistentAudio = (game: Game) => {
   // like a drone — explicitly stop it on every state exit so it can't bleed
   // into a cutscene / title / game-over.
   game.sound.stopHaloFullMusic();
+  game.sound.stopWarpCharge();
   game.comets = [];
 };
 
@@ -323,7 +307,6 @@ export const startCalibrationIntro = (game: Game) => {
   game.waveTransitioning = false;
   resetRunTimers(game);
   resetRunCollections(game);
-  game.bassOrder = shuffled(BASS_KINDS);
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 1e9; // untouchable through the warm-up
@@ -334,7 +317,6 @@ export const startCalibrationIntro = (game: Game) => {
   game.overlayEl.classList.add("hidden");
   hideScoreEntry(game);
   game.leaderboardEl.classList.add("hidden");
-  game.lastRunScore = null;
   game.lastRunScoreId = null;
   game.showNeighborhoodOnce = false;
   game.neighborhoodFetch = null;
@@ -407,7 +389,6 @@ export const unfreezeIntroWorld = (game: Game) => {
     game.firstWaveOnBeatFireCount = 0;
     game.firstWaveOnBeatHitCount = 0;
     game.tutorialActive = false;
-    game.tutorialHoverDone = false;
     game.tutorialFireHitDone = false;
     emitFirstWaveHintProgress(0);
     emitFirstWaveHintHitProgress(0);
@@ -484,11 +465,11 @@ export const startGame = (game: Game, overrides?: {
       game.sound.preloadHaloMusic(variation);
     }
   }
-  // Seed the PRNG before anything random fires (bassOrder shuffle, wave events,
-  //   asteroid hues). Re-arming the lazy hue cursor lets the first nextWaveHue
+  // Seed the PRNG before anything random fires (wave events, asteroid
+  //   hues). Re-arming the lazy hue cursor lets the first nextWaveHue
   //   call after this draw from the seeded RNG, not whichever cursor a previous
   //   run left behind. Replay overrides supply the recorded seed up front so the
-  //   downstream shuffle + wave spawn draw the same numbers the recording saw.
+  //   downstream wave spawn draws the same numbers the recording saw.
   game.runSeed = overrides
     ? overrides.seed
     : (crypto.getRandomValues(new Uint32Array(1))[0]) >>> 0;
@@ -536,7 +517,6 @@ export const startGame = (game: Game, overrides?: {
   game.waveTransitioning = false;
   resetRunTimers(game);
   resetRunCollections(game);
-  game.bassOrder = shuffled(BASS_KINDS);
   game.particles = new ParticleSystem();
   game.ship = new Ship(v(game.w / 2, game.h / 2));
   game.ship.invuln = 2.0;
@@ -560,7 +540,6 @@ export const startGame = (game: Game, overrides?: {
     game.overlayEl.classList.add("hidden");
     hideScoreEntry(game);
     game.leaderboardEl.classList.add("hidden");
-    game.lastRunScore = null;
     game.lastRunScoreId = null;
     game.showNeighborhoodOnce = false;
     game.neighborhoodFetch = null;
@@ -574,6 +553,7 @@ export const startGame = (game: Game, overrides?: {
 
 // run-scoped state only; spawnWave handles per-wave timers separately.
 const resetRunTimers = (game: Game) => {
+  resetCamScroll(game);
   game.beatTime = 0;
   game.lastBeatResnapAt = game.beatTime;
   game.beatPhaseCorrection = 0;
@@ -607,7 +587,6 @@ const resetRunTimers = (game: Game) => {
   game.pilotLog1Unlocked = false;
   game.pilotLog3Unlocked = false;
   game.tutorialActive = false;
-  game.tutorialHoverDone = false;
   game.tutorialFireHitDone = false;
   game.controlsHintActive = false;
   game.beatIntensityRamp = null;
@@ -677,6 +656,7 @@ const enterPause = (game: Game) => {
   game.sound.stopThrust();
   game.sound.stopReverseThrust();
   game.sound.stopSideThrust();
+  game.sound.stopWarpCharge();
   game.sound.fadeForPause(0, 0.35);
   game.overlayTitleEl.textContent = "Paused";
   game.overlayStartEl.textContent = "Resume";
@@ -747,7 +727,6 @@ export const abortMission = (game: Game) => {
   game.sound.stopSideThrust();
   stopAllPersistentAudio(game);
   game.sound.fadeForPause(1, 0.1);
-  game.lastRunScore = game.score;
   game.lastRunScoreId = null;
   game.abortEl.classList.add("hidden");
   game.overlayTitleEl.textContent = "";
