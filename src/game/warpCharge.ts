@@ -37,6 +37,10 @@ const beatsHeld = (ship: Ship, beatTime: number): number =>
 // Beats held at which each tier past 0 lands.
 const WARP_TIER_BEATS = [2, 4, 8];
 
+// Beats from reaching `tier` to the next one (0 once fully charged).
+export const warpTierSpanBeats = (tier: number): number =>
+  tier >= WARP_MAX_CHARGE ? 0 : WARP_TIER_BEATS[tier] - (tier === 0 ? 0 : WARP_TIER_BEATS[tier - 1]);
+
 // Tiers charged by `beatTime`.
 export const warpChargeAt = (ship: Ship, beatTime: number): number => {
   if (!ship.warpChargeActive) return 0;

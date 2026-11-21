@@ -223,7 +223,7 @@ export const renderWarpShots = (ctx: CanvasRenderingContext2D, bullets: Readonly
 // off every tier-up. A full charge goes white-hot and throbs on the beat.
 // Reads the sim's perceived beat clock, the same one the release is judged on.
 const CHARGE_POP_SEC = 0.22;
-const CHARGE_MOTES = 14;
+const CHARGE_MOTES = 10;
 const CHARGE_PULL_SEC = 0.55;
 
 const mouthPop = (since: number): number => {
@@ -238,9 +238,9 @@ const paintInfall = (
   ctx: CanvasRenderingContext2D, x: number, y: number, mouth: number, charge: number, tSec: number, hue: number,
 ): void => {
   const reach = mouth * 2.6 + 34;
-  const count = CHARGE_MOTES + charge * 6;
-  const pull = CHARGE_PULL_SEC / (1 + 0.35 * charge);
-  const wind = 2.2 + 0.4 * charge;
+  const count = CHARGE_MOTES + charge * 3;
+  const pull = CHARGE_PULL_SEC / (1 + 0.2 * charge);
+  const wind = 2.2 + 0.25 * charge;
   ctx.strokeStyle = `hsl(${hue}, 90%, 80%)`;
   ctx.lineWidth = 1;
   for (let i = 0; i < count; i++) {
@@ -254,7 +254,7 @@ const paintInfall = (
     const k = (tSec / pull + i / count) % 1;
     const head = at(k);
     const tail = at(Math.max(0, k - 0.12));
-    const alpha = Math.sin(k * Math.PI) * (0.35 + 0.12 * charge);
+    const alpha = Math.sin(k * Math.PI) * (0.26 + 0.06 * charge);
     drawGlow(ctx, head.x, head.y, 3 + 2.5 * head.fall, hue, alpha);
     ctx.globalAlpha = alpha * 0.6;
     ctx.beginPath();
@@ -270,14 +270,14 @@ const paintOrbits = (
   ctx: CanvasRenderingContext2D, x: number, y: number, mouth: number, charge: number, tSec: number, tint: string,
 ): void => {
   for (let i = 1; i <= charge; i++) {
-    const spin = tSec * (1.4 + 0.9 * i) * (i % 2 ? 1 : -1) + i * 1.1;
+    const spin = tSec * (1.1 + 0.5 * i) * (i % 2 ? 1 : -1) + i * 1.1;
     const r = mouth * (1.35 + 0.28 * i);
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(spin);
     ctx.scale(1, 0.42 + 0.12 * i);
     ctx.lineWidth = 1.4;
-    strokeRing(ctx, 0, 0, r, `hsla(${tint}, 82%, ${(0.55 - 0.08 * i).toFixed(3)})`);
+    strokeRing(ctx, 0, 0, r, `hsla(${tint}, 82%, ${(0.36 - 0.06 * i).toFixed(3)})`);
     ctx.restore();
   }
 };
@@ -288,10 +288,10 @@ const paintNextTierArc = (
 ): void => {
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 5]);
-  strokeRing(ctx, x, y, nextMouth, `hsla(${tint}, 80%, 0.22)`);
+  strokeRing(ctx, x, y, nextMouth, `hsla(${tint}, 80%, 0.14)`);
   ctx.setLineDash([]);
-  ctx.lineWidth = 2.2;
-  ctx.strokeStyle = `hsla(${tint}, 92%, ${(0.35 + 0.5 * toNext).toFixed(3)})`;
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = `hsla(${tint}, 92%, ${(0.25 + 0.3 * toNext).toFixed(3)})`;
   ctx.beginPath();
   ctx.arc(x, y, nextMouth, -Math.PI / 2, -Math.PI / 2 + TAU * toNext);
   ctx.stroke();
@@ -300,12 +300,12 @@ const paintNextTierArc = (
 const paintTierUpShock = (
   ctx: CanvasRenderingContext2D, x: number, y: number, mouth: number, since: number, tint: string,
 ): void => {
-  const life = 0.4;
+  const life = 0.3;
   if (since >= life) return;
   const k = since / life;
-  ctx.lineWidth = 3 * (1 - k) + 0.5;
-  strokeRing(ctx, x, y, mouth * (1 + 2.4 * Math.sqrt(k)), `hsla(${tint}, 90%, ${(0.8 * (1 - k) ** 2).toFixed(3)})`);
-  drawGlow(ctx, x, y, mouth * 2.2, 190, 0.5 * (1 - k) ** 2, true);
+  ctx.lineWidth = 2 * (1 - k) + 0.5;
+  strokeRing(ctx, x, y, mouth * (1 + 1.5 * Math.sqrt(k)), `hsla(${tint}, 90%, ${(0.45 * (1 - k) ** 2).toFixed(3)})`);
+  drawGlow(ctx, x, y, mouth * 1.8, 190, 0.25 * (1 - k) ** 2, true);
 };
 
 export const renderWarpCharge = (ctx: CanvasRenderingContext2D, ship: Ship, beatTime: number, timeMs: number): void => {
@@ -319,8 +319,8 @@ export const renderWarpCharge = (ctx: CanvasRenderingContext2D, ship: Ship, beat
   const tSec = timeMs * 0.001;
   // Full charge throbs on the beat; otherwise it swells toward the next tier.
   const beatPhase = ((beatTime / BEAT_GRID) % 1 + 1) % 1;
-  const throb = full ? 0.08 * (1 - beatPhase) ** 3 : 0;
-  const mouth = (base + (next - base) * 0.35 * toNext * toNext) * (1 + 0.28 * mouthPop(since) + throb) * mouthBreath(tSec);
+  const throb = full ? 0.04 * (1 - beatPhase) ** 3 : 0;
+  const mouth = (base + (next - base) * 0.2 * toNext * toNext) * (1 + 0.14 * mouthPop(since) + throb) * mouthBreath(tSec);
   const muzzle = muzzleOf(ship);
   const ahead = fromAngle(ship.heading, mouth * 1.15 + 8);
   const x = muzzle.x + ahead.x;
@@ -330,18 +330,18 @@ export const renderWarpCharge = (ctx: CanvasRenderingContext2D, ship: Ship, beat
 
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  drawGlow(ctx, x, y, mouth * (2.4 + 0.3 * charge), hue, 0.18 + 0.07 * charge);
+  drawGlow(ctx, x, y, mouth * (2.2 + 0.15 * charge), hue, 0.13 + 0.035 * charge);
   paintInfall(ctx, x, y, mouth, charge, tSec, hue);
   ctx.restore();
 
-  renderBakedMouth(ctx, { x, y, radius: lensScaleForMouth(mouth), seed: 0, hueShift: 0 }, 1, null, tSec * (1.6 + 0.6 * charge));
+  renderBakedMouth(ctx, { x, y, radius: lensScaleForMouth(mouth), seed: 0, hueShift: 0 }, 1, null, tSec * (1.6 + 0.3 * charge));
 
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   ctx.lineWidth = Math.max(1.5, mouth * 0.3);
-  strokeRing(ctx, x, y, mouth * 1.08, `hsla(${tint}, 65%, ${(0.18 + 0.05 * charge).toFixed(3)})`);
+  strokeRing(ctx, x, y, mouth * 1.08, `hsla(${tint}, 65%, ${(0.14 + 0.025 * charge).toFixed(3)})`);
   ctx.lineWidth = Math.max(1, mouth * 0.09);
-  strokeRing(ctx, x, y, mouth, `hsla(${tint}, 90%, ${(0.8 + 0.2 * mouthPop(since)).toFixed(3)})`);
+  strokeRing(ctx, x, y, mouth, `hsla(${tint}, 90%, ${(0.75 + 0.1 * mouthPop(since)).toFixed(3)})`);
   paintOrbits(ctx, x, y, mouth, charge, tSec, tint);
   if (!full) paintNextTierArc(ctx, x, y, next, toNext, OFF_BEAT_TINT);
   paintTierUpShock(ctx, x, y, mouth, since, tint);

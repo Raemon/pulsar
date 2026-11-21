@@ -13,7 +13,7 @@ import { HALO_MUSIC_POOL, HAUNTING_MUSIC_POOL, BOSS_MUSIC_VARIATIONS } from "./g
 import { SOUND_LOAD_SCHEDULE, STREAK_SHIMMER_POOL_SIZE, FIRST_DOT_HUM_POOL_SIZE } from "./game/soundSchedule";
 import type { CaptureAudioContext } from "./game/audioCapture";
 import { BEAT_GRID } from "./game/rhythmConstants";
-import { WARP_VOICE_KEYS, WARP_CHORD_TONES, WARP_MAX_CHARGE } from "./game/warpCharge";
+import { WARP_VOICE_KEYS, WARP_CHORD_TONES, WARP_MAX_CHARGE, warpTierSpanBeats } from "./game/warpCharge";
 
 type ToneModule = typeof import("tone");
 let toneModulePromise: Promise<ToneModule> | null = null;
@@ -7449,8 +7449,8 @@ export class Sound {
   // whichever tone the release plays it lands inside a chord already sounding.
   // Each tier-up voice-leads every tone down a rung, so the pad sinks an
   // inversion as the pellet grows, a sub fills in under it, and an
-  // eighth-note shimmer an octave over the top quickens. Across each beat the
-  // lowpass opens toward the next tier, so the build leans into its tier-up.
+  // eighth-note shimmer an octave over the top quickens. Across each tier's span
+  // the lowpass eases open toward the next tier, so the build leans into its tier-up.
   // Synthesised live: it's a handful of oscillators and must follow the hold.
   private static warpChord(tier: number): number[] {
     const lowest = Sound.WARP_LOWEST[Math.max(0, Math.min(Sound.WARP_LOWEST.length - 1, tier))];
@@ -7465,7 +7465,7 @@ export class Sound {
     const t = ctx.currentTime;
     const bus = ctx.createGain();
     bus.gain.setValueAtTime(0.0001, t);
-    bus.gain.exponentialRampToValueAtTime(0.55, t + 0.12);
+    bus.gain.exponentialRampToValueAtTime(0.38, t + 0.12);
     bus.connect(this.master);
     const tone = ctx.createBiquadFilter();
     tone.type = "lowpass";
@@ -7532,18 +7532,18 @@ export class Sound {
       param.exponentialRampToValueAtTime(Math.max(0.0001, to), t + sec);
     };
     node.sub.frequency.setValueAtTime(chord[0] / 2, t);
-    ramp(node.subGain.gain, 0.04 * tier, 0.15);
+    ramp(node.subGain.gain, 0.022 * tier, 0.3);
     node.shimmer.frequency.setValueAtTime(chord[2] * 2, t);
-    ramp(node.shimmerGain.gain, 0.008 + 0.012 * tier, 0.15);
-    // The filter snaps open on the tier-up, then over the next beat closes and
-    // climbs back toward the next tier's brightness.
-    const open = 700 + 450 * tier;
+    ramp(node.shimmerGain.gain, 0.005 + 0.005 * tier, 0.3);
+    // The filter lifts a little on the tier-up, then settles and climbs back
+    // toward the next tier's brightness across the tier's span.
+    const open = 700 + 300 * tier;
     const tf = node.tone.frequency;
     tf.cancelScheduledValues(t);
-    tf.setValueAtTime(first ? open * 0.6 : open * 2.2, t);
-    tf.exponentialRampToValueAtTime(open * 0.8, t + 0.12);
-    if (tier < WARP_MAX_CHARGE) tf.exponentialRampToValueAtTime(open * 1.7, t + BEAT_GRID);
-    if (!first) this.warpBloom(this.ctx, node.bus, t, chord[2] * 2, { fromHz: chord[2] * 1.5, len: 0.35, peak: 0.05 });
+    tf.setValueAtTime(first ? open * 0.6 : open * 1.4, t);
+    tf.exponentialRampToValueAtTime(open * 0.85, t + 0.2);
+    if (tier < WARP_MAX_CHARGE) tf.exponentialRampToValueAtTime(open * 1.3, t + warpTierSpanBeats(tier) * BEAT_GRID);
+    if (!first) this.warpBloom(this.ctx, node.bus, t, chord[2] * 2, { fromHz: chord[2] * 1.5, len: 0.3, peak: 0.025 });
   }
 
   // Safe to call repeatedly and when never started.
