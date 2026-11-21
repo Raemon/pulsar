@@ -1503,7 +1503,8 @@ export const showWaveAnnounce = (game: Game, wave = game.wave) => {
     document.body.appendChild(el);
   }
   const inner = el.firstElementChild as HTMLSpanElement;
-  inner.textContent = `Wave ${displayWave(wave)}`;
+  const shownWave = displayWave(wave);
+  inner.textContent = shownWave === 0 ? "Wave" : `Wave ${shownWave}`;
   // Skip-cascade titles pass an explicit wave the player never flies; only the
   //   wave actually entered (wave === game.wave) carries the teaching line.
   const hintText = wave === game.wave && !isVeteranPilot() ? waveIntroHint() : null;
@@ -1604,7 +1605,7 @@ export const advanceWave = (game: Game, targetWave?: number, extraSpawnDelaySec 
     spawnWave(game);
     // Whatever the Warp Cannon swallowed last wave climbs back out now.
     releaseWarpedBodies(game);
-    // Rock→crystal stays on internal wave 1, so this banner reads "Wave 0".
+    // Rock→crystal stays on internal wave 1, so this banner reads just "Wave".
     //   Later spawns announce the density wave they enter.
     showWaveAnnounce(game);
     syncHud(game);

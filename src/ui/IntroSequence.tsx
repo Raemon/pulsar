@@ -139,16 +139,18 @@ export const IntroSequence = () => {
       const textFadeOutBeats = 4;
       const outFrac = Math.max(0, Math.min(1, (beat - holdEnd) / textFadeOutBeats));
       const outMul = 1 - smooth(outFrac);
-      setLines([
-        { text: detail.hints?.[0] ?? "", opacity: op0 * outMul },
-        { text: detail.hints?.[1] ?? "", opacity: op1 * outMul },
-        { text: detail.hints?.[2] ?? "", opacity: op2 * outMul },
-        { text: "Become one with the Pulsar", opacity: opClose * outMul },
-      ]);
-      const bgStart = closeStart; 
-      const bgFade = 4; 
+      const bgStart = closeStart;
+      const bgFade = 4;
       if (beat >= bgStart) fireUnfreeze();
       const bgFrac = Math.max(0, Math.min(1, (beat - bgStart) / bgFade));
+      // The three hints leave with the black; only the closing line lingers.
+      const hintMul = 1 - smooth(bgFrac);
+      setLines([
+        { text: detail.hints?.[0] ?? "", opacity: op0 * hintMul },
+        { text: detail.hints?.[1] ?? "", opacity: op1 * hintMul },
+        { text: detail.hints?.[2] ?? "", opacity: op2 * hintMul },
+        { text: "Become one with the Pulsar", opacity: opClose * outMul },
+      ]);
       setBgOpacity(1 - smooth(bgFrac));
       if (beat >= Math.max(bgStart + bgFade, holdEnd + textFadeOutBeats) + 0.2) { finish(); return; }
     } else {
