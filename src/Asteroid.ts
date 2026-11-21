@@ -1484,8 +1484,6 @@ export class Asteroid {
   // spawn so each wraith reads as an individual; the actual extrusion is
   // computed live from this + writhePhase.
   wraithTendrils: number[] = [];
-  // Emission cooldown for the dark-smoke trail the wraith bleeds behind it.
-  wraithSmokeT = 0;
 
   // How many wraiths this prison shell is holding. Rolled at construction (not
   // at shatter time) so the live eye-glow render can show one pair of eyes per
@@ -1503,12 +1501,9 @@ export class Asteroid {
   // (tickBeatShields) off perceivedBeatTime; constant on every other kind.
   // Visual only — damage is gated per hit on that hit's own onBeat judgement
   // (beatShieldBlocks), never on these.
-  //   beatShieldUp: true outside the beat window (shield closed / immune).
-  //   beatShieldOpen: 0..1 — 0 at and outside the window edges, 1 dead on the beat.
   //   beatShieldPhase: signed beats-from-centre in window half-widths — −1 as
-  //     the window opens, 0 on the beat, +1 as it closes; |x| > 1 outside it.
-  beatShieldUp = true;
-  beatShieldOpen = 0;
+  //     the window opens, 0 on the beat, +1 as it closes; |x| > 1 outside it
+  //     (shield closed / immune), and 1 − |x| is how far open it is.
   beatShieldPhase = -2;
 
   constructor(pos: Vec, vel: Vec, size: AsteroidSize, hue?: number, kind: AsteroidKind = "normal", inheritBass?: BassShip) {

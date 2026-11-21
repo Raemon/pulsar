@@ -129,8 +129,6 @@ const makeAsteroid = (group: string, kind: AsteroidKind, size: AsteroidSize): Su
       if (isBeatShieldKind(a.kind) && opts.phase) {
         const time = performance.now() / 1000;
         a.beatShieldPhase = (time - Math.round(time / BEAT_GRID) * BEAT_GRID) / BEAT_WINDOW;
-        a.beatShieldUp = Math.abs(a.beatShieldPhase) > 1;
-        a.beatShieldOpen = Math.max(0, 1 - Math.abs(a.beatShieldPhase));
       }
     },
   };

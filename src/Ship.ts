@@ -157,7 +157,6 @@ export class Ship {
   //   See game/laserShot.ts for the charge/release logic.
   laserChargeActive = false;
   laserChargeStartBeatTime = 0;
-  laserLastDotIndexFired = -1;
   // Set when an off-beat fire press is rejected so the fail sound only plays
   //   once per hold — cleared when the player releases and re-presses.
   laserChargeFailedThisHold = false;

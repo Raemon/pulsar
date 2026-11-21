@@ -28,7 +28,6 @@ export type HaloFullConfig = {
 
 let current: HaloFullConfig = { _version: 1, offsets: {} };
 let loaded = false;
-const listeners = new Set<(c: HaloFullConfig) => void>();
 
 export async function loadHaloFullConfig(): Promise<HaloFullConfig> {
   if (loaded) return current;
@@ -42,7 +41,6 @@ export async function loadHaloFullConfig(): Promise<HaloFullConfig> {
     // No config — songs play at offset 0 (stems' sample-0).
   }
   loaded = true;
-  for (const l of listeners) l(current);
   return current;
 }
 
@@ -53,12 +51,6 @@ export function getHaloFullConfig(): HaloFullConfig {
 export function setHaloFullConfig(c: HaloFullConfig) {
   current = c;
   loaded = true;
-  for (const l of listeners) l(current);
-}
-
-export function onHaloFullConfigChange(fn: (c: HaloFullConfig) => void) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
 }
 
 // Per-song shared offset in seconds, defaulting to 0 when unset. Sound.ts reads

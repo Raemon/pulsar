@@ -93,9 +93,8 @@ export const emitFirstWaveHintRhythmProgress = (count: number) => {
   window.dispatchEvent(new CustomEvent("first-wave-hint:rhythmProgress", { detail: { count } }));
 };
 
-// Guided-tutorial signals (consumed by the tutorial UI). hoverProgress drives the
-//   "hold your reticule" circle (0→1 over one second); the two *Done events mark
-//   the milestones that gate the spawn machine — see gameUpdate.tickTutorialSpawn.
+// Guided-tutorial signal (consumed by the tutorial UI): hoverProgress drives the
+//   "hold your reticule" circle (0→1 over one second).
 export const emitTutorialHoverProgress = (value: number) => {
   window.dispatchEvent(new CustomEvent("tutorial:hoverProgress", { detail: { value } }));
 };
@@ -105,12 +104,6 @@ export const emitTutorialControls = (used: TutorialControlsUsed) => {
   // copy: `used` is the live, mutated game object — React's setUsed would bail on an
   //   unchanged reference, so each emit must carry a fresh object.
   window.dispatchEvent(new CustomEvent("tutorial:controls", { detail: { ...used } }));
-};
-export const emitTutorialHoverDone = () => {
-  window.dispatchEvent(new CustomEvent("tutorial:hoverDone"));
-};
-export const emitTutorialFireHitDone = () => {
-  window.dispatchEvent(new CustomEvent("tutorial:fireHitDone"));
 };
 
 // title screen needs visible motion; decorative rocks don't carry HP or split logic.
@@ -299,7 +292,6 @@ export const startCalibrationIntro = (game: Game) => {
   game.overlayEl.classList.add("hidden");
   hideScoreEntry(game);
   game.leaderboardEl.classList.add("hidden");
-  game.lastRunScore = null;
   game.lastRunScoreId = null;
   game.showNeighborhoodOnce = false;
   game.neighborhoodFetch = null;
@@ -372,7 +364,6 @@ export const unfreezeIntroWorld = (game: Game) => {
     game.firstWaveOnBeatFireCount = 0;
     game.firstWaveOnBeatHitCount = 0;
     game.tutorialActive = false;
-    game.tutorialHoverDone = false;
     game.tutorialFireHitDone = false;
     emitFirstWaveHintProgress(0);
     emitFirstWaveHintHitProgress(0);
@@ -511,7 +502,6 @@ export const startGame = (game: Game, overrides?: {
   game.overlayEl.classList.add("hidden");
   hideScoreEntry(game);
   game.leaderboardEl.classList.add("hidden");
-  game.lastRunScore = null;
   game.lastRunScoreId = null;
   game.showNeighborhoodOnce = false;
   game.neighborhoodFetch = null;
@@ -558,7 +548,6 @@ const resetRunTimers = (game: Game) => {
   game.pilotLog1Unlocked = false;
   game.pilotLog3Unlocked = false;
   game.tutorialActive = false;
-  game.tutorialHoverDone = false;
   game.tutorialFireHitDone = false;
   game.controlsHintActive = false;
   game.beatIntensityRamp = null;
@@ -694,7 +683,6 @@ export const abortMission = (game: Game) => {
   game.sound.stopSideThrust();
   stopAllPersistentAudio(game);
   game.sound.fadeForPause(1, 0.1);
-  game.lastRunScore = game.score;
   game.lastRunScoreId = null;
   game.abortEl.classList.add("hidden");
   game.overlayTitleEl.textContent = "";

@@ -440,7 +440,6 @@ const transitionToGameOver = (game: Game) => {
   game.sound.stopAllCometShimmers();
   game.sound.stopHaloAmbient();
   game.comets = [];
-  game.lastRunScore = game.runSummary.score;
   game.lastRunScoreId = null;
   // Capture the death snapshot from the LIVE ship now, before the highlight clip
   //   can rebuild the world. Needed for the parade fallback.

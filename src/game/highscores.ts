@@ -1,35 +1,7 @@
 import type { Game } from "../Game";
-import type { KillBucket } from "./killBuckets";
 import { displayWave } from "./waveDirector";
 import { getIdToken, type PublicUser } from "./auth";
 import { REPLAY_FORMAT_VERSION } from "./replayFormat";
-
-// bucket names are emitted by killEffects.ts; this label map keeps the
-// leaderboard summary readable instead of leaking internal asteroid kinds.
-const BUCKET_LABELS: Record<KillBucket, string> = {
-  asteroid_huge: "2xL",
-  asteroid_large: "lg",
-  asteroid_medium: "md",
-  asteroid_small: "sm",
-  bassteroid: "bass",
-  chime: "chime",
-  bell: "bell",
-  warble: "warble",
-  citadel: "citadel",
-  asteroidWithGem: "gem",
-  burstGem: "gold gem",
-  solidCrystal: "crystal",
-  beatShieldCrystal: "beat crystal",
-  metalChunk: "metal",
-  alien_big: "alien-L",
-  alien_medium: "alien-M",
-  alien_small: "alien-S",
-  comet: "comet",
-  boss: "boss",
-  sepulchre: "sepulchre",
-  glassPrison: "prison",
-  wraith: "wraith",
-};
 
 export type HighscoreRow = {
   id: number;
@@ -214,20 +186,6 @@ export const fetchNeighborhood = async (
   if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
   const body = (await res.json()) as { scores: HighscoreRow[]; selfRank: number };
   return { scores: applyKnownReplays(body.scores), selfRank: body.selfRank };
-};
-
-// the leaderboard row shows a compressed kill breakdown; pick the top few
-// buckets so the row stays scannable instead of dumping every category.
-export const formatKillSummary = (summary: Record<string, number>): string => {
-  const entries = Object.entries(summary ?? {});
-  if (entries.length === 0) return "";
-  entries.sort((a, b) => b[1] - a[1]);
-  const parts: string[] = [];
-  for (const [bucket, count] of entries.slice(0, 4)) {
-    const label = BUCKET_LABELS[bucket as KillBucket] ?? bucket;
-    parts.push(`${count}${label}`);
-  }
-  return parts.join(" · ");
 };
 
 const RECENT_NAME_KEY = "pulsar.recentName";
