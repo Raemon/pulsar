@@ -1135,15 +1135,17 @@ const OLDER_BUILD_NOTICE = "Replay from an older build — can't be played.";
 const NEWER_BUILD_NOTICE = "Replay from a newer build — refresh to watch.";
 
 const launchReplay = async (game: Game, scoreId: number) => {
-  // The home screen's reel is a backdrop holding the same replay machinery —
-  //   hand it back before taking over with the run the viewer actually picked.
-  stopTitleReel(game);
   const row = game.leaderboardRows.find((r) => r.id === scoreId);
   const mismatch = row ? replayBuildMismatch(row) : null;
   if (mismatch) {
     showLeaderboardNotice(mismatch === "newer" ? NEWER_BUILD_NOTICE : OLDER_BUILD_NOTICE);
     return;
   }
+  // Past the refusals: the home screen's reel is a backdrop holding the same
+  //   replay machinery, so hand it back before taking over with the run the
+  //   viewer actually picked. (Stopping it above would have left the title with
+  //   no backdrop for a click that plays nothing.)
+  stopTitleReel(game);
   try {
     const bytes = await fetchReplay(scoreId);
     await startReplay(game, bytes);

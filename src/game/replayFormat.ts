@@ -347,6 +347,17 @@ export const frameSecondsAfter = (payload: ReplayPayload, fromFrame: number, sec
   return i;
 };
 
+// Recorded wall-clock seconds between two frame indices. Both ends are clamped
+//   inside the recording, so a range that runs off the end measures what is
+//   actually there rather than what was asked for.
+export const secondsBetweenFrames = (payload: ReplayPayload, from: number, to: number): number => {
+  const start = Math.max(0, Math.min(from, payload.frames.length));
+  const end = Math.max(start, Math.min(to, payload.frames.length));
+  let acc = 0;
+  for (let i = start; i < end; i++) acc += payload.frames[i][0];
+  return acc;
+};
+
 // ---------- (de)serialisation ----------
 
 export const encodeReplay = async (payload: ReplayPayload): Promise<Uint8Array> => {

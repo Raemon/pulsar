@@ -37,7 +37,7 @@ import {
   handleFuelOrbPickups,
   expireGem,
 } from "./collisions";
-import { requestStart, showTitle, togglePause, respawn, setFirstWaveHintStage, setFirstWaveHintSubVisible, emitFirstWaveHintProgress, emitFirstWaveHintRhythmProgress, emitTutorialHoverProgress, emitTutorialControls, emitGameState, finalizeRecorder, restartReplayWorld } from "./lifecycle";
+import { requestStart, showTitle, togglePause, respawn, setFirstWaveHintStage, setFirstWaveHintSubVisible, emitFirstWaveHintProgress, emitFirstWaveHintRhythmProgress, emitTutorialHoverProgress, emitTutorialControls, emitGameState, finalizeRecorder, restartReplayWorld, teardownReplay } from "./lifecycle";
 import { syncHud, syncPowerupHud, syncComboHud, syncFuelHud } from "./hud";
 import { renderKilledRow, stopParade } from "./killedParade";
 import { recordHighlightFrame } from "./highlightTimeline";
@@ -436,10 +436,11 @@ const transitionToGameOver = (game: Game) => {
     game.highlightClip = null;
     game.highlightLoop = null;
     document.getElementById("highlight-fade")?.classList.remove("fading");
-    game.replayPlayer = null;
-    game.replayLockedDims = null;
-    game.input = game.localInput;
-    game.resize();
+    // teardownReplay clears runSummary, and the snapshot below must keep
+    //   whatever the real run left there — see the ??= a few lines down.
+    const summary = game.runSummary;
+    teardownReplay(game);
+    game.runSummary = summary;
   }
   game.state = "gameover";
   // Snapshot the run summary BEFORE finalizeRecorder/highlight clip touch the

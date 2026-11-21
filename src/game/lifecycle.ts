@@ -188,6 +188,11 @@ export const resetTitleWorld = (game: Game) => {
   syncPowerupHud(game);
   game.waveTransitioning = false;
   game.waveTransition = null;
+  // A wave summary or announcement scheduled by the run — or by a reel clip's
+  //   catch-up — is keyed to a wall clock that no longer means anything here;
+  //   left alone it pops onto the title screen seconds later.
+  hideWaveSummary(game);
+  hideWaveAnnounce();
 };
 
 // carries the prior run's trophy lineup so a returning player still sees what they took down.
@@ -207,7 +212,6 @@ export const showTitle = (game: Game) => {
   resetTitleWorld(game);
   hideScoreEntry(game);
   showLeaderboard(game);
-  hideWaveSummary(game);
   setFirstWaveHintStage(game, 0);
   emitGameState(game);
   // Behind the overlay, the home screen plays other pilots' best rhythm chains.
@@ -227,15 +231,17 @@ export const showTitle = (game: Game) => {
 //   is never exercised during gameplay.
 export const requestStart = (game: Game) => {
   if (game.calibrating || game.calibrationIntro || game.introOverlayActive || game.startPending) return;
-  // The home screen's reel is holding the world (and the input swap) — hand both
-  //   back before the run spins up. startGame below rebuilds the world anyway.
-  stopTitleReel(game);
   game.startPending = true;
   // Await the context actually reaching "running" (resume now retries until it
   //   does) alongside the baked-mp3 cache, so the run never starts scheduling
   //   sounds into a still-suspended context — the cause of silent-until-reload.
   void Promise.all([game.sound.resume(), game.sound.bakedCacheReady()]).then(() => {
     game.startPending = false;
+    // The home screen's reel is holding the world (and the input swap) — hand
+    //   both back before the run spins up. Done here rather than before the
+    //   await so a resume that never settles leaves the backdrop running
+    //   instead of a dead title screen.
+    stopTitleReel(game);
     if (!hasCalibrated()) {
       startCalibrationIntro(game);
       return;
@@ -892,7 +898,6 @@ export const startTitleReelClip = (game: Game, player: ReplayPlayer): void => {
   seedReplayWorld(game, player, window.devicePixelRatio || 1);
   game.replaySpeed = 1;
   game.replayStepAccumulator = 0;
-  game.state = "replaying";
   emitGameState(game);
 };
 

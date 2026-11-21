@@ -1,12 +1,13 @@
 import type { Game } from "../Game";
 import { fetchReelCandidates, type HighscoreRow } from "./highscores";
 import { fetchReplay } from "./replayApi";
-import { decodeReplay, frameSecondsAfter, type ReplayPayload } from "./replayFormat";
+import { decodeReplay, frameSecondsAfter, secondsBetweenFrames, type ReplayPayload } from "./replayFormat";
 import { ReplayPlayer } from "./replayPlayer";
 import { pickLongestChain } from "./comboChains";
 import { requestStart, resetTitleWorld, startTitleReelClip, teardownReplay } from "./lifecycle";
 import { stepReplayFrame, spendReplayBudget } from "./gameUpdate";
 import { tickLeaderboardKeyRepeat } from "./scoreEntry";
+import { syncHud } from "./hud";
 
 // The home screen's highlight reel: other pilots' best rhythm chains playing
 //   behind the title, one clip at a time.
@@ -29,23 +30,32 @@ const MIN_COMBO = 12;
 //   so one marathon streak can't hold the screen, and so a chain that reads as
 //   a blip is skipped rather than shown as a flash.
 const CLIP_MAX_SECONDS = 20;
-const CLIP_MIN_SECONDS = 3.5;
+// Every clip costs a fade out, a catch-up seek and a fade in. A chain that can't
+//   fill more than this isn't worth that gap.
+const CLIP_MIN_SECONDS = 6;
 // Play on a little past the frame the streak broke, so the clip ends on the
 //   miss rather than cutting away mid-air.
 const CLIP_TAIL_SECONDS = 1.5;
 // Veil crossfade, matched by the #reel-veil CSS transition.
 const FADE_MS = 650;
-// Quiet beat on the plain title before the first clip, so the home screen
-//   introduces itself before gameplay arrives.
-const FIRST_CLIP_DELAY_MS = 2400;
+// Quiet beat on the plain title before the first clip, so a first-time visitor
+//   has read the title before the screen fades under them.
+const FIRST_CLIP_DELAY_MS = 4500;
 // Beat of plain title between clips when the next one isn't loaded yet.
 const IDLE_RETRY_MS = 1200;
-// Per-tick slice of the catch-up re-sim. Comfortably inside a 60fps frame
-//   budget alongside the title's own rendering.
-const SEEK_BUDGET_MS = 10;
+// Per-tick slice of the catch-up re-sim. Nothing but a static title is being
+//   rendered while this runs (the veil is opaque), so it can take most of a
+//   60fps frame: the gap between clips is dead screen, and shortening it is
+//   worth more than headroom nobody is using. Not the whole frame, though — the
+//   title's own animations still have to run.
+const SEEK_BUDGET_MS = 12;
 // How many recently-shown runs to keep off the wheel, so a small pool still
 //   feels like a rotation rather than a loop of one.
 const RECENT_MEMORY = 4;
+// Give up on a clip whose catch-up is taking too long (a chain very deep into a
+//   long run on a slow machine). The gap between clips is dead screen; past this
+//   the plain title is the better thing to be showing.
+const MAX_SEEK_MS = 6000;
 // Consecutive failed clip loads before the reel gives up for this visit. An
 //   empty board, an offline API or a pool of replays this build can't re-sim all
 //   land here, and the title screen is perfectly good without a backdrop.
@@ -70,7 +80,6 @@ type LoadedClip = {
   payload: ReplayPayload;
   start: number;
   end: number;
-  peak: number;
 };
 
 type TitleReel = {
@@ -79,6 +88,12 @@ type TitleReel = {
   until: number;
   clip: LoadedClip | null;
   next: LoadedClip | null;
+  // performance.now() at which the current catch-up seek began.
+  seekStartedAt: number;
+  // The HUD the title screen had before the reel borrowed the world. A clip
+  //   drives score/wave/lives from someone else's run, and those numbers must
+  //   not be what fades back in when the plain title returns.
+  hud: { score: number; wave: number; lives: number } | null;
   loading: boolean;
   candidates: HighscoreRow[] | null;
   recentIds: number[];
@@ -117,6 +132,19 @@ const captionEl = (): HTMLElement | null => document.getElementById("reel-captio
 
 const setVeilOpaque = (opaque: boolean) => veilEl()?.classList.toggle("opaque", opaque);
 
+// `reel-visible` is the backdrop's "gameplay is actually on screen" state: it
+//   re-balances the overlay for a moving background. It is NOT the inverse of
+//   the veil — the plain title between clips has neither the veil nor this —
+//   so the heavier plates never sit as boxes on the flat gap.
+const setClipOnScreen = (onScreen: boolean) =>
+  document.body.classList.toggle("reel-visible", onScreen);
+
+// The plain title: no shutter, no gameplay treatment.
+const clearReelBackdrop = () => {
+  setVeilOpaque(false);
+  setClipOnScreen(false);
+};
+
 // A clip is a backdrop, not a performance: it plays silent. The viewer's own
 //   setting is restored as soon as the clip is gone, so nothing else on the
 //   title screen (the beat calibrator, a future title theme) is left muted by it.
@@ -130,14 +158,17 @@ const setReelMuted = (game: Game, reel: TitleReel, muted: boolean) => {
 const captionPart = (cls: string): HTMLElement | null =>
   captionEl()?.querySelector(`.${cls}`) as HTMLElement | null;
 
-// Show (or hide) the credit under a clip: whose run it is, and how deep the
-//   chain it is climbing toward goes. The markup is React's (ui/TitleReel.tsx);
-//   this only fills it in.
-const showCaption = (name: string, combo: number, peak: number) => {
+// The live rhythm number is rewritten every frame of a clip; hold the node
+//   rather than walking the DOM for it 60 times a second. React owns the markup
+//   and never re-renders it, but re-resolve on each clip start anyway.
+let liveComboEl: HTMLElement | null = null;
+
+// Credit the run on screen. The markup is React's (ui/TitleReel.tsx); this only
+//   fills it in. The chain's peak is left out on purpose — see TitleReel.tsx.
+const showCaption = (name: string, combo: number) => {
   const pilot = captionPart("reel-caption-pilot");
-  const peakEl = captionPart("reel-caption-peak");
   if (pilot) pilot.textContent = name;
-  if (peakEl) peakEl.textContent = `peak ×${peak}`;
+  liveComboEl = captionPart("reel-caption-live");
   syncCaptionCombo(combo);
   captionEl()?.classList.add("visible");
 };
@@ -146,8 +177,13 @@ const hideCaption = () => captionEl()?.classList.remove("visible");
 
 // Per-frame update of the live rhythm number as the chain climbs.
 const syncCaptionCombo = (combo: number) => {
-  const live = captionPart("reel-caption-live");
-  if (live) live.textContent = `rhythm ×${combo}`;
+  if (liveComboEl) liveComboEl.textContent = `rhythm ×${combo}`;
+};
+
+// Runs recently shown — or recently tried and found unusable — go to the back of
+//   the queue, so a small pool still feels like a rotation rather than a loop.
+const rememberShown = (reel: TitleReel, id: number) => {
+  reel.recentIds = [...reel.recentIds.filter((n) => n !== id), id].slice(-RECENT_MEMORY);
 };
 
 // Weighted draw: a run's chance is its peak rhythm, so the deepest chains show
@@ -178,8 +214,11 @@ const clipFromPayload = (row: HighscoreRow, payload: ReplayPayload): LoadedClip 
   const capped = frameSecondsAfter(payload, start, CLIP_MAX_SECONDS);
   const end = Math.min(Math.max(tailEnd, 0), capped, total);
   if (end <= start) return null;
-  if (frameSecondsAfter(payload, start, CLIP_MIN_SECONDS) > end) return null;
-  return { row, payload, start, end, peak: chain.peak };
+  // Measured, not inferred: a chain that primes just before the recording ends
+  //   would otherwise pass a "does 6s of frames fit?" test by clamping to the
+  //   same last frame on both sides, and show as a flash between two fades.
+  if (secondsBetweenFrames(payload, start, end) < CLIP_MIN_SECONDS) return null;
+  return { row, payload, start, end };
 };
 
 // Fetch + decode + window one candidate into reel.next. One at a time: the
@@ -198,6 +237,10 @@ const loadNextClip = (game: Game) => {
       const row = sampleCandidate(reel);
       const clip = row ? clipFromPayload(row, await decodeReplay(await fetchReplay(row.id))) : null;
       if (!stillMine()) return;
+      // Either way this row has had its turn. A candidate the sampler likes (it
+      //   weights toward the deepest chains) but that yields no clip would
+      //   otherwise be drawn again immediately and stall the reel on its own.
+      if (row) rememberShown(reel, row.id);
       if (clip) {
         reel.next = clip;
         reel.failures = 0;
@@ -224,17 +267,33 @@ const loadNextClip = (game: Game) => {
 const prefersReducedMotion = (): boolean =>
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// A recording is a 16:9 world, letterboxed into whatever window is watching. On
+//   a portrait phone that leaves a band of gameplay a few hundred pixels tall
+//   between two black fields — a seam, not a backdrop — and it would re-simulate
+//   a whole run on a battery for it. Those visitors get the plain title.
+const MIN_REEL_ASPECT = 1.1;
+const viewportTooNarrow = (): boolean => {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  // Unknown dimensions (a headless harness, a stubbed window) are not narrow —
+  //   the reel's other guards cover those cases on their own.
+  if (!Number.isFinite(w) || !Number.isFinite(h) || h <= 0) return false;
+  return w / h < MIN_REEL_ASPECT;
+};
+
 // Begin the reel on the title screen. Safe to call repeatedly; the first call
 //   wins until stopTitleReel.
 export const startTitleReel = (game: Game) => {
   if (game.titleReel) return;
-  if (prefersReducedMotion()) return;
+  if (prefersReducedMotion() || viewportTooNarrow()) return;
   generationCounter += 1;
   game.titleReel = {
     phase: "idle",
     until: performance.now() + FIRST_CLIP_DELAY_MS,
     clip: null,
     next: null,
+    seekStartedAt: 0,
+    hud: null,
     loading: false,
     candidates: null,
     recentIds: [],
@@ -244,7 +303,7 @@ export const startTitleReel = (game: Game) => {
     stalled: false,
     generation: generationCounter,
   };
-  setVeilOpaque(false);
+  clearReelBackdrop();
   hideCaption();
   loadNextClip(game);
 };
@@ -258,19 +317,11 @@ export const stopTitleReel = (game: Game) => {
   // Invalidate in-flight loads before clearing, so a late resolve can't revive
   //   a dead reel.
   reel.generation = -1;
-  setReelMuted(game, reel, false);
-  game.titleReel = null;
-  setVeilOpaque(false);
-  hideCaption();
+  reel.clip = null;
   document.body.classList.remove("reel-active");
-  // A clip was holding the world: give the title its own back, so whatever
-  //   comes next (a run, a leaderboard replay, a modal over the title) starts
-  //   from the state the title screen normally has.
-  if (game.replayPlayer) {
-    teardownReplay(game);
-    resetTitleWorld(game);
-  }
-  game.state = "title";
+  returnToTitleWorld(game, reel);
+  syncHud(game);
+  game.titleReel = null;
 };
 
 // Hand the title screen's own keys back while a clip holds the "replaying"
@@ -283,8 +334,9 @@ const tickReelTitleInput = (game: Game, dt: number): boolean => {
     live.pressed("enter") || live.pressed("return") || live.pressed(" ") || live.pressed("spacebar");
   if (startPressed) {
     live.endFrame();
-    // requestStart stops the reel itself — it has to, before startGame rebuilds
-    //   the world out from under the clip.
+    // requestStart stops the reel itself, once the audio context is up and the
+    //   run is actually about to start — so the clip keeps playing through that
+    //   wait rather than cutting to a dead screen.
     requestStart(game);
     if (game.titleReel === null) return true;
   }
@@ -300,44 +352,85 @@ const tickReelTitleInput = (game: Game, dt: number): boolean => {
   return false;
 };
 
-// Put the plain title world back on screen between clips (no clip ready, or a
-//   load failed). showTitle is not reused here: it would re-render the whole
-//   overlay and re-fetch the leaderboard every cycle.
+// Hand the HUD back the numbers the title screen had before a clip drove them
+//   from a stranger's run — otherwise the board's top pilot's score and lives
+//   fade in over the home screen as if they were the viewer's.
+const restoreTitleHud = (game: Game, reel: TitleReel) => {
+  if (!reel.hud) return;
+  game.score = reel.hud.score;
+  game.wave = reel.hud.wave;
+  game.lives = reel.hud.lives;
+  reel.hud = null;
+  // The HUD stays hidden (body.reel-active) until the reel stops altogether, so
+  //   the numbers are not re-synced here — stopTitleReel does it, on the one
+  //   path where the HUD becomes visible again without a run resetting it.
+};
+
+// Put the plain title world back on screen: between clips (no clip ready, or a
+//   load failed), and as the last step of stopping the reel altogether. showTitle
+//   is not reused here — it would re-render the whole overlay and re-fetch the
+//   leaderboard every cycle.
 const returnToTitleWorld = (game: Game, reel: TitleReel) => {
   setReelMuted(game, reel, false);
   if (game.replayPlayer) teardownReplay(game);
   resetTitleWorld(game);
+  restoreTitleHud(game, reel);
   hideCaption();
-  document.body.classList.remove("reel-active");
-  setVeilOpaque(false);
+  clearReelBackdrop();
 };
 
 const beginClip = (game: Game, reel: TitleReel) => {
   const clip = reel.clip;
   if (!clip) return;
+  reel.hud ??= { score: game.score, wave: game.wave, lives: game.lives };
   const player = new ReplayPlayer(clip.payload);
   // A clip is a backdrop: a re-sim that drifts from the recording costs a less
   //   impressive chain, not a wrong result worth logging on every frame.
   player.logDivergences = false;
   startTitleReelClip(game, player);
   reel.phase = "seeking";
+  reel.seekStartedAt = performance.now();
+};
+
+// Give up on the clip being sought and go back to the plain title, with this run
+//   marked as tried so the next draw moves on.
+const abandonClip = (game: Game, reel: TitleReel) => {
+  if (reel.clip) rememberShown(reel, reel.clip.row.id);
+  reel.clip = null;
+  hideCaption();
+  returnToTitleWorld(game, reel);
+  reel.phase = "idle";
+  reel.until = performance.now() + IDLE_RETRY_MS;
 };
 
 // Step the re-sim toward the clip's first frame in one bounded slice. Returns
 //   true once the playhead has arrived (or the stream ran out).
+//
+//   replayFastForwarding is what tells the rest of the game that these frames
+//   are catch-up, not playback: without it the burst crosses wave boundaries and
+//   schedules wave summaries, wave announcements and pilot-log cues against a
+//   wall clock that has nothing to do with where the clip actually starts. The
+//   two pre-existing burst-seek paths (seekReplayToTarget, the rhythm
+//   precompute) bracket their loops the same way.
 const tickSeek = (game: Game, clip: LoadedClip): boolean => {
   const player = game.replayPlayer;
   if (!player) return true;
   const deadline = performance.now() + SEEK_BUDGET_MS;
-  while (player.position() < clip.start) {
-    if (!stepReplayFrame(game)) return true;
-    if (performance.now() >= deadline) return false;
+  game.replayFastForwarding = true;
+  try {
+    while (player.position() < clip.start) {
+      if (!stepReplayFrame(game)) return true;
+      if (performance.now() >= deadline) return false;
+    }
+    return true;
+  } finally {
+    game.replayFastForwarding = false;
   }
-  return true;
 };
 
 const endClip = (game: Game, reel: TitleReel) => {
   setVeilOpaque(true);
+  setClipOnScreen(false);
   hideCaption();
   reel.phase = "outro";
   reel.until = performance.now() + FADE_MS;
@@ -362,9 +455,9 @@ export const tickTitleReel = (game: Game, liveDt: number) => {
     reel.clip = reel.next;
     reel.next = null;
     setReelMuted(game, reel, true);
-    // Mark the body now, not when the clip appears: the run-facing chrome (HUD,
-    //   first-wave hints) fades out together with the backdrop instead of
-    //   popping away the moment gameplay arrives.
+    // Marked once, for the whole reel: the run-facing chrome (HUD, first-wave
+    //   hints) fades out with the first blackout and stays away until the reel
+    //   stops, instead of flashing a stranger's score between clips.
     document.body.classList.add("reel-active");
     setVeilOpaque(true);
     reel.phase = "blackout";
@@ -381,9 +474,15 @@ export const tickTitleReel = (game: Game, liveDt: number) => {
   if (reel.phase === "seeking") {
     const clip = reel.clip;
     if (!clip) { reel.phase = "idle"; reel.until = now; return; }
-    if (!tickSeek(game, clip)) return;
+    if (!tickSeek(game, clip)) {
+      // Taking too long to reach the chain: drop this one rather than hold the
+      //   home screen on a black frame while it catches up.
+      if (now - reel.seekStartedAt > MAX_SEEK_MS) abandonClip(game, reel);
+      return;
+    }
     reel.phase = "playing";
-    showCaption(clip.row.name, game.beatCombo, clip.peak);
+    showCaption(clip.row.name, game.beatCombo);
+    setClipOnScreen(true);
     setVeilOpaque(false);
     return;
   }
@@ -404,7 +503,7 @@ export const tickTitleReel = (game: Game, liveDt: number) => {
   //   back to the plain title world until one is.
   if (now < reel.until) return;
   if (reel.clip) {
-    reel.recentIds = [...reel.recentIds, reel.clip.row.id].slice(-RECENT_MEMORY);
+    rememberShown(reel, reel.clip.row.id);
     reel.clip = null;
   }
   if (reel.next) {

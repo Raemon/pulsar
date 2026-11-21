@@ -26,7 +26,7 @@ import type { Swallow, WarpedBody } from "./game/warpCannon";
 import type { WarpIn } from "./game/warpReturn";
 import type { InkPatch } from "./game/inkCloud";
 import type { SkipPortal, WaveSkipState } from "./game/waveSkip";
-import { isScrubbableReplay, isTitleScreen, type TitleReel } from "./game/titleReel";
+import { isScrubbableReplay, isTitleScreen, startTitleReel, type TitleReel } from "./game/titleReel";
 import { LaserBeam } from "./game/laserShot";
 import { BossBeam } from "./game/bossBeam";
 import { KilledSnapshot } from "./game/killSnapshot";
@@ -590,6 +590,9 @@ export class Game implements HudElements {
       if (this.calibrationIntro) finishCalibrationIntro(this);
       this.calibrating = false;
       if (origin === "settings") window.dispatchEvent(new CustomEvent("settings:open-request"));
+      // openBeatCalibrator stopped the reel so the taps could be heard; the
+      //   calibrator is done with the screen now.
+      if (this.state === "title") startTitleReel(this);
     });
     window.addEventListener("beat-calibrator:cancel", (e) => {
       const { origin } = (e as CustomEvent).detail ?? {};
@@ -602,6 +605,9 @@ export class Game implements HudElements {
       }
       this.calibrating = false;
       if (origin === "settings") window.dispatchEvent(new CustomEvent("settings:open-request"));
+      // As in beat-calibrator:done — the reel was stopped so the calibrator
+      //   could be heard, and the title screen is its own again.
+      if (this.state === "title") startTitleReel(this);
     });
     // Settings dialog's manual latency slider — applies live (and persists) so a
     //   nudge takes effect immediately, even mid-run.
@@ -638,18 +644,19 @@ export class Game implements HudElements {
     // Replay scrubber (React <ReplayScrubber>) → game. Speed 0 pauses playback;
     //   seek sets a target frame consumed on the next replay tick.
     window.addEventListener("replay:setSpeed", (e) => {
-      if (!this.replayPlayer || this.replayExporting) return;
+      if (!isScrubbableReplay(this) || this.replayExporting) return;
       this.replaySpeed = (e as CustomEvent).detail.speed as number;
     });
     window.addEventListener("replay:seek", (e) => {
-      if (!this.replayPlayer || this.replayExporting) return;
+      if (!isScrubbableReplay(this) || this.replayExporting) return;
       this.replaySeekTarget = (e as CustomEvent).detail.frame as number;
     });
     window.addEventListener("replay:togglePlay", () => {
-      if (!this.replayPlayer || this.replayExporting) return;
+      const player = this.replayPlayer;
+      if (!player || !isScrubbableReplay(this) || this.replayExporting) return;
       this.replaySpeed = this.replaySpeed > 0 ? 0 : 1;
       window.dispatchEvent(new CustomEvent("replay:progress", {
-        detail: { position: this.replayPlayer.position(), total: this.replayPlayer.total(), speed: this.replaySpeed },
+        detail: { position: player.position(), total: player.total(), speed: this.replaySpeed },
       }));
     });
     window.addEventListener("replay:exit", () => {

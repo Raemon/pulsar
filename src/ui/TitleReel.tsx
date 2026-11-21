@@ -6,17 +6,18 @@
 //   transparent while the clip plays, so the viewer only ever sees gameplay at
 //   its intended speed.
 //
-//   #reel-caption credits the run on screen and tracks the rhythm as it climbs,
-//   so the number in the corner explains the halo growing around the ship.
+//   #reel-caption frames the run on screen — what this is, whose it is, and the
+//   rhythm as it climbs, so the number in the corner explains the halo growing
+//   around the ship. The chain's eventual peak is deliberately absent: the climb
+//   is the whole point of the clip, and printing its destination up front throws
+//   away the only suspense it has.
 export const TitleReel = () => (
   <>
     <div id="reel-veil" />
     <div id="reel-caption">
+      <span className="reel-caption-eyebrow">Now replaying</span>
       <span className="reel-caption-pilot" />
-      <span className="reel-caption-rhythm">
-        <span className="reel-caption-live" />
-        <span className="reel-caption-peak" />
-      </span>
+      <span className="reel-caption-live" />
     </div>
   </>
 );

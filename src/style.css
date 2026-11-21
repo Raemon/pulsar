@@ -887,15 +887,17 @@ html:has(#sound-root), body:has(> #sound-root) {
 
 /* ── Title-screen highlight reel ────────────────────────────────────────────
    The reel plays other pilots' rhythm chains on the gameplay canvas, behind the
-   title. Three layers keep both halves readable: the veil (this file's shutter,
-   also the crossfade between clips), the overlay's own backdrop — pulled back
-   while a clip plays so gameplay isn't crushed to black — and a firmer plate
-   behind the leaderboard rows, which are the one piece of small text sitting
-   over moving asteroids. */
+   title. Two body states drive it: `reel-active` means the reel owns the screen
+   (including its black gaps), so the chrome that belongs to a run is put away;
+   `reel-visible` means a clip is actually on screen, and is what re-balances the
+   backdrop for gameplay. Keeping them apart matters — the heavier plates below
+   would otherwise sit as solid boxes on flat black during the gaps. */
 #reel-veil {
   position: fixed;
   inset: 0;
-  background: #02030a;
+  /* Not flat black: the gaps keep the title's own deep-space colour so a pause
+     between clips reads as space rather than as a dead screen. */
+  background: radial-gradient(ellipse at 50% 46%, #050c20 0%, #02050f 55%, #01020a 100%);
   opacity: 0;
   pointer-events: none;
   z-index: 2;
@@ -907,23 +909,30 @@ html:has(#sound-root), body:has(> #sound-root) {
 
 #reel-caption {
   position: fixed;
-  left: 32px;
+  left: 28px;
   bottom: 28px;
   z-index: 12;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   text-align: left;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.6s ease;
-  font-size: 11px;
-  letter-spacing: 0.22em;
   text-transform: uppercase;
   font-weight: 300;
 }
 
 #reel-caption.visible { opacity: 1; }
+
+/* Says what this is before it says whose it is — without it the corner is just
+   a stranger's name and a number. */
+.reel-caption-eyebrow {
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  color: #6ad7ff;
+  opacity: 0.45;
+}
 
 .reel-caption-pilot {
   color: #d8f3ff;
@@ -932,63 +941,29 @@ html:has(#sound-root), body:has(> #sound-root) {
   text-shadow: 0 0 14px rgba(76, 182, 255, 0.5);
 }
 
-.reel-caption-rhythm {
-  display: flex;
-  gap: 14px;
-  color: #6ad7ff;
-  opacity: 0.8;
+/* The number that explains the halo swelling around the ship, so it carries the
+   weight the board gives its own rhythm column rather than fading out. */
+.reel-caption-live {
+  color: #ffffff;
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 12px rgba(106, 215, 255, 0.55);
 }
 
-.reel-caption-peak { opacity: 0.55; }
-
-/* While a clip plays the backdrop has to do two jobs at once, so it splits in
-   two. The full-screen wash (::before) pulls back to a haze — enough to sit the
-   UI on, nowhere near the near-black it uses over an empty starfield — and a
-   soft vertical band (::after) darkens just the centre column the title, the
-   start button and the board live in. The result: gameplay reads at the edges,
-   text reads in the middle. */
-/* Gameplay is mostly thin glows on near-black; lifting the canvas a little
-   keeps the clip readable through the wash above it, and costs the UI nothing
-   (every bit of chrome is painted above the canvas, not on it). */
-body.reel-active #stage {
-  filter: brightness(1.35) saturate(1.08);
-}
-
-body.reel-active #overlay::before {
-  background: radial-gradient(ellipse at 50% 46%, rgba(0, 6, 18, 0.12) 0%, rgba(0, 2, 10, 0.4) 60%, rgba(0, 0, 5, 0.6) 100%);
-  backdrop-filter: blur(1.5px);
-}
-
-body.reel-active #overlay::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(
-    90deg,
-    rgba(1, 3, 10, 0) 0%,
-    rgba(1, 3, 10, 0.42) 26%,
-    rgba(1, 3, 10, 0.58) 50%,
-    rgba(1, 3, 10, 0.42) 74%,
-    rgba(1, 3, 10, 0) 100%
-  );
-  pointer-events: none;
-}
-
-body.reel-active #leaderboard-list li {
-  background: rgba(4, 9, 22, 0.78);
-  border-color: rgba(106, 215, 255, 0.18);
-  backdrop-filter: blur(4px);
-}
-
-body.reel-active #leaderboard-list li.lb-header {
-  background: transparent;
-  backdrop-filter: none;
+/* On a short window the caption would sit level with the board's last row and
+   read as one more entry. */
+@media (max-height: 800px) {
+  #reel-caption { bottom: 14px; }
 }
 
 /* The live HUD keeps reading the sim, which during a clip is someone else's
    run — hide it so the home screen never shows a score that isn't anyone's. */
-body.reel-active #hud { opacity: 0; }
+body.reel-active #hud {
+  opacity: 0;
+  /* The volume control inside it keeps pointer-events: auto, and an invisible
+     slider that silently does nothing is worse than no slider. */
+  pointer-events: none;
+}
 
 /* Same for the coaching UI the re-sim re-arms as it replays the pilot's first
    wave: the hints belong to whoever is holding the controls, and nobody is.
@@ -997,13 +972,73 @@ body.reel-active #hud { opacity: 0; }
 body.reel-active .first-wave-hint,
 body.reel-active .tutorial-controls-hint,
 body.reel-active #wave-announce,
-body.reel-active #wave-summary {
+body.reel-active #wave-summary,
+/* The pilot's-log unlock toast fires off the replayed pilot's combo, and it is
+   a full-screen announcement of a chapter the viewer has not unlocked. */
+body.reel-active #pilot-log-toast {
   display: none;
 }
 
+/* With a clip on screen the overlay's backdrop pulls back to a haze — it is
+   tuned for a near-empty starfield otherwise — and the surfaces that carry
+   small text, or that the eye goes looking for, firm up to compensate. The wash
+   stays even across the frame: the ship flies where it likes, and in this game
+   that is usually dead centre, right where the title column is. */
+body.reel-visible #overlay::before {
+  background: radial-gradient(ellipse at 50% 46%, rgba(0, 6, 18, 0.3) 0%, rgba(0, 2, 10, 0.46) 60%, rgba(0, 0, 5, 0.62) 100%);
+  backdrop-filter: blur(1.5px);
+}
+
+/* Gameplay is mostly thin glows on near-black; lifting the canvas a little
+   keeps the clip readable through the wash above it, and costs the UI nothing
+   (every bit of chrome is painted above the canvas, not on it). */
+body.reel-visible #stage {
+  filter: brightness(1.18) saturate(1.06);
+}
+
+/* The one call to action on the page, and the thing the ship drifts through:
+   on the plain title its near-transparent fill is enough, over gameplay it is
+   not. */
+body.reel-visible #overlay-start {
+  background: rgba(6, 14, 32, 0.72);
+  border-color: rgba(106, 215, 255, 0.6);
+  color: #eafaff;
+  backdrop-filter: blur(4px);
+}
+
+body.reel-visible #overlay p#overlay-subtitle {
+  text-shadow: 0 0 12px rgba(2, 6, 16, 0.95), 0 0 26px rgba(2, 6, 16, 0.8);
+}
+
+body.reel-visible #leaderboard-list li {
+  background: rgba(4, 9, 22, 0.78);
+  border-color: rgba(106, 215, 255, 0.18);
+  backdrop-filter: blur(4px);
+}
+
+/* The plate above is more specific than the header's own rule and than the
+   player's gold row, so both have to be restated or the header grows a box it
+   never has and the row a returning player is looking for loses its gold. */
+body.reel-visible #leaderboard-list li.lb-header {
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  opacity: 0.75;
+}
+
+body.reel-visible #leaderboard-list li.lb-self {
+  background: rgba(40, 32, 10, 0.72);
+  border-color: rgba(255, 216, 106, 0.6);
+}
+
+/* The backdrop layers ride the veil's own fade instead of snapping on at the
+   instant the class lands. The start button is left out on purpose: it owns a
+   0.15s hover transition that should stay quick. */
 #overlay::before,
+#leaderboard-list li,
+#stage,
 #hud {
-  transition: opacity 0.6s ease, background 0.6s ease;
+  transition: opacity 0.6s ease, background 0.6s ease, border-color 0.6s ease, filter 0.6s ease;
 }
 
 /* Highlight-clip loop mask. Transparent by default; .fading drives opacity to 1

@@ -57,11 +57,19 @@ export const chainsFromCheckpoints = (payload: ReplayPayload): ComboChain[] => {
   return chains;
 };
 
+// Two sampled hits in a row is the floor for calling something a chain at all —
+//   the same floor the live picker uses (highlightTimeline.pickHighlightChain).
+//   It matters here because the samples are a second apart: a run that qualified
+//   on its recorded max combo can still have every chain fall between samples.
+const MIN_SHOWABLE_PEAK = 2;
+
 // The chain to showcase: highest peak, ties broken toward the earliest (which
-//   is also the cheapest to seek to). Null when the replay never held a chain.
+//   is also the cheapest to seek to). Null when the replay never held a chain
+//   the samples can see.
 export const pickLongestChain = (payload: ReplayPayload): ComboChain | null => {
   let best: ComboChain | null = null;
   for (const chain of chainsFromCheckpoints(payload)) {
+    if (chain.peak < MIN_SHOWABLE_PEAK) continue;
     if (best === null || chain.peak > best.peak) best = chain;
   }
   return best;
