@@ -49,13 +49,10 @@ type Planet = {
   bossAct?: number;
 };
 
-// A moon of the Act II tomb. During Act II these are what the player watches
-// arrive: they start as a tight ring of specks around the tomb, and one by one
-// (at `departAt`, a point in the act's progress) they break orbit and take up a
-// slow pass through the near field — huge, dark, unlit shapes wheeling around
-// the ship, tolling on the beat they will hold in the fight. By the wave before
-// the boss all four are out there, and on the boss wave they stop being scenery
-// and start being Pallbearers.
+// A moon of the Act II tomb. Through Act II they ring the tomb in the sky,
+// resolving from barely-there specks into unmistakable bodies and tolling on the
+// beat they will hold in the fight. On the boss wave they stop being scenery and
+// start being Pallbearers.
 type TombSatellite = {
   // Slot on the ring around the tomb, and how fast that ring turns.
   baseAngle: number;
@@ -63,15 +60,6 @@ type TombSatellite = {
   // Ring radius and body size, both as fractions of the tomb's on-screen size.
   ringFrac: number;
   sizeFrac: number;
-  // Act II progress (0..1) at which this one breaks orbit for its near pass.
-  departAt: number;
-  // The near pass: heading and speed across the field, on-screen radius, and
-  // where on the field it starts from.
-  passHeading: number;
-  passSpeed: number;
-  passRadius: number;
-  passOriginX: number;
-  passOriginY: number;
   // Which beat of the measure this one tolls on — the same slot it will hold
   // as a Pallbearer, so the sky is already teaching the fight's rhythm.
   tollBeat: number;
@@ -469,9 +457,7 @@ export class Pulsar {
 
   // Build the tomb's moons. Cosmetic RNG for the same reason the ecliptic
   // stars use it: these are pure backdrop, and an extra gameplay draw here
-  // would desync every replay. Slots, toll beats and departure order all come
-  // off the index, so the moon that breaks orbit first is the one holding the
-  // first beat — the sky's arrival order is the fight's rhythm.
+  // would desync every replay. Slots and toll beats come off the index.
   private generateTombSatellites() {
     const cr = (min: number, max: number) => min + cosmeticRng() * (max - min);
     const count = ENTITY_CONFIG.sepulchre.bearerCount;
@@ -482,14 +468,6 @@ export class Pulsar {
         angularSpeed: cr(0.09, 0.15),
         ringFrac: cr(2.1, 2.7),
         sizeFrac: cr(0.17, 0.25),
-        // Evenly spaced through the act, so one arrives every couple of waves
-        // and all four are wheeling overhead by the wave before the fight.
-        departAt: (i + 1) / (count + 1),
-        passHeading: cr(0, TAU),
-        passSpeed: cr(7, 13),
-        passRadius: cr(110, 190),
-        passOriginX: cr(0, 1),
-        passOriginY: cr(0, 1),
         tollBeat: i,
       });
     }
@@ -508,7 +486,7 @@ export class Pulsar {
   // position: an ellipse on the tilted ecliptic, rolled around the pulsar
   // focal so it shares the camera rotation. `angle` already folds in the
   // body's own angularSpeed*driftT. Single source of truth for the render
-  // loop, the ecliptic stars, and bossPlanetPos() so the boss asteroid spawns
+  // loop, the ecliptic stars, and bossBodyView() so the boss asteroid spawns
   // exactly where the planet was drawn. The camera (focal + roll) is passed in
   // so callers compute it once per frame — cameraView() consumes the cosmetic
   // RNG during a shock vibration, so calling it once-per-body would jitter the
@@ -862,35 +840,30 @@ export class Pulsar {
       // pulsar focal so planet and starfield share the camera rotation.
       const angle = planet.baseAngle + this.driftT * planet.angularSpeed;
       const { x: px, y: py } = this.orbitPoint(angle, planet.baseRadiusFrac, approach, cam);
-      let size: number;
-      let colorApproach: number;
-      if (planet.bossAct !== undefined) {
-        // Progress through this body's own act, 0 at its first wave and 1 =
-        // full size on its boss wave. Eased with a power curve so it stays a small distant speck for
-        // many waves and only swells noticeably in the final stretch.
-        const fullness = actProgress(planet.bossAct, this.displayWaveLevel);
-        const easedFullness = Math.pow(fullness, 2.8);
-        size = planet.baseSize * (1 + easedFullness * planet.growthRate);
-        // Color stays pure black until the body is nearly full size, then the
-        // hue floods in over the final stretch so it "arrives" right as the
-        // thing finishes looming into the level.
-        colorApproach = approach * Math.max(0, (fullness - 0.82) / 0.18);
-      } else {
-        size = planet.baseSize * (1 + approach * planet.growthRate);
-        colorApproach = approach;
-      }
+      const size = this.planetSize(planet, approach);
+      // A boss body's colour stays pure black until it is nearly full size,
+      // then the hue floods in over the final stretch so it "arrives" right as
+      // the thing finishes looming into the level.
+      const colorApproach = planet.bossAct !== undefined
+        ? approach * Math.max(0, (actProgress(planet.bossAct, this.displayWaveLevel) - 0.82) / 0.18)
+        : approach;
 
       this.renderPlanet(ctx, planet, px, py, size, ppx, ppy, r, colorApproach, beat, flare);
       if (planet.bossAct === 2 && tombRingProgress > 0) this.renderTombRing(ctx, px, py, size, tombRingProgress);
     }
 
-    // The moons that have already broken orbit, drifting through the near
-    // field. Drawn after the planets — they are the closest thing in the sky,
-    // and by the end of Act II they are wheeling around the ship itself.
-    if (tombRingProgress > 0 && !this.hiddenBossActs.has(2)) this.renderNearSatellites(ctx, tombRingProgress);
-
     this.renderShockwave(ctx);
     this.renderSlowMoRipples(ctx);
+  }
+
+  // On-screen radius of a planet. A boss body swells on its own act's clock, 0
+  // at the act's first wave and full size on its boss wave, eased with a power
+  // curve so it stays a small distant speck for many waves and only swells
+  // noticeably in the final stretch.
+  private planetSize(planet: Planet, approach: number): number {
+    if (planet.bossAct === undefined) return planet.baseSize * (1 + approach * planet.growthRate);
+    const fullness = actProgress(planet.bossAct, this.displayWaveLevel);
+    return planet.baseSize * (1 + Math.pow(fullness, 2.8) * planet.growthRate);
   }
 
   // Draw a single background planet on top of the pulsar. The disc itself is
@@ -1314,14 +1287,7 @@ export class Pulsar {
     return Math.max(0, 1 - since / (BEAT_GRID * 0.9));
   }
 
-  // How present a moon is in each of its two lives. The sky ring fades a moon
-  // out over the last stretch before it departs and the near pass fades the
-  // same moon in just after, so a departure reads as one object moving from
-  // background to foreground rather than two objects blinking.
-  private static readonly SATELLITE_DEPART_FADE = 0.05;
-  private static readonly SATELLITE_ARRIVE_FADE = 0.08;
-
-  // The tomb's ring of moons, still in orbit. They ride the same tilted
+  // The tomb's ring of moons. They ride the same tilted
   // ecliptic the rest of the sky does, so the ring reads as a real orbit seen
   // edge-on-ish rather than a flat circle pasted over the planet.
   private renderTombRing(
@@ -1335,13 +1301,9 @@ export class Pulsar {
     const cosE = Math.cos(tilt);
     const sinE = Math.sin(tilt);
     for (const satellite of this.tombSatellites) {
-      const fadeStart = satellite.departAt - Pulsar.SATELLITE_DEPART_FADE;
-      if (progress >= satellite.departAt) continue;
-      const leaving = Math.max(0, (progress - fadeStart) / Pulsar.SATELLITE_DEPART_FADE);
       // The ring only resolves as the act runs on: at the top of Act II these
       // are barely-there specks, and they are unmistakable by the end.
-      const alpha = Math.min(1, 0.55 + progress * 0.6) * (1 - leaving);
-      if (alpha <= 0.01) continue;
+      const alpha = Math.min(1, 0.55 + progress * 0.6);
       const angle = satellite.baseAngle + this.driftT * satellite.angularSpeed;
       const u = Math.cos(angle) * size * satellite.ringFrac;
       const v = Math.sin(angle) * size * satellite.ringFrac * 0.45;
@@ -1350,32 +1312,6 @@ export class Pulsar {
         px + u * cosE - v * sinE,
         py + u * sinE + v * cosE,
         Math.max(1.5, size * satellite.sizeFrac),
-        alpha,
-        this.satelliteToll(satellite.tollBeat),
-      );
-    }
-  }
-
-  // Moons that have broken orbit and are making their slow pass through the
-  // near field. Position is integrated straight off driftT and wrapped around a
-  // margin past the screen, so each one crosses, leaves, and comes round again
-  // for as long as the act lasts — the player keeps finding one of them looming
-  // somewhere off the ship's shoulder.
-  private renderNearSatellites(ctx: CanvasRenderingContext2D, progress: number) {
-    for (const satellite of this.tombSatellites) {
-      if (progress < satellite.departAt) continue;
-      const alpha = Math.min(1, (progress - satellite.departAt) / Pulsar.SATELLITE_ARRIVE_FADE);
-      const margin = satellite.passRadius * 2;
-      const spanX = this.w + margin * 2;
-      const spanY = this.h + margin * 2;
-      const travelled = this.driftT * satellite.passSpeed;
-      const x0 = satellite.passOriginX * spanX + Math.cos(satellite.passHeading) * travelled;
-      const y0 = satellite.passOriginY * spanY + Math.sin(satellite.passHeading) * travelled;
-      this.paintSatellite(
-        ctx,
-        ((x0 % spanX) + spanX) % spanX - margin,
-        ((y0 % spanY) + spanY) % spanY - margin,
-        satellite.passRadius,
         alpha,
         this.satelliteToll(satellite.tollBeat),
       );
@@ -1458,20 +1394,19 @@ export class Pulsar {
     else if (state === "active" || state === "defeated") this.hiddenBossActs.add(act);
   }
 
-  // Current on-screen position of an act's boss body. Used by the wave director
-  // to spawn the fight where the looming thing was drifting, so the transition
-  // reads as the body itself solidifying into play rather than a fresh object
-  // teleporting in.
-  bossBodyPos(act: number): { x: number; y: number } {
+  // Where an act's boss body sits in the sky layer's own coordinates, and its
+  // drawn radius. Used to spawn the fight where the looming thing was drifting,
+  // at the size it was drawn, so the transition reads as the body itself
+  // solidifying into play rather than a fresh object teleporting in. The sky
+  // layer scrolls at its own parallax, so callers map this into world space
+  // with skyToWorld().
+  bossBodyView(act: number): { x: number; y: number; size: number } {
     const planet = this.planets.find((p) => p.bossAct === act) ?? this.planets[0];
-    // Same orbitPoint the planet render uses (shared tilted ecliptic + camera
-    // roll), so the boss asteroid spawns exactly where the player saw the planet.
+    const approach = this.approach();
+    // Same orbitPoint the planet render uses (shared tilted ecliptic + camera roll).
     const angle = planet.baseAngle + this.driftT * planet.angularSpeed;
-    return this.orbitPoint(angle, planet.baseRadiusFrac, this.approach(), this.cameraView());
-  }
-
-  bossPlanetPos(): { x: number; y: number } {
-    return this.bossBodyPos(1);
+    const { x, y } = this.orbitPoint(angle, planet.baseRadiusFrac, approach, this.cameraView());
+    return { x, y, size: this.planetSize(planet, approach) };
   }
 
   // Silhouette for a background planet: a smooth sphere with the faint

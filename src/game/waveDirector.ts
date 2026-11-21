@@ -17,6 +17,7 @@ import { citadelCycleLen, citadelFadeLen, superBassInterval } from "./bassClock"
 import { ENTITY_CONFIG as CFG } from "./entityConfig";
 import { BOSS_FORESHADOW_WAVES, BOSS_WAVES, actOfWave, bossEncounterForWave } from "./acts";
 import { spawnSepulchreEncounter } from "./sepulchre";
+import { bossBodyInWorld } from "./gameRender";
 
 // snap each fresh edge-spawn so its crossing of the player's natural
 // kill range lands on a beat. Boss is exempt — it has its own slow drift.
@@ -508,7 +509,7 @@ const SEPULCHRE_WAKE_FRAGMENTS = 4;
 const handleBossWave = (game: Game): boolean => {
   const encounter = bossEncounterForWave(game.wave);
   if (!encounter) return false;
-  const pos = game.pulsar.bossBodyPos(encounter.act);
+  const { pos, size } = bossBodyInWorld(game, encounter.act);
   game.pulsar.setBossPlanetState("active", encounter.act);
   if (encounter.kind === "sepulchre") {
     // The Sepulchre brings its own four voices (the bearers' knell), so the
@@ -524,7 +525,7 @@ const handleBossWave = (game: Game): boolean => {
     }
     return true;
   }
-  game.asteroids.push(spawnBossAt(pos, game.w, game.h));
+  game.asteroids.push(spawnBossAt(pos, game.w, game.h, size));
   // one of each Bassteroid joins the boss; shared claim set keeps them on
   // distinct beat slots.
   const claimed = newBeatClaimSet();
