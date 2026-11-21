@@ -319,6 +319,7 @@ const isOpen = (): boolean => !!panelEl && !panelEl.classList.contains("hidden")
 // so the run shows exactly what was chosen.
 const startBetaWave = (game: Game) => {
   game.sound.resume();
+  game.acquisitionRun = null;
   // Reset run state
   game.score = 0;
   game.wave = 1;

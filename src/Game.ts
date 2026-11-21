@@ -8,6 +8,7 @@ import { Pulsar } from "./Pulsar";
 import { Input, IInput } from "./Input";
 import { Sound } from "./Sound";
 import type { AudioChannel } from "./game/audioPrefs";
+import type { AcquisitionRun } from "./game/acquisitionEvents";
 import type { MusicLayer } from "./musicConfig";
 import type { HaloMusicVariation } from "./Sound";
 import { Canister } from "./Canister";
@@ -255,6 +256,7 @@ export class Game implements HudElements {
   lastBgBeatIndex = -1;
   nextBeatToEvaluate = 0;
   beatCombo = 0;
+  acquisitionRun: AcquisitionRun | null = null;
   // high-water mark of beatCombo during a run — submitted with the score so the leaderboard
   //   can showcase a pilot's best streak, separately from the final score.
   maxCombo = 0;

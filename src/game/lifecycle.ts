@@ -22,6 +22,7 @@ import { hideGameOverIntro, showGameOverIntro } from "./gameOverIntro";
 import { hasCalibrated, CALIBRATION_BEAT_INTENSITY, loadBeatOffset } from "./beatCalibration";
 import { pickIntroHints } from "./introHints";
 import { isNewDaySession, markSessionStart } from "./sessionTracker";
+import { startAcquisitionRun } from "./acquisitionEvents";
 import { rng, seedRng } from "./rng";
 import { ReplayRecorder } from "./replayRecorder";
 import { ReplayPlayer } from "./replayPlayer";
@@ -368,6 +369,9 @@ export const advanceIntroOverlay = (game: Game) => {
 export const unfreezeIntroWorld = (game: Game) => {
   if (!game.introOverlayActive) return;
   game.introOverlayActive = false;
+  // Both first-calibration and returning runs become playable here. Replay
+  // rebuilds skip the intro, and a cancelled calibration never reaches it.
+  if (!game.betaMode && !game.replayPlayer && !game.debugMode) game.acquisitionRun = startAcquisitionRun();
   game.beatIntensityRamp = null;
   game.sound.bgBeatIntensity = CALIBRATION_BEAT_INTENSITY;
   // Intro is fading out — kick off the deferred music preload now. The
@@ -535,6 +539,7 @@ export const startGame = (game: Game, overrides?: {
 
 // run-scoped state only; spawnWave handles per-wave timers separately.
 const resetRunTimers = (game: Game) => {
+  game.acquisitionRun = null;
   game.beatTime = 0;
   game.lastBeatResnapAt = game.beatTime;
   game.beatPhaseCorrection = 0;
@@ -693,6 +698,7 @@ export const finalizeRecorder = (game: Game): void => {
 export const abortMission = (game: Game) => {
   if (game.state !== "paused") return;
   game.state = "gameover";
+  game.acquisitionRun = null;
   finalizeRecorder(game);
   game.ship.thrustOn = false;
   game.ship.reverseThrustOn = false;

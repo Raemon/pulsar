@@ -23,6 +23,8 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      - name: Acquisition and expense tracking
+        run: npm run check:marketing
       - name: Sepulchre encounter timing
         run: node --import tsx --test scripts/check-sepulchre-timing.mjs
       - name: Closed-loop record then re-sim

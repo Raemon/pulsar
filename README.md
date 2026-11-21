@@ -109,6 +109,10 @@ A few principles the code keeps coming back to:
 - `src/glow.ts` — per-hue radial-gradient sprite cache used by particles, bullets, and canisters
 - `src/vec.ts` — vector math + random helpers
 
+## Acquisition measurement
+
+Campaign links, gameplay qualification, expense tracking, and the cost-per-qualified-player report are documented in [Measuring player acquisition](docs/marketing-measurement.md).
+
 ## Deploy
 
 This is a static Vite app, so it deploys to Vercel as-is — Vercel auto-detects the Vite framework, runs `npm run build`, and serves `dist/`. No `vercel.json` is required.

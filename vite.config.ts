@@ -192,6 +192,7 @@ const bakeDumpWriter = () => {
 const devApi = () => {
   type Handler = (req: any, res: any) => void | Promise<void>;
   const routes: Record<string, string> = {
+    "/api/acquisition": "/api/acquisition.ts",
     "/api/highscores": "/api/highscores.ts",
     "/api/replays": "/api/replays.ts",
     "/api/auth": "/api/auth.ts",

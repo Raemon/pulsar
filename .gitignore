@@ -9,5 +9,6 @@ tsconfig.tsbuildinfo
 .env.local
 .env.*.local
 .claude-memory
+.marketing-costs/
 .env*
 .marketing-costs
