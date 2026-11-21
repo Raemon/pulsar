@@ -7458,9 +7458,9 @@ export class Sound {
   }
 
   startWarpCharge(tier: number) {
-    if (!this.enabled) return;
+    if (!this.enabled || this.warpChargeNode) return;
     this.ensureContext();
-    if (!this.ctx || !this.master || this.warpChargeNode) return;
+    if (!this.ctx || !this.master) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const bus = ctx.createGain();

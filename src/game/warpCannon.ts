@@ -232,33 +232,34 @@ const mouthPop = (since: number): number => {
   return Math.sin(k * Math.PI) * (1 - k);
 };
 
-// Motes falling into the mouth along a tightening spiral.
+// Motes falling into the mouth along a tightening spiral. A mote's fall runs
+// k 0→1 from `reach` down to the lip, winding in faster as it nears.
 const paintInfall = (
   ctx: CanvasRenderingContext2D, x: number, y: number, mouth: number, charge: number, tSec: number, hue: number,
 ): void => {
   const reach = mouth * 2.6 + 34;
   const count = CHARGE_MOTES + charge * 6;
   const pull = CHARGE_PULL_SEC / (1 + 0.35 * charge);
+  const wind = 2.2 + 0.4 * charge;
+  ctx.strokeStyle = `hsl(${hue}, 90%, 80%)`;
+  ctx.lineWidth = 1;
   for (let i = 0; i < count; i++) {
     const seed = i * 2.399;
+    const at = (k: number) => {
+      const fall = k * k;
+      const r = mouth + (reach - mouth) * (1 - fall);
+      const a = seed + fall * wind + tSec * 0.7;
+      return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, fall };
+    };
     const k = (tSec / pull + i / count) % 1;
-    const fall = k * k;
-    const r = mouth + (reach - mouth) * (1 - fall);
-    const a = seed + fall * (2.2 + 0.4 * charge) + tSec * 0.7;
+    const head = at(k);
+    const tail = at(Math.max(0, k - 0.12));
     const alpha = Math.sin(k * Math.PI) * (0.35 + 0.12 * charge);
-    const px = x + Math.cos(a) * r;
-    const py = y + Math.sin(a) * r;
-    drawGlow(ctx, px, py, 3 + 2.5 * fall, hue, alpha);
-    // A short streak behind each mote, along its fall.
-    const back = 0.12;
-    const r0 = mouth + (reach - mouth) * (1 - Math.max(0, k - back) ** 2);
-    const a0 = seed + Math.max(0, k - back) ** 2 * (2.2 + 0.4 * charge) + tSec * 0.7;
+    drawGlow(ctx, head.x, head.y, 3 + 2.5 * head.fall, hue, alpha);
     ctx.globalAlpha = alpha * 0.6;
-    ctx.strokeStyle = `hsl(${hue}, 90%, 80%)`;
-    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(x + Math.cos(a0) * r0, y + Math.sin(a0) * r0);
-    ctx.lineTo(px, py);
+    ctx.moveTo(tail.x, tail.y);
+    ctx.lineTo(head.x, head.y);
     ctx.stroke();
   }
 };
