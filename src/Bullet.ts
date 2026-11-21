@@ -1,7 +1,7 @@
 import { Vec, wrapMut, TAU } from "./vec";
 import { drawGlow } from "./glow";
 import { tickWarpRipples, type WarpRipple } from "./game/warpCannon";
-import { warpPelletScale } from "./game/warpCharge";
+import { warpPelletRadius } from "./game/warpCharge";
 
 // Damage dealt by a non-rhythm bullet — enough to one-shot a small asteroid
 // but takes the full size table (4/2/1) of hits to chew through a large.
@@ -27,7 +27,7 @@ export const BOMB_DRAG = 2;
 // Reach of a bomb's blast, from the shell's centre to a target's surface. The
 // ring the shell paints is drawn at exactly this radius: anything the ring
 // touches on a beat is caught in the blast.
-export const BOMB_BLAST_RADIUS = 96;
+export const BOMB_BLAST_RADIUS = 125;
 // Seconds the beat-pulse ring takes to fade after flashing.
 const BOMB_PULSE_FADE_SEC = 0.3;
 
@@ -139,6 +139,9 @@ export class Bullet {
   // it fires, so it has no flight time and can never be a Far Shot
   // (rhythmBonus.beatsAwayAtHit).
   instantHit = false;
+  // A bomb blast's strike bullet (also instantHit), so its kills can sound like
+  // the bomb's rather than the laser's.
+  bombBlastStrike = false;
   // life-remaining threshold below which the bullet fades to 0 opacity. Set by
   // shipWeapons at fire-time to the gap between maxLife and the farthest beat
   // reticule, so the visible bullet dims out across the post-reticule tail
@@ -222,9 +225,9 @@ export class Bullet {
   // reticule, so the player's read of "I'm clearly inside the bullet" always
   // lands.
   hitRadius(): number {
+    if (this.warp) return warpPelletRadius(this.warpCharge);
     const glowVisibleRadius = this.effectiveRadius() * this.headGlowRadiusMul() * GLOW_VISIBLE_FRACTION;
-    const r = Math.max(glowVisibleRadius, this.coreDrawRadius());
-    return this.warp ? r * warpPelletScale(this.warpCharge) : r;
+    return Math.max(glowVisibleRadius, this.coreDrawRadius());
   }
 
   update(dt: number, w: number, h: number) {

@@ -1,4 +1,6 @@
 import type { Ship } from "../Ship";
+import type { AsteroidSize } from "../Asteroid";
+import { ENTITY_CONFIG } from "./entityConfig";
 import { BEAT_GRID, BEAT_WINDOW } from "./rhythmConstants";
 
 // The Warp Cannon's held charge, kept free of game imports so the ship, the
@@ -11,14 +13,19 @@ import { BEAT_GRID, BEAT_WINDOW } from "./rhythmConstants";
 // so the release is judged on-beat like any other volley (a tap: either edge).
 export const WARP_MAX_CHARGE = 3;
 
-// Pellet mouth (its hitbox) by tier, against a stock shot's hit radius: a tap
-// fires a teeny pellet, a full charge one about the size of a medium rock.
-// Even an on-beat pellet stays well inside the biggest rock its tier swallows
-// whole (warpCannon.warpBite), so it reads as a hole a body falls into, not a
-// lid over it.
-const PELLET_SCALE = [0.4, 0.65, 0.95, 1.35];
-export const warpPelletScale = (charge: number): number =>
-  PELLET_SCALE[Math.max(0, Math.min(WARP_MAX_CHARGE, charge))];
+// The rock each tier swallows whole: tier 0 a small, tier 1 a medium, and so on.
+export const WARP_SIZE_LADDER: ReadonlyArray<AsteroidSize> = ["small", "medium", "large", "huge"];
+
+// Pellet mouth (its hitbox) by tier: half the radius of the biggest rock that
+// tier swallows whole, so a pellet reads as a hole sized for its rock — a tap
+// fires a pellet for a small, a full charge one for a huge.
+const MOUTH_OF_ROCK = 0.5;
+export const warpPelletRadius = (charge: number): number =>
+  ENTITY_CONFIG.asteroid.radius[WARP_SIZE_LADDER[Math.max(0, Math.min(WARP_MAX_CHARGE, charge))]] * MOUTH_OF_ROCK;
+
+// Waves a swallowed body is away: one per tier, so a tap's catch is back next
+// wave and a full charge's four waves on.
+export const warpWavesAway = (charge: number): number => Math.max(0, Math.min(WARP_MAX_CHARGE, charge)) + 1;
 
 // Beats held so far, shifted a beat window early so a press on one beat and a
 // release on a later one counts every beat between, whichever side of the
@@ -35,6 +42,15 @@ export const warpChargeToNext = (ship: Ship, beatTime: number): number => {
   if (!ship.warpChargeActive || warpChargeAt(ship, beatTime) >= WARP_MAX_CHARGE) return 0;
   const held = Math.max(0, beatsHeld(ship, beatTime));
   return held - Math.floor(held);
+};
+
+// Seconds since the tier now held ticked in (since the press, for tier 0), for
+// the render's tier-up pop.
+export const warpSecondsSinceTierUp = (ship: Ship, beatTime: number): number => {
+  if (!ship.warpChargeActive) return Infinity;
+  const charge = warpChargeAt(ship, beatTime);
+  if (charge === 0) return Math.max(0, beatTime - ship.warpChargeStartBeatTime);
+  return Math.max(0, beatsHeld(ship, beatTime) - charge) * BEAT_GRID;
 };
 
 // A release this soon after the press is a tap: its rhythm is the press, so

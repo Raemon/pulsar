@@ -50,7 +50,7 @@ import { updateDriftBursts } from "./driftBurst";
 import { updateInkClouds } from "./inkCloud";
 import { resetStreak, streakWindowClosed } from "./streakBurst";
 import { updateWormholes, spawnWormhole, type Dive, type Wormhole } from "./wormhole";
-import { updateSwallows } from "./warpCannon";
+import { updateSwallows, tickWarpChargeSound } from "./warpCannon";
 import { warpVoiceKey, warpReleaseWasTap } from "./warpCharge";
 import { updateWarpIns, releaseWarpedBodies } from "./warpReturn";
 import { tickWaveSkip, collapseSkipPortals } from "./waveSkip";
@@ -874,6 +874,7 @@ const updatePlaying = (game: Game, dt: number) => {
   game.recorder?.captureShip(game.ship, game.input);
   game.replayPlayer?.checkShipAgainstRecording(game.ship);
   tickLaserShot(game, dt);
+  tickWarpChargeSound(game);
   tickSuperLaserFire(game);
   const rawMusicDt = tickSlowMoTimer(game, dt);
   // Resnap perturbs beatTime away from a pure dt-sum, two ways: a hard-snap jumps

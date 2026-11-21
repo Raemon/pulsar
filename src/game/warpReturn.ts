@@ -6,9 +6,10 @@ import { startAsteroidDrones } from "./killEffects";
 import { type Wormhole, spawnWormhole, wormholeEnterable } from "./wormhole";
 import { type WarpedBody, renderWarpedThroughPortal, returnVoiceKey } from "./warpCannon";
 
-// What a Warp Cannon shot swallows isn't destroyed — it's sent somewhere. Each
-// body falls through its portal (warpCannon.ts) into game.warpedOut, and comes
-// back at the start of the next wave: a portal tears open out towards the edge
+// What a Warp Cannon shot swallows isn't destroyed — it's sent forward in time.
+// Each body falls through its portal (warpCannon.ts) into game.warpedOut, and
+// comes back as the wave it's due on starts — the next one for a tap, a wave
+// further per charge tier: a portal tears open out towards the edge
 // of the screen (the camera rides the ship, so well clear of it), off to the side
 // of where the ship is heading, and the body climbs back out of it, drifting
 // away from the ship.
@@ -42,15 +43,16 @@ const MIN_SPEED = 25;
 const MAX_SPEED = 110;
 const HEADING_SPREAD = 0.7;
 
-// Called as the next wave spawns: queue every body swallowed since the last
-// return. Where each lands is picked when its portal opens (placeReturn).
+// Called as each wave spawns: queue every body due back by this wave (a wave
+// skip can jump past the one it was due on). Where each lands is picked when
+// its portal opens (placeReturn).
 export const releaseWarpedBodies = (game: Game): void => {
-  const out = game.warpedOut;
-  if (out.length === 0) return;
-  game.warpedOut = [];
+  const due = game.warpedOut.filter((w) => w.returnWave <= game.wave).map((w) => w.warped);
+  if (due.length === 0) return;
+  game.warpedOut = game.warpedOut.filter((w) => w.returnWave > game.wave);
   // A fall still in flight would keep writing the body's position down its dive.
-  game.swallows = game.swallows.filter((s) => !out.includes(s.warped));
-  out.forEach((warped, i) => {
+  game.swallows = game.swallows.filter((s) => !due.includes(s.warped));
+  due.forEach((warped, i) => {
     game.warpIns.push({ warped, delay: i * STAGGER_SEC, portal: null, t: 0 });
   });
 };
