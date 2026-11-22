@@ -26,7 +26,7 @@ import type { Swallow, WarpedOut } from "./game/warpCannon";
 import type { WarpIn } from "./game/warpReturn";
 import type { InkPatch } from "./game/inkCloud";
 import type { SkipPortal, WaveSkipState } from "./game/waveSkip";
-import { isScrubbableReplay, isTitleScreen, startTitleReel, type TitleReel } from "./game/titleReel";
+import { isScrubbableReplay, isTitleScreen, startTitleReel, titleReelStatus, type TitleReel } from "./game/titleReel";
 import { LaserBeam } from "./game/laserShot";
 import { BossBeam } from "./game/bossBeam";
 import { KilledSnapshot } from "./game/killSnapshot";
@@ -760,9 +760,10 @@ export class Game implements HudElements {
   // Groups keys by sound name with one row per group; trailing summary shows
   // overall loaded-vs-expected count so partial states are obvious at a glance.
   private renderDebugOverlay() {
+    const reel = titleReelStatus(this);
     const states = this.sound.bakedLoadStates;
     if (states.size === 0) {
-      this.debugOverlayEl.textContent = "audio cache: (waiting for first user gesture)";
+      this.debugOverlayEl.textContent = `${reel}\naudio cache: (waiting for first user gesture)`;
       return;
     }
     const groups = new Map<string, { loaded: number; fetching: number; queued: number; failed: number; total: number }>();
@@ -773,7 +774,7 @@ export class Game implements HudElements {
       g[state]++;
       groups.set(name, g);
     }
-    const lines: string[] = ["audio cache:"];
+    const lines: string[] = [reel, "audio cache:"];
     const sortedNames = Array.from(groups.keys()).sort();
     let totalLoaded = 0;
     let totalCount = 0;
