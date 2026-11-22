@@ -1,7 +1,7 @@
 import type { Game } from "../Game";
-import type { Vec } from "../vec";
 import { BEAT_GRID } from "./rhythmConstants";
-import { currentBeatPulse, currentBeatFlash, currentSecondsIntoBeat } from "./rhythmGate";
+import { currentBeatPulse, currentSecondsFromBeat, currentSecondsIntoBeat } from "./rhythmGate";
+import { paintBeatLight, setBeatLightClock } from "./beatLight";
 import { renderTrails } from "./trailsRender";
 import { renderPopups } from "./popups";
 import { renderBassLightnings } from "./bassLightning";
@@ -22,7 +22,6 @@ import { renderSlowMoTimerBar } from "./slowMoTimerBar";
 import { renderBonusLifeFlash } from "./bonusLife";
 import { updateSpectrumVisualizer, paintSpectrumVisualizer } from "./spectrumVisualizer";
 import { cosmeticRng } from "./rng";
-import { traceCitadelHolePath } from "../Asteroid";
 import { paintInkClouds, isPointInAnyInkPatch } from "./inkCloud";
 import { aimHintRender } from "./aimHint";
 import { PULSAR_PARALLAX } from "./camScroll";
@@ -90,34 +89,11 @@ const paintFocusGlow = (ctx: CanvasRenderingContext2D, t: ReticuleTarget) => {
   ctx.restore();
 };
 
-// On-beat brightening for every wave body. Same additive-disc trick as paintFocusGlow
-// (ctx.filter=brightness is a slow full-canvas pass — see that note), so the flash reads as
-// "this lit up" on top of the sprite without touching each entity's own draw pipeline.
-const BEAT_FLASH_RADIUS_MULT = 1.15;
-const BEAT_FLASH_ALPHA = 0.35;
-const paintBeatFlash = (
-  ctx: CanvasRenderingContext2D, pos: Vec, radius: number, flash: number,
-) => {
-  const r = Math.max(6, radius) * BEAT_FLASH_RADIUS_MULT;
-  const a = BEAT_FLASH_ALPHA * flash;
-  const g = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, r);
-  g.addColorStop(0, `rgba(255, 255, 255, ${a.toFixed(3)})`);
-  g.addColorStop(0.6, `rgba(255, 255, 255, ${(a * 0.4).toFixed(3)})`);
-  g.addColorStop(1, "rgba(255, 255, 255, 0)");
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-};
-
 // bodies must sit ON their own trails, so trails pass before any per-entity
 // render call. Each body draws ONCE — the scroll camera replicates the whole
 // layer at the wrap offsets, so a body near the seam is drawn whole by the
 // neighbouring copy. The pulsar renders separately via paintPulsarLayer.
-// Entering bodies are skipped here (in every loop, incl. beat-flash) — they
+// Entering bodies are skipped here (in every loop, incl. beat light) — they
 // draw once at their unfolded entrance image via paintEntrances instead.
 const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => {
   const { ctx } = game;
@@ -162,37 +138,23 @@ const paintEntityLayers = (game: Game, focusedTarget: ReticuleTarget | null) => 
   for (const b of game.bullets) b.render(ctx);
   renderWarpShots(ctx, game.bullets, game.time);
   renderLasers(ctx, game.lasers);
-  // every wave body brightens on the beat then tapers over ~100ms (paints over the sprites above).
-  const beatFlash = currentBeatFlash(game);
-  if (beatFlash > 0) {
-    // Intangible bodies skip the beat flash — a dormant boss is masquerading as
-    // the near-black background planet, and a phased-out warble/citadel is a
-    // faint ghost mid-plane-shift; a bright pulse on either breaks that read.
-    // Same set the reticule + rotated pass already exclude.
-    for (const a of game.asteroids) {
-      if (a.entering || a.isDormantSilhouette() || a.isPhasedOut()) continue;
-      if (a.kind === "citadel") {
-        // The flash disc is brightest dead-centre — clip the escape hole out
-        // so it stays bare space instead of pulsing with the shell.
-        ctx.save();
-        ctx.beginPath();
-        const clipR = a.radius * BEAT_FLASH_RADIUS_MULT + 4;
-        ctx.rect(a.pos.x - clipR, a.pos.y - clipR, clipR * 2, clipR * 2);
-        traceCitadelHolePath(ctx, a.pos, a.rotation);
-        ctx.clip("evenodd");
-        paintBeatFlash(ctx, a.pos, a.radius, beatFlash);
-        ctx.restore();
-      } else {
-        paintBeatFlash(ctx, a.pos, a.radius, beatFlash);
-      }
-    }
-    // warping-out aliens skip the beat-flash — a full-size flash disc would
-    // detach from the shrinking body diving down the portal throat.
-    for (const c of game.comets) if (!c.entering) paintBeatFlash(ctx, c.pos, c.radius, beatFlash);
-    for (const al of game.aliens) if (al.warpT === null && !al.entering) paintBeatFlash(ctx, al.pos, al.radius, beatFlash);
-    for (const c of game.canisters) paintBeatFlash(ctx, c.pos, c.radius, beatFlash);
-    for (const g of game.gems) if (!g.entering) paintBeatFlash(ctx, g.pos, g.radius, beatFlash);
+  // every wave body carries the beat as its own wave of light, painted over the sprites above.
+  // Intangible bodies sit it out — a dormant boss is masquerading as the near-black
+  // background planet, and a phased-out warble/citadel is a faint ghost mid-plane-shift;
+  // a bright pulse on either breaks that read. Same set the reticule + rotated pass
+  // already exclude. Warping-out aliens skip it too: the wave would detach from the
+  // body shrinking down the portal throat.
+  setBeatLightClock(currentSecondsFromBeat(game));
+  for (const a of game.asteroids) {
+    if (a.entering || a.isDormantSilhouette() || a.isPhasedOut()) continue;
+    paintBeatLight(ctx, a);
   }
+  for (const c of game.comets) if (!c.entering) paintBeatLight(ctx, c);
+  for (const al of game.aliens) if (al.warpT === null && !al.entering) paintBeatLight(ctx, al);
+  for (const c of game.canisters) paintBeatLight(ctx, c);
+  for (const g of game.gems) if (!g.entering) paintBeatLight(ctx, g);
+  for (const o of game.fuelOrbs) paintBeatLight(ctx, o);
+  for (const sh of game.shards) paintBeatLight(ctx, sh);
   // An entering focused target isn't drawn in this layer — its glow rides the
   // entrance image in paintEntrances instead, else a body-less glow cloud
   // appears at the folded pos.

@@ -48,19 +48,11 @@ export const currentSecondsIntoBeat = (game: Game): number | null => {
   return ((game.perceivedBeatTime % BEAT_GRID) + BEAT_GRID) % BEAT_GRID;
 };
 
-// every wave body flashes brighter the instant the beat lands, then tapers over ~100ms.
-//   Keyed to perceivedBeatTime so the flash peaks on the beat the player *hears*. Unlike
-//   currentBeatPulse this isn't gated to the judge window — it's pure decoration on each beat,
-//   so the taper is a fixed wall-clock 100ms rather than a fraction of the beat slot.
-const BEAT_FLASH_DECAY = 0.1;
-export const currentBeatFlash = (game: Game): number => {
-  if (game.state !== "playing" && game.state !== "dying") return 0;
-  const grid = BEAT_GRID;
-  const beatPhase = game.perceivedBeatTime / grid;
-  const secondsSinceBeat = (beatPhase - Math.floor(beatPhase)) * grid;
-  if (secondsSinceBeat >= BEAT_FLASH_DECAY) return 0;
-  const normalized = 1 - secondsSinceBeat / BEAT_FLASH_DECAY;
-  return normalized * normalized;
+// signed time from the nearest beat the player hears (negative before it), for visuals
+//   that build into the beat and fall away after it (beatLight.ts).
+export const currentSecondsFromBeat = (game: Game): number | null => {
+  if (game.state !== "playing" && game.state !== "dying") return null;
+  return beatOffsetFor(game, game.perceivedBeatTime);
 };
 
 // dev-only timing log, gated on DEBUG_BEAT_TIMING so it costs nothing in production.

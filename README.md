@@ -25,7 +25,7 @@ Alongside the game itself, the dev server serves a few authoring/inspection page
 
 | Path | What it's for |
 | --- | --- |
-| `/sprites` | Every drawable body in the game on one contact sheet, rendered live — zoom, tumble, collision-surface overlay, and a reroll to resample the seeded silhouettes. Loads no audio code at all, so it never starts a sound bake. |
+| `/sprites` | Every drawable body in the game on one contact sheet, rendered live — zoom, tumble, collision-surface overlay, and a reroll to resample the seeded silhouettes. Each body also plays its on-beat light wave on a fake beat clock; add `?tau=0` (seconds from the beat, negative = before) to freeze every cell at one instant. Loads no audio code at all, so it never starts a sound bake. |
 | `/sound` | Sound editor — tunes `public/sounds/config.json`. |
 | `/music` | Music editor. |
 | `/piano-roll` | Piano-roll view of the score. |
