@@ -23,12 +23,17 @@ const RECENT_ROWS_LIMIT = 50;
 //   replay and reached a real rhythm chain. Bounded so the client can weight the
 //   whole pool in one pass; ordered by rhythm so the window holds the runs worth
 //   showing rather than the newest ones. The floor is coarse on purpose — the
-//   reel's real threshold lives with the reel (src/game/titleReel.ts), which
-//   also drops the replays this build can't re-sim, since only the client knows
-//   its own format version. Taking either as a query parameter would make this
-//   a client-keyed cache over a scan.
+//   reel's real threshold lives with the reel (src/game/titleReel.ts).
+//
+//   The window is per replay format, which the client names (?v=): a build can
+//   only re-sim its own format, and the board is mostly older ones. A window
+//   over every format fills with the board's all-time best rhythm, which is
+//   never the current format's, and the client is left with nothing to play.
 const REEL_ROWS_LIMIT = 60;
 const REEL_MIN_COMBO = 12;
+// Formats whose window is held in memory. Two builds are live at a time (main
+//   and dev); the bound is there so a caller can't grow the cache by counting.
+const REEL_CACHE_MAX_VERSIONS = 4;
 
 type KillSummary = Record<string, number>;
 
@@ -171,7 +176,7 @@ const CACHE_TTL_MS = 60_000;
 let topPilotsCache: CacheEntry<RowOut[]> | null = null;
 let topRowsCache: CacheEntry<RowOut[]> | null = null;
 let recentRowsCache: CacheEntry<RowOut[]> | null = null;
-let reelRowsCache: CacheEntry<RowOut[]> | null = null;
+const reelRowsCache = new Map<number, CacheEntry<RowOut[]>>();
 
 const readCache = <T>(entry: CacheEntry<T> | null): T | null => {
   if (!entry) return null;
@@ -183,7 +188,7 @@ const invalidateCaches = () => {
   topPilotsCache = null;
   topRowsCache = null;
   recentRowsCache = null;
-  reelRowsCache = null;
+  reelRowsCache.clear();
 };
 
 // Leaderboard reads skip the heavy replay_data column and instead return a
@@ -288,25 +293,31 @@ const fetchRecentRows = async (): Promise<RowOut[]> => {
   return mapped;
 };
 
-// Highlight-reel pool: runs that carry a replay this client can actually re-sim
-//   (exact format version) and that reached `minCombo`, best rhythm first. The
-//   replay bytes themselves stay behind /api/replays?id=N — this is just the
-//   menu the title screen samples from.
-const fetchReelRows = async (): Promise<RowOut[]> => {
-  const cached = readCache(reelRowsCache);
+// Highlight-reel pool: runs that carry a replay in the caller's format (the only
+//   one its build can re-sim) and that reached the rhythm floor, best rhythm
+//   first. The replay bytes themselves stay behind /api/replays?id=N — this is
+//   just the menu the title screen samples from.
+const fetchReelRows = async (version: number): Promise<RowOut[]> => {
+  const cached = readCache(reelRowsCache.get(version) ?? null);
   if (cached) return cached;
   const rows = await prisma.highscore.findMany({
-    where: { maxCombo: { gte: REEL_MIN_COMBO }, NOT: { replayData: null } },
+    where: { replayVersion: version, maxCombo: { gte: REEL_MIN_COMBO }, NOT: { replayData: null } },
     orderBy: [{ maxCombo: "desc" }, { score: "desc" }],
     take: REEL_ROWS_LIMIT,
     select: LEADERBOARD_COLUMNS,
   });
   // Every row in this query already has replay bytes, so the flag is known true
   //   without the extra lookup withFreshReplayFlags does for the board views —
-  //   here the filter *is* the flag. replay_version rides along so the client
-  //   can drop what its own build can't re-sim.
+  //   here the filter *is* the flag.
   const mapped = withHasReplay(rows, new Set(rows.map((r) => r.id)));
-  reelRowsCache = { value: mapped, expires: Date.now() + CACHE_TTL_MS };
+  // Re-inserting moves the format to the back of the Map's iteration order, so
+  //   the one dropped below is the one that has gone longest without a refresh.
+  reelRowsCache.delete(version);
+  reelRowsCache.set(version, { value: mapped, expires: Date.now() + CACHE_TTL_MS });
+  for (const stale of reelRowsCache.keys()) {
+    if (reelRowsCache.size <= REEL_CACHE_MAX_VERSIONS) break;
+    reelRowsCache.delete(stale);
+  }
   return mapped;
 };
 
@@ -462,8 +473,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (mode === "reel") {
+      const versionRaw = req.query.v;
+      const version = sanitizeInt(Array.isArray(versionRaw) ? versionRaw[0] : versionRaw, 1, 2_147_483_647);
+      if (version === null) {
+        res.status(400).json({ error: "v must be a replay format version" });
+        return;
+      }
       try {
-        const rows = await fetchReelRows();
+        const rows = await fetchReelRows(version);
         setEdgeCache(res);
         res.status(200).json({ scores: rows });
       } catch (err) {

@@ -29,7 +29,12 @@ const MIN_COMBO = 12;
 // Clip windowing. The chain's own span decides the length; these only bound it
 //   so one marathon streak can't hold the screen, and so a chain that reads as
 //   a blip is skipped rather than shown as a flash.
-const CLIP_MAX_SECONDS = 20;
+//
+//   The ceiling is a backstop, not a pacing knob. Rhythm climbs a point every
+//   few seconds, so the chains that qualify for the reel take a minute or two
+//   to reach their peak: a ceiling shorter than that cuts every clip partway
+//   up, before the rhythm that earned it a place here is ever on screen.
+const CLIP_MAX_SECONDS = 180;
 // Every clip costs a fade out, a catch-up seek and a fade in, so a clip should
 //   be worth that gap. A brisk climb to 12 can take only four or five seconds,
 //   though — rather than refuse those, the window opens earlier and shows the
@@ -54,17 +59,21 @@ const IDLE_RETRY_MS = 1200;
 //   worth more than headroom nobody is using. Not the whole frame, though — the
 //   title's own animations still have to run.
 const SEEK_BUDGET_MS = 12;
-// How many recently-shown runs to keep off the wheel, so a small pool still
-//   feels like a rotation rather than a loop of one.
+// How many recently-shown runs to keep off the wheel, so the same few don't
+//   come straight back round.
 const RECENT_MEMORY = 4;
 // Give up on a clip whose catch-up is taking too long (a chain very deep into a
 //   long run on a slow machine). The gap between clips is dead screen — but a
 //   gap that ends in a clip beats one that ends in nothing, so this is generous:
 //   it is a backstop against a seek that will never arrive, not a pacing knob.
 const MAX_SEEK_MS = 12000;
-// Consecutive failed clip loads before the reel gives up for this visit. An
-//   empty board, an offline API or a pool of replays this build can't re-sim all
-//   land here, and the title screen is perfectly good without a backdrop.
+// The most one tick can add to that. A slow machine's ticks are well under
+//   this and count in full; a gap longer than it means frames had stopped (a
+//   hidden tab, a sleeping laptop), and the run is not to blame for that.
+const SEEK_TICK_CAP_MS = 1000;
+// Consecutive failed clip loads before the reel gives up for this visit: an
+//   offline API, or replays that won't fetch or decode. The title screen is
+//   perfectly good without a backdrop.
 const MAX_LOAD_FAILURES = 3;
 
 type Phase =
@@ -94,8 +103,12 @@ type TitleReel = {
   until: number;
   clip: LoadedClip | null;
   next: LoadedClip | null;
-  // performance.now() at which the current catch-up seek began.
-  seekStartedAt: number;
+  // How long the current catch-up seek has had, and when it last ticked. Summed
+  //   tick to tick rather than read off the clock as one span: frames stop
+  //   while the tab is hidden and the clock does not, and time the seek never
+  //   had is not time it took.
+  seekMs: number;
+  seekTickedAt: number;
   // The HUD the title screen had before the reel borrowed the world. A clip
   //   drives score/wave/lives from someone else's run, and those numbers must
   //   not be what fades back in when the plain title returns.
@@ -103,10 +116,11 @@ type TitleReel = {
   loading: boolean;
   candidates: HighscoreRow[] | null;
   recentIds: number[];
-  // Runs whose replay carried no chain worth cutting. Unlike recentIds these are
-  //   out for the visit: nothing about them will change, and re-drawing them
-  //   (the sampler favours exactly these — they're the deepest runs) would stall
-  //   the reel on the same handful of rows.
+  // Runs that can't be shown: no chain worth cutting, or a chain too deep into
+  //   the run for this machine to catch up to in time. Unlike recentIds these
+  //   are out for the visit: a second attempt would end the same way, and
+  //   re-drawing them (the sampler favours exactly these — they're the deepest
+  //   runs) would stall the reel on the same handful of rows.
   unusableIds: number[];
   // Clips play silent; the viewer's own audio setting is held here and handed
   //   back the moment the plain title world returns (or the reel stops), so the
@@ -114,7 +128,8 @@ type TitleReel = {
   muted: boolean;
   soundWasEnabled: boolean;
   failures: number;
-  // Set once the reel has given up (no replays to show, or the API is down):
+  // Set once the reel has given up (no run left that it can show, or the API
+  //   is down):
   //   the state stays so the title screen keeps reporting itself as the title,
   //   but nothing more is fetched.
   stalled: boolean;
@@ -191,19 +206,28 @@ const syncCaptionCombo = (combo: number) => {
   if (liveComboEl) liveComboEl.textContent = `rhythm ×${combo}`;
 };
 
-// Runs recently shown — or recently tried and found unusable — go to the back of
-//   the queue, so a small pool still feels like a rotation rather than a loop.
+// Runs recently shown go to the back of the queue. Called as a clip is lined
+//   up, which keeps recentIds in play order: oldest first, the clip on screen
+//   (or about to be) last.
 const rememberShown = (reel: TitleReel, id: number) => {
   reel.recentIds = [...reel.recentIds.filter((n) => n !== id), id].slice(-RECENT_MEMORY);
 };
 
+const retireRun = (reel: TitleReel, id: number) => {
+  reel.unusableIds = [...reel.unusableIds, id];
+  reel.recentIds = reel.recentIds.filter((n) => n !== id);
+};
+
 // Weighted draw: a run's chance is its peak rhythm, so the deepest chains show
 //   up most without the shallower ones ever being locked out. Runs shown in the
-//   last few clips are skipped unless the pool is too small to afford it.
+//   last few clips are skipped — but never more than half the pool, so a small
+//   one is still a weighted draw rather than a fixed order, and any pool of two
+//   or more keeps the clip on screen from being drawn straight after itself.
 const sampleCandidate = (reel: TitleReel): HighscoreRow | null => {
   const usable = (reel.candidates ?? []).filter((r) => !reel.unusableIds.includes(r.id));
-  const fresh = usable.filter((r) => !reel.recentIds.includes(r.id));
-  const rows = fresh.length > 0 ? fresh : usable;
+  const held = Math.min(RECENT_MEMORY, Math.floor(usable.length / 2));
+  const recent = held > 0 ? reel.recentIds.slice(-held) : [];
+  const rows = usable.filter((r) => !recent.includes(r.id));
   if (rows.length === 0) return null;
   let total = 0;
   for (const row of rows) total += Math.max(1, row.max_combo);
@@ -284,8 +308,9 @@ const loadNextClip = (game: Game) => {
       }
       const row = sampleCandidate(reel);
       if (!row) {
-        // Nothing left to draw: every candidate has been tried and none of them
-        //   yields a clip. (An empty board already said so above.)
+        // Nothing left to draw: every candidate has been tried, and each either
+        //   had no chain to cut or could not be caught up to. (An empty board
+        //   already said so above.)
         reel.stalled = true;
         if (reel.candidates.length > 0) reelNote("every run on the board has been tried — stopping.");
         return;
@@ -293,7 +318,7 @@ const loadNextClip = (game: Game) => {
       const clip = clipFromPayload(row, await decodeReplay(await fetchReplay(row.id)));
       if (!stillMine()) return;
       if (!clip) {
-        reel.unusableIds = [...reel.unusableIds, row.id];
+        retireRun(reel, row.id);
         reelNote(`${row.name}'s run (#${row.id}) has no chain to cut — skipping it.`);
         return;
       }
@@ -337,6 +362,14 @@ const viewportTooNarrow = (): boolean => {
   return w / h < MIN_REEL_ASPECT;
 };
 
+// Hand the run-facing chrome back: the body class is what hides it, and the HUD
+//   under it has to read the title's own numbers again before it shows.
+const releaseRunChrome = (game: Game) => {
+  if (!document.body.classList.contains("reel-active")) return;
+  document.body.classList.remove("reel-active");
+  syncHud(game);
+};
+
 // Begin the reel on the title screen. Safe to call repeatedly; the first call
 //   wins until stopTitleReel.
 export const startTitleReel = (game: Game) => {
@@ -350,7 +383,8 @@ export const startTitleReel = (game: Game) => {
     until: performance.now() + FIRST_CLIP_DELAY_MS,
     clip: null,
     next: null,
-    seekStartedAt: 0,
+    seekMs: 0,
+    seekTickedAt: 0,
     hud: null,
     loading: false,
     candidates: null,
@@ -377,9 +411,8 @@ export const stopTitleReel = (game: Game) => {
   //   a dead reel.
   reel.generation = -1;
   reel.clip = null;
-  document.body.classList.remove("reel-active");
   returnToTitleWorld(game, reel);
-  syncHud(game);
+  releaseRunChrome(game);
   game.titleReel = null;
 };
 
@@ -448,18 +481,21 @@ const beginClip = (game: Game, reel: TitleReel) => {
   player.logDivergences = false;
   startTitleReelClip(game, player);
   reel.phase = "seeking";
-  reel.seekStartedAt = performance.now();
+  reel.seekMs = 0;
+  reel.seekTickedAt = performance.now();
 };
 
-// Give up on the clip being sought and go back to the plain title, with this run
-//   marked as tried so the next draw moves on.
+// Give up on the clip being sought and go back to the plain title. The run is
+//   retired rather than sent to the back of the queue: its chain is no nearer
+//   next time, and in a pool small enough to come straight back round to it the
+//   home screen would spend the visit going dark for a clip that never arrives.
 const abandonClip = (game: Game, reel: TitleReel) => {
   if (reel.clip) {
     reelNote(
       `${reel.clip.row.name}'s run (#${reel.clip.row.id}) is taking too long to catch up to ` +
       `(frame ${reel.clip.start}) — skipping it.`,
     );
-    rememberShown(reel, reel.clip.row.id);
+    retireRun(reel, reel.clip.row.id);
   }
   reel.clip = null;
   hideCaption();
@@ -514,7 +550,10 @@ export const tickTitleReel = (game: Game, liveDt: number) => {
   const now = performance.now();
 
   if (reel.phase === "idle") {
-    if (reel.stalled) return;
+    // Nothing more is coming, so the plain title is the whole screen from here:
+    //   it gets its HUD back rather than keeping it hidden for clips that won't
+    //   arrive.
+    if (reel.stalled) { releaseRunChrome(game); return; }
     if (!reel.next) loadNextClip(game);
     if (now < reel.until || !reel.next) return;
     reel.clip = reel.next;
@@ -542,7 +581,9 @@ export const tickTitleReel = (game: Game, liveDt: number) => {
     if (!tickSeek(game, clip)) {
       // Taking too long to reach the chain: drop this one rather than hold the
       //   home screen on a black frame while it catches up.
-      if (now - reel.seekStartedAt > MAX_SEEK_MS) abandonClip(game, reel);
+      reel.seekMs += Math.min(now - reel.seekTickedAt, SEEK_TICK_CAP_MS);
+      reel.seekTickedAt = now;
+      if (reel.seekMs > MAX_SEEK_MS) abandonClip(game, reel);
       return;
     }
     reel.phase = "playing";
@@ -567,10 +608,7 @@ export const tickTitleReel = (game: Game, liveDt: number) => {
   // "outro": black again — straight into the next clip if it's ready, otherwise
   //   back to the plain title world until one is.
   if (now < reel.until) return;
-  if (reel.clip) {
-    rememberShown(reel, reel.clip.row.id);
-    reel.clip = null;
-  }
+  reel.clip = null;
   if (reel.next) {
     reel.clip = reel.next;
     reel.next = null;

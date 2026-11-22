@@ -977,10 +977,7 @@ body.reel-active #hud-right {
 body.reel-active .first-wave-hint,
 body.reel-active .tutorial-controls-hint,
 body.reel-active #wave-announce,
-body.reel-active #wave-summary,
-/* The pilot's-log unlock toast fires off the replayed pilot's combo, and it is
-   a full-screen announcement of a chapter the viewer has not unlocked. */
-body.reel-active #pilot-log-toast {
+body.reel-active #wave-summary {
   display: none;
 }
 

@@ -69,7 +69,11 @@ export const tryUnlockPilotLog1 = (game: Game) => {
   if (game.pilotLog1Unlocked) return;
   if (game.beatCombo < 6) return;
   game.pilotLog1Unlocked = true;
-  showUnlockToast("Chapter 1: The Outer Rim");
+  // A title-reel clip is someone else's run playing behind the home screen. The
+  //   vocal below still has to be drawn (it advances the audio-pick stream the
+  //   re-sim depends on), but the chapter title is an announcement to whoever is
+  //   flying, and it would outlive the clip onto the viewer's own run.
+  if (game.titleReel === null) showUnlockToast("Chapter 1: The Outer Rim");
   // Toast still fires every run — only the vocal is rationed to once a session.
   playLogVocal(game, 6);
 };
