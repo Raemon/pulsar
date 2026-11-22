@@ -1,5 +1,51 @@
 [
   {
+    "id": "2026-11-22-4cb1370",
+    "date": "2026-11-22",
+    "title": "Title reel, beat light waves, and beat cube visual overhaul",
+    "sections": [
+      {
+        "heading": "New",
+        "items": [
+          "The title screen now plays a highlight reel of real rhythm chains from other pilots' runs as a live backdrop.",
+          "Every object on the field now pulses with its own unique wave of light on each beat — rocks ripple, crystals glint, bassteroids scan, comets flare, and more — instead of a generic white flash.",
+          "The ship's outline now shows a count-in: twin sparks run from stern to nose in the half-second before each beat.",
+          "The reticule flashes bright white on the beat so the rhythm moment has a clear visual anchor.",
+          "On the beat, the whole ship brightens with a hull flash and bloom."
+        ]
+      },
+      {
+        "heading": "Changed",
+        "items": [
+          "The beat cube now cracks open on the beat to reveal a ruby interior, and its broken pieces are ruby instead of smaller blue cubes; a ruby piece cracks open onto a molten gold core.",
+          "The debug overlay (backtick) stays visible while the title reel runs and now shows reel status."
+        ]
+      }
+    ],
+    "commits": [
+      "4cb1370",
+      "8b241e5",
+      "c02ee5a",
+      "e0fc15d",
+      "654d9d1",
+      "46c4dfc",
+      "88d7356",
+      "fb8da18",
+      "51bed6b",
+      "e964a02",
+      "bd69e8d",
+      "5ab453d",
+      "ccb5474",
+      "d577807",
+      "c8341b7",
+      "ce32885",
+      "dbac09b",
+      "c0d35c7",
+      "d153efe",
+      "aad84c8"
+    ]
+  },
+  {
     "id": "2026-11-21-2c412f9",
     "date": "2026-11-21",
     "title": "Boss rises from its planet, Bomb and Warp polish",
@@ -1529,61 +1575,6 @@
       "cadccc5",
       "98e9a84",
       "7b59153"
-    ]
-  },
-  {
-    "id": "2026-06-05-68798ab",
-    "date": "2026-06-05",
-    "title": "Replay fidelity improvements",
-    "sections": [
-      {
-        "heading": "Fixed",
-        "items": [
-          "Replays now correctly reproduce wave 1 layout when the tutorial or veteran pilot setting differs between the recorder and the viewer.",
-          "Replays now use the original player's control bindings, so recorded inputs map to the correct actions even if the viewer has rebound their keys.",
-          "Returning to the title screen after watching a replay no longer leaves the viewer stuck with the recorded pilot's key bindings."
-        ]
-      }
-    ],
-    "commits": [
-      "68798ab"
-    ]
-  },
-  {
-    "id": "2026-06-05-ea1fbce",
-    "date": "2026-06-05",
-    "title": "Improved visuals, audio, and enemy behavior",
-    "sections": [
-      {
-        "heading": "New",
-        "items": [
-          "Drift bonus popup now shows a '2× DAMAGE' subtitle the first time you pull off a Drift Shot in a run.",
-          "The starfield and background planets now share a coherent camera with subtle parallax and a slow roll as you progress.",
-          "The boss planetoid is now visually distinct with an oblong silhouette and updated eclipse corona effects.",
-          "Updated in-game music tracks with new orchestral cello and choir layers for later rounds."
-        ]
-      },
-      {
-        "heading": "Fixed",
-        "items": [
-          "Alien saucers now reliably cross the screen instead of clipping a corner and exiting from the same edge they entered."
-        ]
-      },
-      {
-        "heading": "Changed",
-        "items": [
-          "Replay saving is now a checkbox preference in the score entry form instead of a one-time button.",
-          "Slow-motion effect is less extreme, making slow-mo sequences feel snappier.",
-          "Bassteroids are less durable, reducing the bullet budget required to clear them."
-        ]
-      }
-    ],
-    "commits": [
-      "ea1fbce",
-      "80e3e92",
-      "d4487e1",
-      "3c176d8",
-      "aa58c5f"
     ]
   }
 ]
