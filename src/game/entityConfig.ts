@@ -724,10 +724,11 @@ export const ENTITY_STATS: Partial<Record<AsteroidKind, EntityStats>> = {
     damageReduction: 3,
     outlineSamples: 16,
   },
+  // Ruby: the pieces are the inside the blue cube shows when it cracks open on the beat.
   beatShieldCrystalSmall: {
     hp: 1,
     score: 225,
-    hue: 222,
+    hue: 354,
     damageReduction: 3,
     outlineSamples: 16,
   },

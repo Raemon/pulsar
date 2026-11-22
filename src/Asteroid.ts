@@ -5835,7 +5835,8 @@ export class Asteroid {
           y: this.pos.y + Math.sin(childAngle) * ejectDist,
         };
         const speedMag = parentSpeed + rand(kickLo, kickHi);
-        const child = new Asteroid(childPos, fromAngle(childAngle, speedMag), "small", this.hue, "beatShieldCrystalSmall");
+        // Own (ruby) hue, not the parent's blue: the pieces are what was inside it.
+        const child = new Asteroid(childPos, fromAngle(childAngle, speedMag), "small", undefined, "beatShieldCrystalSmall");
         child.rotSpeed = rand(0.6, 1.2) * (rng() < 0.5 ? -1 : 1);
         fragmentList.push(child);
       }

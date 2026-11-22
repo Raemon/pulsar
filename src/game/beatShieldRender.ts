@@ -2,13 +2,15 @@ import type { Asteroid } from "../Asteroid";
 import { BEAT_CUBE_TABLE } from "../Asteroid";
 import { drawGlow } from "../glow";
 import { TAU, Vec } from "../vec";
+import { ENTITY_STATS } from "./entityConfig";
 
 // Beat cube's fragility. Every other body on the field lights up on the beat
 // (beatLight.ts); the cube is the one that breaks open instead. Solid sapphire
 // between beats; for one short instant on the beat its body thins to a baked
 // clear-glass twin whose four bevels lift apart along their seams, and a hot
-// rose core shows through the gaps — armour visibly off — then it shuts and
-// goes solid again. The instant is narrower than the judged window on purpose:
+// core shows through the gaps — armour visibly off — then it shuts and goes
+// solid again. The cubes nest: the blue cube's core is the ruby its pieces are
+// made of, and a ruby piece cracks open on a core of molten gold. The instant is narrower than the judged window on purpose:
 // it marks the beat itself, not the tolerance.
 // Reads the beatShieldPhase field tickBeatShields copies onto the rock.
 
@@ -18,11 +20,15 @@ const GLASS_HOLD = 0.2;
 const GLASS_FADE = 0.55;
 // What's left of the solid body at full glass.
 const SOLID_FLOOR = 0.04;
-const GLASS_HUE = 195;
+// The glass twin runs a little cooler than the cube's own body colour.
+const GLASS_HUE_SHIFT = -27;
 const LIGHT_X = -0.7, LIGHT_Y = -0.72;
 // How far each bevel lifts off the table at full open, as a fraction of the radius.
 const BEVEL_LIFT = 0.17;
-const CORE_HUE = 348;
+const FRAGMENT_CORE_HUE = 44;
+
+const coreHue = (a: Asteroid): number =>
+  a.kind === "beatShieldCrystal" ? ENTITY_STATS.beatShieldCrystalSmall!.hue! : FRAGMENT_CORE_HUE;
 
 const glassSprites = new WeakMap<Asteroid, { canvas: HTMLCanvasElement; half: number }>();
 
@@ -40,6 +46,7 @@ export const beatBodyAlpha = (a: Asteroid): number => 1 - (1 - SOLID_FLOOR) * be
 // the table, the table's edge, a two-stroke lit rim, a static streak on the
 // table and a glint on the lit corner.
 const paintGlass = (ctx: CanvasRenderingContext2D, a: Asteroid) => {
+  const GLASS_HUE = a.hue + GLASS_HUE_SHIFT;
   const R = a.radius;
   const table = R * BEAT_CUBE_TABLE;
   const outer = (k: number) => a.cubeCorner(k, R);
@@ -130,15 +137,24 @@ const getGlassSprite = (a: Asteroid) => {
   return sprite;
 };
 
-// The core the shield keeps covered: a rose glow under the glass, with light
-// leaking out along the four seams from the centre to each corner.
+// The core the shield keeps covered, in the next tier's own material: the cube's
+// interior fills with it, with a hot point at the centre and light leaking out along
+// the four seams from the centre to each corner.
 const paintExposedCore = (ctx: CanvasRenderingContext2D, a: Asteroid, v: number) => {
   const R = a.radius;
-  drawGlow(ctx, 0, 0, R * 1.05, CORE_HUE, 0.85 * v);
-  drawGlow(ctx, 0, 0, R * 0.38, 0, 0.75 * v, true);
+  const H = coreHue(a);
+  const fill = ctx.createRadialGradient(0, 0, R * 0.05, 0, 0, R * 1.1);
+  fill.addColorStop(0, `hsla(${H}, 95%, 52%, ${(0.95 * v).toFixed(3)})`);
+  fill.addColorStop(0.6, `hsla(${H + 4}, 90%, 30%, ${(0.8 * v).toFixed(3)})`);
+  fill.addColorStop(1, `hsla(${H + 8}, 90%, 15%, ${(0.6 * v).toFixed(3)})`);
+  ctx.fillStyle = fill;
+  a.tracePath(ctx, 1);
+  ctx.fill();
+  drawGlow(ctx, 0, 0, R * 0.55, H, 0.6 * v);
+  drawGlow(ctx, 0, 0, R * 0.25, 0, 0.6 * v, true);
   ctx.globalAlpha = 1;
   ctx.lineCap = "round";
-  ctx.strokeStyle = `hsla(${CORE_HUE}, 100%, 88%, ${(0.8 * v).toFixed(3)})`;
+  ctx.strokeStyle = `hsla(${H}, 100%, 78%, ${(0.8 * v).toFixed(3)})`;
   ctx.lineWidth = Math.max(1, R * 0.05);
   ctx.beginPath();
   for (let k = 0; k < 4; k++) {
