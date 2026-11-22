@@ -958,7 +958,12 @@ html:has(#sound-root), body:has(> #sound-root) {
 
 /* The live HUD keeps reading the sim, which during a clip is someone else's
    run — hide it so the home screen never shows a score that isn't anyone's. */
-body.reel-active #hud {
+/*  Dim the HUD's two content columns rather than #hud itself: the debug overlay
+    and the FPS readout are also children of #hud, and a parent's opacity takes
+    its whole subtree with it — hiding the container made backtick appear to do
+    nothing for as long as the reel was running. */
+body.reel-active #hud-left,
+body.reel-active #hud-right {
   opacity: 0;
   /* The volume control inside it keeps pointer-events: auto, and an invisible
      slider that silently does nothing is worse than no slider. */
@@ -1037,7 +1042,8 @@ body.reel-visible #leaderboard-list li.lb-self {
 #overlay::before,
 #leaderboard-list li,
 #stage,
-#hud {
+#hud-left,
+#hud-right {
   transition: opacity 0.6s ease, background 0.6s ease, border-color 0.6s ease, filter 0.6s ease;
 }
 
