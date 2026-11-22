@@ -4,10 +4,11 @@ import { Vec, add, fromAngle, TAU } from "../vec";
 import { cosmeticRng as rng } from "../game/rng";
 import { POWERUP_HUE } from "../Canister";
 import { comboHaloTint, renderComboHalo } from "./shipComboHalo";
-import { paintMagazine } from "./shipMagazineRender";
+import { magazineBeatMark, paintMagazine } from "./shipMagazineRender";
 import { haloVertices } from "./shipHitbox";
 import { buildJaggedBolt, strokePolyline } from "../game/bassLightning";
-import { paintOutlineBeatSweep } from "./shipBeatSweep";
+import { paintOutlineBeatSweep, type SweepTint } from "./shipBeatSweep";
+import { drawGlow } from "../glow";
 
 const invulnFlicker = (ship: Ship, t: number): number =>
   ship.invuln > 0 ? 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 0.025)) : 1;
@@ -19,7 +20,8 @@ const shipHullVertices = (ship: Ship): Vec[] => [
   fromAngle(ship.heading - Math.PI * 0.78, ship.radius * 1.0),
 ];
 
-// shares the combo halo's snap-and-fade so every ship light rides one rhythm.
+// shares the combo halo's snap-and-fade so every ship light rides one rhythm: on the beat
+// the outline whitens and thickens and the fill floods brighter.
 // bonusFlash (0..1) blooms the whole hull toward bright white on a free life:
 // the outline desaturates up to full white and the fill floods opaque.
 // cooldownDim (0..1) drains the cyan to a dull grey while the laser sits in its
@@ -27,6 +29,9 @@ const shipHullVertices = (ship: Ship): Vec[] => [
 // fireBlocked (0..1) fades saturation and opacity to SPENT_HULL while the
 // magazine is empty, so you can see you can't fire yet.
 const SPENT_HULL = 0.25;
+const BEAT_HULL_LIGHTEN = 17;
+const BEAT_HULL_EXTRA_WIDTH = 0.8;
+const BEAT_HULL_FILL = 0.2;
 const paintShipHull = (
   ctx: CanvasRenderingContext2D, verts: Vec[], invuln: number, beatPulse: number, bonusFlash: number,
   cooldownDim: number, fireBlocked: number,
@@ -39,14 +44,15 @@ const paintShipHull = (
   const strokeA = Math.min(1, (0.95 * beatBrightness * invuln) * spent + bonusFlash);
   // Grey reads as "spent" only if it also loses some brightness against the
   // charged hull — but stays light enough to keep the silhouette legible.
-  ctx.strokeStyle = `hsla(195, ${sat}%, ${75 - cooldownDim * 15 + bonusFlash * 25}%, ${strokeA})`;
-  ctx.lineWidth = 1.5 + bonusFlash * 1.5;
+  const strokeL = Math.min(100, 75 - cooldownDim * 15 + bonusFlash * 25 + BEAT_HULL_LIGHTEN * beatPulse);
+  ctx.strokeStyle = `hsla(195, ${sat}%, ${strokeL}%, ${strokeA})`;
+  ctx.lineWidth = 1.5 + bonusFlash * 1.5 + BEAT_HULL_EXTRA_WIDTH * beatPulse;
   ctx.beginPath();
   ctx.moveTo(verts[0].x, verts[0].y);
   for (const vert of verts.slice(1)) ctx.lineTo(vert.x, vert.y);
   ctx.closePath();
   ctx.stroke();
-  const fillA = 0.12 * invuln * spent + bonusFlash * 0.85;
+  const fillA = (0.12 + BEAT_HULL_FILL * beatPulse) * invuln * spent + bonusFlash * 0.85;
   ctx.fillStyle = `hsla(195, ${sat}%, ${60 - cooldownDim * 12 + bonusFlash * 40}%, ${fillA})`;
   ctx.fill();
 };
@@ -203,6 +209,15 @@ const paintSuperLaserCharge = (ctx: CanvasRenderingContext2D, ship: Ship, t: num
   }
 };
 
+// soft light over the whole body on the beat, in the halo's colour, so the ship lights up as one.
+const BEAT_BODY_GLOW_R_MUL = 2.6;
+const BEAT_BODY_GLOW_ALPHA = 0.3;
+const paintBeatBodyGlow = (ctx: CanvasRenderingContext2D, ship: Ship, beatPulse: number, invuln: number, tint: SweepTint) => {
+  if (beatPulse <= 0) return;
+  drawGlow(ctx, 0, 0, ship.radius * BEAT_BODY_GLOW_R_MUL, tint.hue, BEAT_BODY_GLOW_ALPHA * beatPulse * invuln, tint.sat < 50);
+  ctx.globalAlpha = 1;
+};
+
 // cosmetic on-beat scale-up — draws the eye to the rhythm, hitbox unchanged
 const applyBeatScale = (ctx: CanvasRenderingContext2D, beatPulse: number) => {
   if (beatPulse <= 0) return;
@@ -223,12 +238,14 @@ export const renderShipBody = (
   ctx.translate(ship.pos.x, ship.pos.y);
   applyBeatScale(ctx, beatPulse);
   ctx.globalCompositeOperation = "lighter";
+  const tint = comboHaloTint(ship);
+  paintBeatBodyGlow(ctx, ship, beatPulse, invuln, tint);
   renderComboHalo(ctx, ship, beatPulse);
   paintSuperLaserCharge(ctx, ship, t);
   paintShipHull(ctx, verts, invuln, beatPulse, bonusFlash, ship.laserCooldownDim, ship.hullFireBlockedFade);
   const haloOutline = haloVertices(ship).map(([x, y]) => ({ x, y }));
-  paintOutlineBeatSweep(ctx, haloOutline, secondsIntoBeat, invuln, comboHaloTint(ship));
-  paintMagazine(ctx, ship, invuln);
+  paintOutlineBeatSweep(ctx, haloOutline, magazineBeatMark(ship), secondsIntoBeat, invuln, tint);
+  paintMagazine(ctx, ship, invuln, beatPulse);
   paintThrustFlame(ctx, ship);
   paintRetroFlares(ctx, ship);
   paintSideJets(ctx, ship);
