@@ -1,12 +1,15 @@
 import type { Asteroid } from "../Asteroid";
 import { BEAT_CUBE_TABLE } from "../Asteroid";
-import { TAU } from "../vec";
+import { drawGlow } from "../glow";
+import { TAU, Vec } from "../vec";
 
-// Beat cube's fragility: solid sapphire between beats; for one short instant
-// on the beat it crossfades to a baked clear-glass twin — bright bevel seams,
-// a lit edge, a barely-there volume tint — while a specular glint sweeps
-// across the face, then snaps solid again. The instant is narrower than the
-// judged window on purpose: it marks the beat itself, not the tolerance.
+// Beat cube's fragility. Every other body on the field lights up on the beat
+// (beatLight.ts); the cube is the one that breaks open instead. Solid sapphire
+// between beats; for one short instant on the beat its body thins to a baked
+// clear-glass twin whose four bevels lift apart along their seams, and a hot
+// rose core shows through the gaps — armour visibly off — then it shuts and
+// goes solid again. The instant is narrower than the judged window on purpose:
+// it marks the beat itself, not the tolerance.
 // Reads the beatShieldPhase field tickBeatShields copies onto the rock.
 
 // Envelope in judged-window half-widths (the window is ±110ms; one 60fps
@@ -17,6 +20,9 @@ const GLASS_FADE = 0.55;
 const SOLID_FLOOR = 0.04;
 const GLASS_HUE = 195;
 const LIGHT_X = -0.7, LIGHT_Y = -0.72;
+// How far each bevel lifts off the table at full open, as a fraction of the radius.
+const BEVEL_LIFT = 0.17;
+const CORE_HUE = 348;
 
 const glassSprites = new WeakMap<Asteroid, { canvas: HTMLCanvasElement; half: number }>();
 
@@ -124,31 +130,65 @@ const getGlassSprite = (a: Asteroid) => {
   return sprite;
 };
 
+// The core the shield keeps covered: a rose glow under the glass, with light
+// leaking out along the four seams from the centre to each corner.
+const paintExposedCore = (ctx: CanvasRenderingContext2D, a: Asteroid, v: number) => {
+  const R = a.radius;
+  drawGlow(ctx, 0, 0, R * 1.05, CORE_HUE, 0.85 * v);
+  drawGlow(ctx, 0, 0, R * 0.38, 0, 0.75 * v, true);
+  ctx.globalAlpha = 1;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = `hsla(${CORE_HUE}, 100%, 88%, ${(0.8 * v).toFixed(3)})`;
+  ctx.lineWidth = Math.max(1, R * 0.05);
+  ctx.beginPath();
+  for (let k = 0; k < 4; k++) {
+    const o = a.cubeCorner(k, R * 1.05);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(o.x, o.y);
+  }
+  ctx.stroke();
+};
+
+const traceQuad = (ctx: CanvasRenderingContext2D, p: Vec[]) => {
+  ctx.beginPath();
+  ctx.moveTo(p[0].x, p[0].y);
+  for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+  ctx.closePath();
+};
+
 // Drawn in the asteroid's local (translated + rotated) frame, last, over the
-// faded body: the glass twin, then a bright band sweeping corner to corner
-// across the instant (the phase drives it, so it crosses the centre exactly on
-// the beat) — light running over glass is what makes "clear" read as glass
-// rather than as the rock vanishing.
+// faded body: the exposed core, then the glass twin cut into its table and four
+// bevels, each bevel pushed out along its own face normal so the seams gape.
 export const renderBeatFragility = (ctx: CanvasRenderingContext2D, a: Asteroid) => {
   const v = beatFragility(a);
   if (v <= 0.01) return;
   const R = a.radius;
+  const table = R * BEAT_CUBE_TABLE;
   const sprite = getGlassSprite(a);
+  const lift = R * BEVEL_LIFT * v;
   ctx.save();
-  ctx.globalAlpha = v;
-  ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half);
-
-  const sweep = Math.max(-1, Math.min(1, a.beatShieldPhase / GLASS_FADE));
-  a.tracePath(ctx, 1);
-  ctx.clip();
-  ctx.rotate(-Math.PI / 4);
   ctx.globalCompositeOperation = "lighter";
-  const cx = sweep * R * 1.3;
-  const band = ctx.createLinearGradient(cx - R * 0.35, 0, cx + R * 0.35, 0);
-  band.addColorStop(0, "hsla(190, 80%, 85%, 0)");
-  band.addColorStop(0.5, "hsla(190, 80%, 92%, 0.55)");
-  band.addColorStop(1, "hsla(190, 80%, 85%, 0)");
-  ctx.fillStyle = band;
-  ctx.fillRect(cx - R * 0.35, -R * 1.5, R * 0.7, R * 3);
+  paintExposedCore(ctx, a, v);
+  ctx.globalAlpha = v;
+
+  ctx.save();
+  traceQuad(ctx, [0, 1, 2, 3].map((k) => a.cubeCorner(k, table)));
+  ctx.clip();
+  ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half);
+  ctx.restore();
+
+  // Each bevel's clip reaches a touch past the outline so the baked rim strokes come with it.
+  for (let k = 0; k < 4; k++) {
+    const o0 = a.cubeCorner(k, R * 1.12), o1 = a.cubeCorner(k + 1, R * 1.12);
+    const i0 = a.cubeCorner(k, table), i1 = a.cubeCorner(k + 1, table);
+    const nx = o0.x + o1.x, ny = o0.y + o1.y;
+    const nl = Math.hypot(nx, ny) || 1;
+    ctx.save();
+    ctx.translate((nx / nl) * lift, (ny / nl) * lift);
+    traceQuad(ctx, [o0, o1, i1, i0]);
+    ctx.clip();
+    ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half);
+    ctx.restore();
+  }
   ctx.restore();
 };

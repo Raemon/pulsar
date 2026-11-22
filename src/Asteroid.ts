@@ -8353,7 +8353,7 @@ export class Asteroid {
   // Trapezoidal plate silhouette with bevelled corners, in radius units so a
   // beat bloom can re-trace it at a larger scale. Caller has already
   // translated/rotated into the plate's local frame.
-  private traceBossPlatePath(ctx: CanvasRenderingContext2D, scale: number) {
+  traceBossPlatePath(ctx: CanvasRenderingContext2D, scale: number) {
     const r = this.radius * scale;
     ctx.beginPath();
     ctx.moveTo(-r * 0.9, -r * 0.45);

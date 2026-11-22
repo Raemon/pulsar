@@ -155,6 +155,15 @@ export class Gem {
   // faces and nowhere else.
   private veinSprite: HTMLCanvasElement | null = null;
 
+  // Blits the glint sprite in gem-local space (caller has translated + rotated)
+  // so outside light passes can land on exactly the polished faces.
+  paintVeins(ctx: CanvasRenderingContext2D, alpha: number) {
+    if (!this.veinSprite || alpha <= 0) return;
+    ctx.globalAlpha = Math.min(1, alpha);
+    ctx.drawImage(this.veinSprite, -this.spriteHalf, -this.spriteHalf);
+    ctx.globalAlpha = 1;
+  }
+
   // Outline vertices of the gem silhouette (gem-local, unrotated). Cached so the
   // body bake and the glint bake share the exact same faceted silhouette.
   private hullPts: Array<[number, number]> = [];

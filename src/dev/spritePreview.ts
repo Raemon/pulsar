@@ -16,7 +16,10 @@ import { BEAT_GRID, BEAT_WINDOW } from "../game/rhythmConstants";
 import { Alien, AlienSize } from "../Alien";
 import { Canister, PowerupKind } from "../Canister";
 import { Gem } from "../Gem";
+import { Comet } from "../Comet";
+import { FuelOrb } from "../FuelOrb";
 import { Ship } from "../Ship";
+import { paintBeatLight, setBeatLightClock, type BeatLitBody } from "../game/beatLight";
 import { renderShipBody } from "../ship/shipRender";
 import { seedRng } from "../game/rng";
 import { TAU } from "../vec";
@@ -33,7 +36,26 @@ type Subject = {
   surfaceAt?: (angle: number) => number;
   // Held so the toolbar can drive per-frame state (tumble, phase).
   tick?: (dt: number, opts: ViewOptions) => void;
+  // The body's on-beat wave, drawn over it in the same frame the game uses.
+  beat?: (ctx: CanvasRenderingContext2D) => void;
 };
+
+// `?tau=<seconds>` pins every cell to that instant around a beat (negative =
+// before it), so the on-beat waves can be compared side by side in a still.
+const PINNED_TAU = (() => {
+  const raw = new URLSearchParams(location.search).get("tau");
+  return raw === null || raw === "" || !Number.isFinite(Number(raw)) ? null : Number(raw);
+})();
+
+// Seconds from the nearest beat on the preview's fake clock (or the pinned instant).
+const previewTau = (opts: ViewOptions): number | null => {
+  if (PINNED_TAU !== null) return PINNED_TAU;
+  if (!opts.phase) return null;
+  const time = performance.now() / 1000;
+  return time - Math.round(time / BEAT_GRID) * BEAT_GRID;
+};
+
+const lit = (body: BeatLitBody) => (ctx: CanvasRenderingContext2D) => paintBeatLight(ctx, body);
 
 type ViewOptions = {
   zoom: number;
@@ -108,6 +130,7 @@ const makeAsteroid = (group: string, kind: AsteroidKind, size: AsteroidSize): Su
     label: `${kind} · ${size}`,
     radius: a.radius,
     draw: (ctx, t) => a.render(ctx, t),
+    beat: lit(a),
     surfaceAt: (angle) => a.radiusAtAngle(angle),
     tick: (dt, opts) => {
       if (opts.tumble) a.rotation += a.rotSpeed * dt;
@@ -126,10 +149,8 @@ const makeAsteroid = (group: string, kind: AsteroidKind, size: AsteroidSize): Su
         a.haloEcho = Math.max(0, 1 - cycle * 0.85);
       }
       // The beat shield, opening and closing on a fake beat clock.
-      if (isBeatShieldKind(a.kind) && opts.phase) {
-        const time = performance.now() / 1000;
-        a.beatShieldPhase = (time - Math.round(time / BEAT_GRID) * BEAT_GRID) / BEAT_WINDOW;
-      }
+      const tau = previewTau(opts);
+      if (isBeatShieldKind(a.kind) && tau !== null) a.beatShieldPhase = tau / BEAT_WINDOW;
     },
   };
 };
@@ -148,6 +169,12 @@ const torusFragments = (): Subject[] => {
       ctx.save();
       ctx.translate(-frag.pos.x, -frag.pos.y);
       frag.render(ctx, t);
+      ctx.restore();
+    },
+    beat: (ctx: CanvasRenderingContext2D) => {
+      ctx.save();
+      ctx.translate(-frag.pos.x, -frag.pos.y);
+      paintBeatLight(ctx, frag);
       ctx.restore();
     },
   }));
@@ -201,7 +228,7 @@ const buildCatalogue = (): Subject[] => {
       try {
         const alien = new Alien({ x: 0, y: 0 }, { x: 0, y: 0 }, size, act);
         alien.pos = { x: 0, y: 0 };
-        out.push({ group: "Alien", label, radius: alien.radius, draw: (ctx, t) => alien.render(ctx, t) });
+        out.push({ group: "Alien", label, radius: alien.radius, draw: (ctx, t) => alien.render(ctx, t), beat: lit(alien) });
       } catch (err) {
         out.push(brokenCell("Alien", label, err));
       }
@@ -212,7 +239,7 @@ const buildCatalogue = (): Subject[] => {
     try {
       const can = new Canister({ x: 0, y: 0 }, { x: 0, y: 0 }, kind, 1e6);
       can.pos = { x: 0, y: 0 };
-      out.push({ group: "Pickup", label: `pod · ${kind}`, radius: can.radius, draw: (ctx, t) => can.render(ctx, t) });
+      out.push({ group: "Pickup", label: `pod · ${kind}`, radius: can.radius, draw: (ctx, t) => can.render(ctx, t), beat: lit(can) });
     } catch (err) {
       out.push(brokenCell("Pickup", `pod · ${kind}`, err));
     }
@@ -220,7 +247,18 @@ const buildCatalogue = (): Subject[] => {
 
   const gem = new Gem({ x: 0, y: 0 }, { x: 0, y: 0 });
   gem.pos = { x: 0, y: 0 };
-  out.push({ group: "Pickup", label: "gem", radius: gem.radius, draw: (ctx, t) => gem.render(ctx, t) });
+  out.push({ group: "Pickup", label: "gem", radius: gem.radius, draw: (ctx, t) => gem.render(ctx, t), beat: lit(gem) });
+
+  const orb = new FuelOrb({ x: 0, y: 0 }, { x: 0, y: 0 });
+  orb.pos = { x: 0, y: 0 };
+  out.push({ group: "Pickup", label: "fuel orb", radius: orb.radius, draw: (ctx, t) => orb.render(ctx, t), beat: lit(orb) });
+
+  // A comet mid-flight: fully faded in, with a tail laid back along its heading.
+  const comet = new Comet({ x: 0, y: 0 }, { x: 70, y: -30 }, 200);
+  comet.age = Comet.FADE_IN;
+  comet.trail = Array.from({ length: 36 }, (_, i) => ({ pos: { x: -70 * i * 0.03 + 30, y: 30 * i * 0.03 - 12 }, age: i * 0.03 }));
+  comet.pos = { x: 30, y: -12 };
+  out.push({ group: "Comet", label: "comet", radius: 50, draw: (ctx) => comet.render(ctx), beat: lit(comet) });
 
   return out;
 };
@@ -372,6 +410,7 @@ const start = () => {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const dpr = window.devicePixelRatio || 1;
+    setBeatLightClock(previewTau(opts));
     for (const { fig, canvas, subject } of cells) {
       if (fig.classList.contains("hidden")) continue;
       const ctx = canvas.getContext("2d")!;
@@ -387,6 +426,7 @@ const start = () => {
       ctx.scale(fit * opts.zoom, fit * opts.zoom);
       try {
         subject.draw(ctx, now);
+        subject.beat?.(ctx);
       } catch {
         // A body that throws mid-render shouldn't take the whole page down.
       }
