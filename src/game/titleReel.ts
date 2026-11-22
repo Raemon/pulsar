@@ -31,9 +31,9 @@ const MIN_COMBO = 12;
 //   a blip is skipped rather than shown as a flash.
 //
 //   The ceiling is a backstop, not a pacing knob. Rhythm climbs a point every
-//   few seconds, so a run that clears the reel's floor takes a minute or two to
-//   get there: a ceiling shorter than that cuts every clip partway up, before
-//   the rhythm that earned it a place here is ever on screen.
+//   few seconds, so the chains that qualify for the reel take a minute or two
+//   to reach their peak: a ceiling shorter than that cuts every clip partway
+//   up, before the rhythm that earned it a place here is ever on screen.
 const CLIP_MAX_SECONDS = 180;
 // Every clip costs a fade out, a catch-up seek and a fade in, so a clip should
 //   be worth that gap. A brisk climb to 12 can take only four or five seconds,
