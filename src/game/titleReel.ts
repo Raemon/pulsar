@@ -242,7 +242,22 @@ const clipFromPayload = (row: HighscoreRow, payload: ReplayPayload): LoadedClip 
 //   reasons it declines (nothing on the board qualifies, a replay this build
 //   can't re-sim, a chain too short to cut) are exactly what someone wondering
 //   "why is there no reel?" needs. One line, once, naming the reason.
-const reelNote = (message: string) => console.info(`[title reel] ${message}`);
+let lastNote = "not started";
+const reelNote = (message: string) => {
+  lastNote = message;
+  console.info(`[title reel] ${message}`);
+};
+
+// One line for the debug overlay (backtick): what the reel is doing, or the
+//   reason it is doing nothing. The console says the same thing, but a reel that
+//   declines does so once, on load, and is easy to miss.
+export const titleReelStatus = (game: Game): string => {
+  const reel = game.titleReel;
+  if (!reel) return `title reel: off — ${lastNote}`;
+  const pool = reel.candidates?.length ?? 0;
+  const phase = reel.stalled ? "stalled" : reel.phase;
+  return `title reel: ${phase} — ${pool} run(s), ${reel.unusableIds.length} unusable — ${lastNote}`;
+};
 
 // Fetch + decode + window one candidate into reel.next. One at a time: the
 //   reel only ever needs the clip after the current one.
@@ -325,6 +340,7 @@ const viewportTooNarrow = (): boolean => {
 //   wins until stopTitleReel.
 export const startTitleReel = (game: Game) => {
   if (game.titleReel) return;
+  lastNote = "looking for a run to play";
   if (prefersReducedMotion()) { reelNote("skipped: the browser asks for reduced motion."); return; }
   if (viewportTooNarrow()) { reelNote("skipped: a 16:9 clip has nowhere to go in a portrait window."); return; }
   generationCounter += 1;
