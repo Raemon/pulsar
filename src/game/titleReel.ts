@@ -1,7 +1,7 @@
 import type { Game } from "../Game";
 import { fetchReelCandidates, type HighscoreRow } from "./highscores";
 import { fetchReplay } from "./replayApi";
-import { decodeReplay, frameSecondsAfter, secondsBetweenFrames, type ReplayPayload } from "./replayFormat";
+import { REPLAY_FORMAT_VERSION, decodeReplay, frameSecondsAfter, frameSecondsBefore, secondsBetweenFrames, type ReplayPayload } from "./replayFormat";
 import { ReplayPlayer } from "./replayPlayer";
 import { pickLongestChain } from "./comboChains";
 import { requestStart, resetTitleWorld, startTitleReelClip, teardownReplay } from "./lifecycle";
@@ -30,9 +30,14 @@ const MIN_COMBO = 12;
 //   so one marathon streak can't hold the screen, and so a chain that reads as
 //   a blip is skipped rather than shown as a flash.
 const CLIP_MAX_SECONDS = 20;
-// Every clip costs a fade out, a catch-up seek and a fade in. A chain that can't
-//   fill more than this isn't worth that gap.
+// Every clip costs a fade out, a catch-up seek and a fade in, so a clip should
+//   be worth that gap. A brisk climb to 12 can take only four or five seconds,
+//   though — rather than refuse those, the window opens earlier and shows the
+//   pilot flying into the chain, the way the game-over clip's pre-roll does.
 const CLIP_MIN_SECONDS = 6;
+// Below this there isn't enough recording left around the chain to pad with, so
+//   there is genuinely nothing to show.
+const CLIP_FLOOR_SECONDS = 2.5;
 // Play on a little past the frame the streak broke, so the clip ends on the
 //   miss rather than cutting away mid-air.
 const CLIP_TAIL_SECONDS = 1.5;
@@ -97,6 +102,11 @@ type TitleReel = {
   loading: boolean;
   candidates: HighscoreRow[] | null;
   recentIds: number[];
+  // Runs whose replay carried no chain worth cutting. Unlike recentIds these are
+  //   out for the visit: nothing about them will change, and re-drawing them
+  //   (the sampler favours exactly these — they're the deepest runs) would stall
+  //   the reel on the same handful of rows.
+  unusableIds: number[];
   // Clips play silent; the viewer's own audio setting is held here and handed
   //   back the moment the plain title world returns (or the reel stops), so the
   //   home screen is only ever muted while it is actually showing a clip.
@@ -190,8 +200,9 @@ const rememberShown = (reel: TitleReel, id: number) => {
 //   up most without the shallower ones ever being locked out. Runs shown in the
 //   last few clips are skipped unless the pool is too small to afford it.
 const sampleCandidate = (reel: TitleReel): HighscoreRow | null => {
-  const pool = (reel.candidates ?? []).filter((r) => !reel.recentIds.includes(r.id));
-  const rows = pool.length > 0 ? pool : (reel.candidates ?? []);
+  const usable = (reel.candidates ?? []).filter((r) => !reel.unusableIds.includes(r.id));
+  const fresh = usable.filter((r) => !reel.recentIds.includes(r.id));
+  const rows = fresh.length > 0 ? fresh : usable;
   if (rows.length === 0) return null;
   let total = 0;
   for (const row of rows) total += Math.max(1, row.max_combo);
@@ -203,23 +214,35 @@ const sampleCandidate = (reel: TitleReel): HighscoreRow | null => {
   return rows[rows.length - 1];
 };
 
-// Window the replay's best chain into a clip. Null when the recording carries
-//   no readable chain, or the chain is too short to be worth a cut.
+// Window the replay's best chain into a clip: from a frame the pilot was at 0
+//   rhythm, through the climb, to a beat past the break — with a pre-roll in
+//   front if the chain alone is too brief to be worth the cut. Null when the
+//   recording carries no readable chain, or there isn't enough of it to show.
 const clipFromPayload = (row: HighscoreRow, payload: ReplayPayload): LoadedClip | null => {
   const chain = pickLongestChain(payload);
   if (!chain) return null;
   const total = payload.frames.length;
-  const start = Math.min(chain.startFrame, total);
+  const chainStart = Math.min(chain.startFrame, total);
   const tailEnd = frameSecondsAfter(payload, chain.endFrame, CLIP_TAIL_SECONDS);
-  const capped = frameSecondsAfter(payload, start, CLIP_MAX_SECONDS);
+  const capped = frameSecondsAfter(payload, chainStart, CLIP_MAX_SECONDS);
   const end = Math.min(Math.max(tailEnd, 0), capped, total);
-  if (end <= start) return null;
-  // Measured, not inferred: a chain that primes just before the recording ends
-  //   would otherwise pass a "does 6s of frames fit?" test by clamping to the
-  //   same last frame on both sides, and show as a flash between two fades.
-  if (secondsBetweenFrames(payload, start, end) < CLIP_MIN_SECONDS) return null;
+  if (end <= chainStart) return null;
+  // Measured against the recorded frame times, not inferred from a frame count:
+  //   a chain that primes near the end of the recording clamps to the same last
+  //   frame on both sides, and would otherwise pass as "long enough".
+  const chainSeconds = secondsBetweenFrames(payload, chainStart, end);
+  const start = chainSeconds >= CLIP_MIN_SECONDS
+    ? chainStart
+    : frameSecondsBefore(payload, chainStart, CLIP_MIN_SECONDS - chainSeconds);
+  if (secondsBetweenFrames(payload, start, end) < CLIP_FLOOR_SECONDS) return null;
   return { row, payload, start, end };
 };
+
+// The reel declining to play is not an error, but it is invisible — and the
+//   reasons it declines (nothing on the board qualifies, a replay this build
+//   can't re-sim, a chain too short to cut) are exactly what someone wondering
+//   "why is there no reel?" needs. One line, once, naming the reason.
+const reelNote = (message: string) => console.info(`[title reel] ${message}`);
 
 // Fetch + decode + window one candidate into reel.next. One at a time: the
 //   reel only ever needs the clip after the current one.
@@ -233,20 +256,34 @@ const loadNextClip = (game: Game) => {
   const stillMine = () => game.titleReel === reel && reel.generation === generation;
   void (async () => {
     try {
-      if (reel.candidates === null) reel.candidates = await fetchReelCandidates(MIN_COMBO);
-      const row = sampleCandidate(reel);
-      const clip = row ? clipFromPayload(row, await decodeReplay(await fetchReplay(row.id))) : null;
-      if (!stillMine()) return;
-      // Either way this row has had its turn. A candidate the sampler likes (it
-      //   weights toward the deepest chains) but that yields no clip would
-      //   otherwise be drawn again immediately and stall the reel on its own.
-      if (row) rememberShown(reel, row.id);
-      if (clip) {
-        reel.next = clip;
-        reel.failures = 0;
-      } else {
-        reel.failures += 1;
+      if (reel.candidates === null) {
+        reel.candidates = await fetchReelCandidates(MIN_COMBO);
+        if (!stillMine()) return;
+        reelNote(
+          reel.candidates.length > 0
+            ? `${reel.candidates.length} run(s) to draw from.`
+            : `no run on the board has both a saved replay from this build ` +
+              `(format v${REPLAY_FORMAT_VERSION}) and ${MIN_COMBO}+ rhythm — nothing to play.`,
+        );
       }
+      const row = sampleCandidate(reel);
+      if (!row) {
+        // Nothing left to draw: every candidate has been tried and none of them
+        //   yields a clip. (An empty board already said so above.)
+        reel.stalled = true;
+        if (reel.candidates.length > 0) reelNote("every run on the board has been tried — stopping.");
+        return;
+      }
+      const clip = clipFromPayload(row, await decodeReplay(await fetchReplay(row.id)));
+      if (!stillMine()) return;
+      if (!clip) {
+        reel.unusableIds = [...reel.unusableIds, row.id];
+        reelNote(`${row.name}'s run (#${row.id}) has no chain to cut — skipping it.`);
+        return;
+      }
+      rememberShown(reel, row.id);
+      reel.next = clip;
+      reel.failures = 0;
     } catch (err) {
       // A missing replay, a format this build can't re-sim, or an offline
       //   leaderboard all just mean "no reel" — the title screen behind it is
@@ -256,7 +293,10 @@ const loadNextClip = (game: Game) => {
     } finally {
       if (stillMine()) {
         reel.loading = false;
-        if (reel.failures >= MAX_LOAD_FAILURES) reel.stalled = true;
+        if (reel.failures >= MAX_LOAD_FAILURES && !reel.stalled) {
+          reel.stalled = true;
+          reelNote("giving up for this visit — the title screen runs without it.");
+        }
       }
     }
   })();
@@ -285,7 +325,8 @@ const viewportTooNarrow = (): boolean => {
 //   wins until stopTitleReel.
 export const startTitleReel = (game: Game) => {
   if (game.titleReel) return;
-  if (prefersReducedMotion() || viewportTooNarrow()) return;
+  if (prefersReducedMotion()) { reelNote("skipped: the browser asks for reduced motion."); return; }
+  if (viewportTooNarrow()) { reelNote("skipped: a 16:9 clip has nowhere to go in a portrait window."); return; }
   generationCounter += 1;
   game.titleReel = {
     phase: "idle",
@@ -297,6 +338,7 @@ export const startTitleReel = (game: Game) => {
     loading: false,
     candidates: null,
     recentIds: [],
+    unusableIds: [],
     muted: false,
     soundWasEnabled: true,
     failures: 0,
