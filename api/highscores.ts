@@ -476,7 +476,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const versionRaw = req.query.v;
       const version = sanitizeInt(Array.isArray(versionRaw) ? versionRaw[0] : versionRaw, 1, 2_147_483_647);
       if (version === null) {
-        res.status(400).json({ error: "v (replay format version) is required" });
+        res.status(400).json({ error: "v must be a replay format version" });
         return;
       }
       try {
