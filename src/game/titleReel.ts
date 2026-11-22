@@ -29,7 +29,12 @@ const MIN_COMBO = 12;
 // Clip windowing. The chain's own span decides the length; these only bound it
 //   so one marathon streak can't hold the screen, and so a chain that reads as
 //   a blip is skipped rather than shown as a flash.
-const CLIP_MAX_SECONDS = 20;
+//
+//   The ceiling is a backstop, not a pacing knob. Rhythm climbs a point every
+//   few seconds, so a run that clears the reel's floor takes a minute or two to
+//   get there: a ceiling shorter than that cuts every clip partway up, before
+//   the rhythm that earned it a place here is ever on screen.
+const CLIP_MAX_SECONDS = 180;
 // Every clip costs a fade out, a catch-up seek and a fade in, so a clip should
 //   be worth that gap. A brisk climb to 12 can take only four or five seconds,
 //   though — rather than refuse those, the window opens earlier and shows the
@@ -103,10 +108,11 @@ type TitleReel = {
   loading: boolean;
   candidates: HighscoreRow[] | null;
   recentIds: number[];
-  // Runs whose replay carried no chain worth cutting. Unlike recentIds these are
-  //   out for the visit: nothing about them will change, and re-drawing them
-  //   (the sampler favours exactly these — they're the deepest runs) would stall
-  //   the reel on the same handful of rows.
+  // Runs that can't be shown: no chain worth cutting, or a chain too deep into
+  //   the run to catch up to in time. Unlike recentIds these are out for the
+  //   visit: nothing about them will change, and re-drawing them (the sampler
+  //   favours exactly these — they're the deepest runs) would stall the reel on
+  //   the same handful of rows.
   unusableIds: number[];
   // Clips play silent; the viewer's own audio setting is held here and handed
   //   back the moment the plain title world returns (or the reel stops), so the
@@ -191,10 +197,14 @@ const syncCaptionCombo = (combo: number) => {
   if (liveComboEl) liveComboEl.textContent = `rhythm ×${combo}`;
 };
 
-// Runs recently shown — or recently tried and found unusable — go to the back of
-//   the queue, so a small pool still feels like a rotation rather than a loop.
+// Runs recently shown go to the back of the queue, so a small pool still feels
+//   like a rotation rather than a loop.
 const rememberShown = (reel: TitleReel, id: number) => {
   reel.recentIds = [...reel.recentIds.filter((n) => n !== id), id].slice(-RECENT_MEMORY);
+};
+
+const retireRun = (reel: TitleReel, id: number) => {
+  reel.unusableIds = [...reel.unusableIds, id];
 };
 
 // Weighted draw: a run's chance is its peak rhythm, so the deepest chains show
@@ -293,7 +303,7 @@ const loadNextClip = (game: Game) => {
       const clip = clipFromPayload(row, await decodeReplay(await fetchReplay(row.id)));
       if (!stillMine()) return;
       if (!clip) {
-        reel.unusableIds = [...reel.unusableIds, row.id];
+        retireRun(reel, row.id);
         reelNote(`${row.name}'s run (#${row.id}) has no chain to cut — skipping it.`);
         return;
       }
@@ -451,15 +461,17 @@ const beginClip = (game: Game, reel: TitleReel) => {
   reel.seekStartedAt = performance.now();
 };
 
-// Give up on the clip being sought and go back to the plain title, with this run
-//   marked as tried so the next draw moves on.
+// Give up on the clip being sought and go back to the plain title. The run is
+//   retired rather than sent to the back of the queue: its chain is no nearer
+//   next time, and in a pool small enough to come straight back round to it the
+//   home screen would spend the visit going dark for a clip that never arrives.
 const abandonClip = (game: Game, reel: TitleReel) => {
   if (reel.clip) {
     reelNote(
       `${reel.clip.row.name}'s run (#${reel.clip.row.id}) is taking too long to catch up to ` +
       `(frame ${reel.clip.start}) — skipping it.`,
     );
-    rememberShown(reel, reel.clip.row.id);
+    retireRun(reel, reel.clip.row.id);
   }
   reel.clip = null;
   hideCaption();

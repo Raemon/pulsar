@@ -142,15 +142,16 @@ export const fetchRecentScores = async (): Promise<HighscoreRow[]> => {
 };
 
 // Highlight-reel pool for the title screen: the runs worth showing behind it.
-//   The request carries no parameters — the window is the server's to bound and
-//   cache, and anything build-specific is filtered here.
+//   The request names this build's replay format, because the server's window
+//   is bounded and has to be spent on runs this build can re-sim — most of the
+//   board, and all of its best rhythm, is in older formats.
 export const fetchReelCandidates = async (minCombo: number): Promise<HighscoreRow[]> => {
-  const res = await fetch("/api/highscores?mode=reel", { method: "GET", cache: "no-store" });
+  const res = await fetch(`/api/highscores?mode=reel&v=${REPLAY_FORMAT_VERSION}`, { method: "GET", cache: "no-store" });
   if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
   const body = (await res.json()) as { scores: HighscoreRow[] };
-  // The server bounds the window (runs with a replay, best rhythm first); the
-  //   two filters that depend on *this build* are applied here: a replay this
-  //   build can't re-sim is unusable, and the rhythm floor is the reel's own.
+  // The server's rhythm floor is coarse and the reel's is its own; the format
+  //   is checked again so a server that predates ?v= can't hand over a replay
+  //   that fails at decode.
   return body.scores.filter(
     (row) => row.replay_version === REPLAY_FORMAT_VERSION && row.max_combo >= minCombo,
   );
