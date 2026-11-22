@@ -1,5 +1,5 @@
 import type { Ship } from "../Ship";
-import { TAU } from "../vec";
+import { TAU, Vec, fromAngle } from "../vec";
 import { drawGlow } from "../glow";
 import {
   BULLET_CORE_RADIUS, bulletHeadGlowMul, OFF_BEAT_HUE, OFF_BEAT_HEAD_ALPHA,
@@ -106,7 +106,13 @@ const paintRefillPop = (ctx: CanvasRenderingContext2D, beatsSince: number, invul
   strokeRing(ctx, SOCKET_R + 10 * (1 - k), 0.7 * env, 0.5 + 1.5 * env);
 };
 
-const paintPylon = (ctx: CanvasRenderingContext2D, pylon: Pylon, invuln: number, style: RoundStyle = STOCK_ROUND) => {
+// A loaded round flares with the rest of the ship as the beat lands.
+const BEAT_FLARE_R = HEAD_R * 1.8;
+const BEAT_FLARE_ALPHA = 0.6;
+
+const paintPylon = (
+  ctx: CanvasRenderingContext2D, pylon: Pylon, invuln: number, beatPulse: number, style: RoundStyle = STOCK_ROUND,
+) => {
   const b = pylon.beatsToReady;
   // The sim reloads as the reload beat's window opens; the round waits for the beat to show.
   if (!pylon.loaded || b > 0) {
@@ -115,21 +121,26 @@ const paintPylon = (ctx: CanvasRenderingContext2D, pylon: Pylon, invuln: number,
     return;
   }
   paintRound(ctx, 0, invuln, style);
+  if (beatPulse > 0) drawGlow(ctx, 0, 0, BEAT_FLARE_R, style.hue, BEAT_FLARE_ALPHA * beatPulse * invuln);
   if (-b < POP_BEATS) paintRefillPop(ctx, -b, invuln);
 };
 
 // The bomb's and the Warp Cannon's one round sits on the centreline, in the hull's belly.
-const paintSpecialRound = (ctx: CanvasRenderingContext2D, ship: Ship, invuln: number) => {
+const paintSpecialRound = (ctx: CanvasRenderingContext2D, ship: Ship, invuln: number, beatPulse: number) => {
   ctx.save();
   ctx.rotate(ship.heading);
-  paintPylon(ctx, ship.specialPylon, invuln, ship.warpCannonActive ? WARP_ROUND : BOMB_ROUND);
+  paintPylon(ctx, ship.specialPylon, invuln, beatPulse, ship.warpCannonActive ? WARP_ROUND : BOMB_ROUND);
   ctx.restore();
 };
 
-export const paintMagazine = (ctx: CanvasRenderingContext2D, ship: Ship, invuln: number) => {
+// Ship-local point level with the loaded rounds — where the outline beat sweep crosses on the beat.
+export const magazineBeatMark = (ship: Ship): Vec =>
+  fromAngle(ship.heading, firesSpecialRound(ship) ? 0 : PYLON_X);
+
+export const paintMagazine = (ctx: CanvasRenderingContext2D, ship: Ship, invuln: number, beatPulse: number) => {
   if (ship.lasershotActive) return;
   if (firesSpecialRound(ship)) {
-    paintSpecialRound(ctx, ship, invuln);
+    paintSpecialRound(ctx, ship, invuln, beatPulse);
     return;
   }
   ctx.save();
@@ -137,7 +148,7 @@ export const paintMagazine = (ctx: CanvasRenderingContext2D, ship: Ship, invuln:
   ship.pylons.forEach((pylon, i) => {
     ctx.save();
     ctx.translate(PYLON_X, PYLON_SIDES[i] * PYLON_Y);
-    paintPylon(ctx, pylon, invuln);
+    paintPylon(ctx, pylon, invuln, beatPulse);
     ctx.restore();
   });
   ctx.restore();

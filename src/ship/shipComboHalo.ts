@@ -11,10 +11,10 @@ export const setComboFromValue = (ship: Ship, combo: number) => {
 };
 
 // shows the player where the hitbox actually sits even when no combo halo is active.
-const paintDullHaloOutline = (ctx: CanvasRenderingContext2D, dullAlpha: number) => {
+const paintDullHaloOutline = (ctx: CanvasRenderingContext2D, dullAlpha: number, beatPulse: number) => {
   if (dullAlpha <= 0.001) return;
-  ctx.strokeStyle = `hsla(210, 30%, 70%, ${dullAlpha})`;
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = `hsla(210, 30%, ${70 + 15 * beatPulse}%, ${dullAlpha})`;
+  ctx.lineWidth = 1.2 + 0.6 * beatPulse;
   ctx.stroke();
 };
 
@@ -41,9 +41,9 @@ const paintActiveHalo = (ctx: CanvasRenderingContext2D, tier1: number, tier2: nu
   const hue = haloHue(tier2);
   const sat = haloSat(tier3);
   const light = 78 + (100 - 78) * tier3;
-  const alpha = (0.45 + 0.35 * beatPulse) * tier1;
+  const alpha = Math.min(1, 0.45 + 0.55 * beatPulse) * tier1;
   ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.6 + 0.6 * beatPulse;
   ctx.shadowColor = `hsla(${hue}, ${sat}%, ${70 + 30 * tier3}%, 1)`;
   ctx.stroke();
 };
@@ -72,7 +72,7 @@ const traceHaloPath = (ctx: CanvasRenderingContext2D, ship: Ship) => {
 export const renderComboHalo = (ctx: CanvasRenderingContext2D, ship: Ship, beatPulse: number) => {
   const { tier1, tier2, tier3 } = haloTiers(ship);
   traceHaloPath(ctx, ship);
-  paintDullHaloOutline(ctx, 0.4 * (1 - tier1));
+  paintDullHaloOutline(ctx, (0.4 + 0.45 * beatPulse) * (1 - tier1), beatPulse);
   paintActiveHalo(ctx, tier1, tier2, tier3, beatPulse);
   paintComboLossFlash(ctx, ship.comboLossFlash);
 };
