@@ -58,9 +58,10 @@ const SEEK_BUDGET_MS = 12;
 //   feels like a rotation rather than a loop of one.
 const RECENT_MEMORY = 4;
 // Give up on a clip whose catch-up is taking too long (a chain very deep into a
-//   long run on a slow machine). The gap between clips is dead screen; past this
-//   the plain title is the better thing to be showing.
-const MAX_SEEK_MS = 6000;
+//   long run on a slow machine). The gap between clips is dead screen — but a
+//   gap that ends in a clip beats one that ends in nothing, so this is generous:
+//   it is a backstop against a seek that will never arrive, not a pacing knob.
+const MAX_SEEK_MS = 12000;
 // Consecutive failed clip loads before the reel gives up for this visit. An
 //   empty board, an offline API or a pool of replays this build can't re-sim all
 //   land here, and the title screen is perfectly good without a backdrop.
@@ -453,7 +454,13 @@ const beginClip = (game: Game, reel: TitleReel) => {
 // Give up on the clip being sought and go back to the plain title, with this run
 //   marked as tried so the next draw moves on.
 const abandonClip = (game: Game, reel: TitleReel) => {
-  if (reel.clip) rememberShown(reel, reel.clip.row.id);
+  if (reel.clip) {
+    reelNote(
+      `${reel.clip.row.name}'s run (#${reel.clip.row.id}) is taking too long to catch up to ` +
+      `(frame ${reel.clip.start}) — skipping it.`,
+    );
+    rememberShown(reel, reel.clip.row.id);
+  }
   reel.clip = null;
   hideCaption();
   returnToTitleWorld(game, reel);
